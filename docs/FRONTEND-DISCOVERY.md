@@ -21,6 +21,9 @@ fandoms and pseuds in it are invented placeholders.
 | Pagination | Server-side pages with real URLs. No infinite scroll |
 | Branding | No AO3 or OTW name, symbols or styling in the UI. Ratings and warnings are text badges, not symbol icons (ARCHITECTURE, opening) |
 | Author identity | No claims, no author accounts, no "my works". Removal and opt-out are a public request form that needs no sign-in (ARCHITECTURE, *Author requests & takedowns*) |
+| Card summaries | Clamped to 3 lines with a "more" link to the work page, which shows the full summary. Rating and archive warnings are separate lines and are never clamped. A content note in summary line 4 is hidden on cards, and that's accepted |
+| Home page | Leads with search. Popular fandoms and recently added works go below |
+| Original AO3 link | A live link with a note that it works again once AO3 is back. Nothing changes when AO3 returns |
 | Discovery output | This doc plus low-fidelity clickable wireframes |
 
 ## Principles
@@ -187,7 +190,9 @@ decoration in a minimal design. They're bold text with labels spelled out.
   2. **Rating · Warnings**, spelled out, e.g. "Mature · Graphic Depictions Of
      Violence"
   3. fandoms
-  4. a summary of up to 3 lines (see the clamping question below)
+  4. a summary clamped to 3 lines with CSS `line-clamp`, followed by a
+     "more" link to the work page. The full text stays in the HTML for screen
+     readers and search engines
   5. tags: relationships first, then characters, then a count of other tags
   6. a stats line: words, chapters (x/y), complete or in progress, last
      updated
@@ -262,11 +267,5 @@ handful of displaced readers:
 
 ## Open questions
 
-- Should a summary be clamped to 3 lines on cards? CSS `line-clamp` hides text
-  that's still in the HTML, which helps screen readers but can hide a summary's
-  own warnings.
-- Should the home page lead with search or with fandoms? It depends on whether
-  most arrivals are hunting for one known work (search) or browsing.
-- How should a work's AO3 provenance link behave while AO3 is down? It could
-  show as plain text with a note, or stay a live link that will work again
-  later.
+None right now. Summary clamping, what the home page leads with, and the AO3
+link behaviour are settled in *Decisions so far*.
