@@ -12,7 +12,7 @@ AO3 URL and says plainly that this is an unofficial stopgap.
 
 | Question | Decision |
 | --- | --- |
-| Who can read uploads | Shared public archive. Every upload is readable by everyone, with takedown and author controls from day one |
+| Who can read uploads | Shared public archive. Every upload is readable by everyone, with takedowns and author removal requests from day one |
 | Hosting | Cloudflare: Workers, R2, Queues, KV, plus Neon Postgres through Hyperdrive |
 | Load target | Surge-ready: assume tens of thousands of signups in the first days |
 | Sign-in | Email magic link, with no passwords stored |
