@@ -1,0 +1,272 @@
+# Frontend discovery
+
+**Status: hypotheses.** No displaced readers have been interviewed yet. Everything
+below is a starting position to test, not a finding. See *What to validate
+first* at the end.
+
+Companion to [ARCHITECTURE.md](ARCHITECTURE.md). Wireframes:
+[Archive wireframes](https://claude.ai/artifact/AjSQBMAtrvPz4sdRbVxRdm). This is
+a private canvas, so share it from its Share menu before sending it to anyone.
+It has 9 clickable screens (home, search, work, warnings, reader, settings,
+sign in, upload, remove my work) plus search and reader at 390 px. All works,
+fandoms and pseuds in it are invented placeholders.
+
+## Decisions so far
+
+| Question | Decision |
+| --- | --- |
+| Visual direction | Modern and minimal. The identity is plain HTML with a strong typographic hierarchy: type, spacing and rules do the work, not boxes, shadows or imagery |
+| Warnings | **Hard constraint:** rating and archive warnings show on every work card and work page. They are never collapsed, never behind a hover, and never hidden to save space. Minimalism applies to everything else |
+| JavaScript | Every page works fully with JavaScript off. Small scripts only enhance: upload progress, reader settings without a reload, saving reading position |
+| Pagination | Server-side pages with real URLs. No infinite scroll |
+| Branding | No AO3 or OTW name, symbols or styling in the UI. Ratings and warnings are text badges, not symbol icons (ARCHITECTURE, opening) |
+| Author identity | No claims, no author accounts, no "my works". Removal and opt-out are a public request form that needs no sign-in (ARCHITECTURE, *Author requests & takedowns*) |
+| Discovery output | This doc plus low-fidelity clickable wireframes |
+
+## Principles
+
+1. **Reading comes first.** The reader page is the product. Everything else gets
+   people to it, or protects the people whose work it is.
+2. **Text is the interface.** A clear type scale, generous line height and a
+   readable line length (about 66 characters) carry the hierarchy. There is one
+   accent colour, used for links and focus.
+3. **Fast on a cheap phone on a bad connection.** Pages are server-rendered with
+   no web fonts and tiny CSS. Most fanfic reading happens on phones.
+4. **Honest about being temporary.** A slim banner on every page says this is an
+   unofficial stopgap, and every work links to its original AO3 URL.
+5. **Warnings are content, not chrome.** They're placed and styled like the title
+   and author: plain, prominent, unmissable.
+
+## Who uses it
+
+| Role | Signed in? | What they come for |
+| --- | --- | --- |
+| Reader | No | Find a work they lost access to, or browse a fandom, and read it |
+| Signed-in reader | Yes | The same, plus saved reading position and remembered settings |
+| Uploader | Yes | Rescue works from their epub collection, then check they processed |
+| Author | No | Get a work taken down, or opt out a pseud entirely. Updating a work is just an upload |
+| Moderator | Yes, with the role | Work through reports, takedowns and removal or opt-out requests |
+
+Reading never requires an account (ARCHITECTURE, *Auth*).
+
+## Key journeys
+
+**1. Find and read a work** (reader)
+1. They arrive at the home page from a link or search, or land on a work page
+   from a shared URL.
+2. They search by title or author, or open a fandom and narrow by rating, tags
+   or completion.
+3. The results are a list of work cards, each with rating and warnings visible.
+4. They open the work page: summary, tags, stats, chapter list, original AO3
+   link.
+5. For works rated Mature or Explicit, or carrying warnings, a warnings screen
+   comes before chapter 1. "Continue" goes to the chapter. Signed-in readers can
+   turn the screen off in settings.
+6. They read. Next and previous chapter links sit at both ends of the chapter.
+   "Entire work" shows every chapter on one page.
+
+**2. Sign in** (any role)
+1. They give an email address on the sign-in page. Turnstile runs alongside.
+2. A "Check your email" page tells them the link lasts 15 minutes and may take
+   a minute to arrive.
+3. The link signs them in and sends them back to the page they started from.
+   It uses a stored `next` value, never an open redirect.
+
+**3. Upload works** (uploader)
+1. They pick one or more `.epub` files on the upload page and submit.
+2. Each file appears on *My uploads* with a status: processing, live, held for
+   review, or rejected with a plain reason.
+3. Once a file is live, they can open the work.
+
+**4. Remove a work or opt out** (author, or anyone acting for them)
+1. They follow "Ask for this to be removed" on a work page, or "Remove my work"
+   in the footer. No sign-in is needed.
+2. They choose one work (prefilled from the work page) or a whole pseud, then
+   give a contact email and a short statement. Turnstile runs alongside.
+3. The confirmation page tells them the work, or every work by the pseud, is
+   already hidden, and that a moderator will review the request and email
+   them.
+4. There's no proof of identity, because there's nothing to check against
+   while AO3 is down. That's stated plainly on the form.
+
+**5. Report a work** (anyone)
+1. "Report" on a work page opens a short form: a reason and optional details.
+2. A confirmation page explains what happens next.
+
+**6. Moderate** (moderator)
+1. Three queues: reports, takedowns, and removal or opt-out requests. Each is a
+   plain table, oldest first.
+2. Each item has a detail page with actions: hide, remove, restore, approve,
+   reject, block requester, ban uploader. A request's page lists the other
+   requests from the same email or IP, so a mass-hiding spree can be undone at
+   once.
+
+## Page inventory
+
+Every page works without JavaScript. The "JS adds" column is progressive
+enhancement only.
+
+| Page | URL | Who | Without JS | JS adds |
+| --- | --- | --- | --- | --- |
+| Home / browse | `/` | all | Search box, popular fandoms, recently added | — |
+| Search results | `/search?q=…` | all | GET form, paged results, filter form | — |
+| Fandom / tag listing | `/tags/:slug` | all | Paged works, sort and filter as a GET form | — |
+| Work page | `/works/:id` | all | Full metadata, chapter list, links | — |
+| Warnings screen | `/works/:id/warnings` | all | Continue link, plus a turn-off checkbox when signed in | — |
+| Chapter reader | `/works/:id/chapters/:n` | all | Chapter, nav, settings link | Settings without reload, saves position |
+| Entire work | `/works/:id/full` | all | All chapters on one page | Saves position |
+| Reader settings | `/settings/reader` | all | POST form sets a cookie, then redirects back | Applied live from the reader |
+| Sign in | `/login` | all | Email form, "check your email", error states | — |
+| Upload | `/upload` | signed in | Multipart form POST, one or more files | Direct-to-R2 upload with progress |
+| My uploads | `/me/uploads` | signed in | Status list that refreshes itself with `<meta http-equiv="refresh">` while anything is processing | Updates in place |
+| Remove my work / opt out | `/remove` (`?work=:id` prefills) | all | Request form, then a confirmation page | — |
+| Report | `/works/:id/report` | all | Form, then a confirmation page | — |
+| DMCA notice | `/dmca` | all | Statutory notice form | — |
+| Moderation queues | `/admin/{reports,takedowns,requests}` | moderator | Tables with detail pages | — |
+| About / terms / privacy | `/about`, `/terms`, `/privacy` | all | Static | — |
+| Hidden work | `/works/:id` (451) | all | "Temporarily hidden after a removal request", with no details | — |
+| Removed work | `/works/:id` (410) | all | "This work has been removed", with no details | — |
+| Not found | any | all | Search box and home link | — |
+
+## Where the frontend changes the architecture
+
+Discovery turned up three places where "works without JS" or the CSP collide
+with the architecture as written. These are the resolutions. ARCHITECTURE.md is
+updated to match.
+
+1. **Uploads without JS.** A presigned R2 URL needs `fetch` or XHR, and R2 doesn't
+   accept form POSTs. So the baseline is a normal `<form enctype="multipart/form-data">`
+   POST to the web Worker, which streams each file into R2 through its binding.
+   25 MB is far under the 100 MB request body limit. With JS, the page switches
+   to direct presigned PUTs so it can show progress and skip the Worker. Both
+   paths end at the same `/uploads/:id/complete` step.
+2. **Reader settings under the CSP.** `style-src 'self'` blocks inline `style=`
+   attributes. So settings are attributes on `<html>`
+   (`data-theme="dark" data-size="l" data-leading="relaxed"`), set on the
+   server from the settings cookie. The values live in the stylesheet as CSS
+   variables keyed off those attributes. With JS off, the settings form is a
+   POST that sets the cookie and redirects back. With JS on, a script flips the
+   attributes and writes the cookie. The script is served from `'self'` with
+   the page's nonce.
+3. **Upload status without JS.** *My uploads* refreshes itself with a
+   `<meta http-equiv="refresh" content="5">` while any upload is processing,
+   and drops it once nothing is. CSP doesn't block that, and it needs no
+   script.
+
+## Typographic system
+
+**Faces.** System font stacks only, with no web fonts. That means no font
+download, no flash of unstyled text, and no `font-src` exceptions in the CSP.
+- Interface: `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`
+- Reading: `Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif`
+  by default, with sans-serif as a reader setting.
+
+**Scale.** A ratio of about 1.25 from a 16 px base for the interface: 13 /
+16 / 20 / 25 / 31 / 39. The reader's body text is 18 px by default, with
+settings S/M/L/XL at 16/18/20/23.
+
+**Hierarchy, from most to least prominent.** Work title, then author, then
+rating and warnings (the same size as author, weight 600), then
+fandom, then summary, then tags, then stats. The same order holds on cards and
+on the work page. Only size and spacing change.
+
+**Measure and rhythm.** The reader is capped at `66ch` and line height 1.6. The
+interface uses 1.45. Spacing is on a 4 px grid, and sections are separated by
+whitespace and single hairline rules, not boxes.
+
+**Colour.** Near-black on off-white, with one accent for links and focus rings.
+Themes are light, dark and sepia, set by `data-theme`, with
+`prefers-color-scheme` as the default. Ratings and warnings get **no** colour
+coding. Colour can't be the only signal, and coloured badges read as
+decoration in a minimal design. They're bold text with labels spelled out.
+
+## Components
+
+- **Work card.** Lines in this order:
+  1. title, then author or "Anonymous"
+  2. **Rating · Warnings**, spelled out, e.g. "Mature · Graphic Depictions Of
+     Violence"
+  3. fandoms
+  4. a summary of up to 3 lines (see the clamping question below)
+  5. tags: relationships first, then characters, then a count of other tags
+  6. a stats line: words, chapters (x/y), complete or in progress, last
+     updated
+
+  Line 2 is never truncated. On a phone, the warnings wrap onto as many lines
+  as they need.
+- **Tag list.** A comma-separated inline list in small type. Every tag is a link.
+  The type (relationship, character, freeform) is shown by its position and a
+  visually hidden label, not by colour.
+- **Chapter nav.** Previous, a chapter `<select>` (with a no-JS form button) and
+  next, at both the top and bottom of the chapter.
+- **Pagination.** Previous and next plus page numbers, all real links.
+- **Status badge.** Text only: "Processing", "Live", "Held for review",
+  "Rejected: not an AO3 export".
+- **Flash message.** A one-line notice at the top of the page after a POST,
+  carried over the redirect in a short-lived cookie.
+- **Temporary banner.** One line at the very top of every page, linking to
+  `/about`.
+
+## Reading experience
+
+- The text column sits centred at `66ch`. The only chrome is a slim top bar
+  with the work title and a settings link, which scrolls away.
+- Chapter notes come before the text, end notes after, both in a smaller,
+  muted style. The summary is not repeated on chapter pages.
+- Settings: theme, size, line spacing, serif or sans, and whether to show the
+  warnings screen.
+- With JS on and the reader signed in, the reading position (chapter and scroll
+  percentage) is saved every few seconds. On return, a "Continue where you left
+  off" link appears on the work page. It doesn't jump the reader there without
+  asking.
+- `prefers-reduced-motion` turns off all smooth scrolling.
+
+## Accessibility and devices
+
+- WCAG 2.2 AA. Every page has a skip link, landmarks, and one `<h1>` per page
+  whose heading order matches the visual order.
+- At 360 px wide, nothing scrolls sideways. The gate checks this.
+- Every action can be reached by keyboard. Focus rings are always visible, in
+  the accent colour.
+- The warnings screen is a full page, not a modal, so it needs no focus
+  trapping and works with JS off.
+- Pages make sense in reader modes and with CSS turned off, since the HTML
+  order is the reading order.
+
+## Copy and tone
+
+- Plain, calm and brief. This is a lifeboat, not a brand.
+- Rejections say what happened and what to do next, for example "This file
+  isn't an AO3 download, so we can't accept it here."
+- Never imply the archive is AO3 or approved by AO3. Credit always goes to the
+  original work URL.
+
+## What to validate first
+
+These guesses are the most likely to be wrong, and the cheapest to test with a
+handful of displaced readers:
+
+1. **Is minimal browsing too thin?** Can readers scan a results page as fast as
+   they're used to with tag-dense blurbs? Test the work card at real tag counts
+   (20+ tags).
+2. **Text badges versus familiar symbols.** Do readers find rating and warnings
+   quickly without the icon grid they know?
+3. **Is chapter-level position enough** for readers who can't use JS, or is that
+   a non-issue?
+4. **Discovery without wrangled tags.** Without canonical tags, is
+   fandom-level browsing usable, or do near-duplicate fandom names (e.g. "Harry
+   Potter - J. K. Rowling" against "Harry Potter") make it confusing straight
+   away?
+5. **Uploader motivation.** Will people upload in bulk? If so, the "later" bulk
+   upload moves into the MVP.
+
+## Open questions
+
+- Should a summary be clamped to 3 lines on cards? CSS `line-clamp` hides text
+  that's still in the HTML, which helps screen readers but can hide a summary's
+  own warnings.
+- Should the home page lead with search or with fandoms? It depends on whether
+  most arrivals are hunting for one known work (search) or browsing.
+- How should a work's AO3 provenance link behave while AO3 is down? It could
+  show as plain text with a note, or stay a live link that will work again
+  later.

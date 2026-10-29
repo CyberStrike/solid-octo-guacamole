@@ -17,7 +17,8 @@ AO3 URL and says plainly that this is an unofficial stopgap.
 | Load target | Surge-ready: assume tens of thousands of signups in the first days |
 | Sign-in | Email magic link, with no passwords stored |
 | Accepted files | AO3-native epub exports only. FanFicFare support comes later |
-| New versions | Replace the current version automatically only if newer and consistent with it. Otherwise hold for review. Claimed authors always win |
+| New versions | Replace the current version automatically only if newer and consistent with it. Otherwise hold for review |
+| Author identity | No work claims and no author verification while AO3 is down. Removal and opt-out are requests anyone can make, without proving who they are |
 | Search scope | Metadata only: title, author, tags, summary |
 | Chapter rendering | Inline in app pages behind a strict CSP, with no iframe |
 
@@ -36,7 +37,7 @@ AO3 URL and says plainly that this is an unofficial stopgap.
    │               tags, FTS)      rate counters      • sanitize chapter XHTML
    │                    ▲                             • write chapters to R2, rows to PG
    │                    └─────────────────────────────┘
-   │  presigned PUT (direct, bytes never touch a Worker)
+   │  upload: presigned PUT with JS, or form POST through the web Worker without JS
    ├────────────────────────────────────────────────▶ R2: uploads/  (raw epubs)
    │
    │             ┌──────────────────────── content.<domain> ──────────────────────┐
@@ -76,7 +77,7 @@ works        (id, ao3_work_id UNIQUE NULL, title, summary_html, rating, language
               words, chapters_count, complete, published_at, updated_at,
               status,            -- processing | live | held | hidden | removed
               current_version_id, raw_meta jsonb, search tsvector)
-work_authors (work_id, pseud, ao3_user NULL, claimed_by_user_id NULL)
+work_authors (work_id, pseud, ao3_user NULL)
 work_versions(id, work_id, upload_id, chapter_count, r2_prefix, created_at)
 chapters     (work_id, version_id, n, title, words, r2_key)
 tags         (id, type, name, name_norm) -- type: fandom|relationship|character|freeform|warning|category|rating
@@ -85,7 +86,9 @@ uploads      (id, user_id, r2_key, sha256, bytes, status, lease_until,
               error_stage, error, work_id NULL, created_at)
 reports      (id, work_id, reporter_id NULL, kind, body, status, created_at)
 takedowns    (id, work_id, requester, basis, status, resolved_by, created_at)
-optouts      (id, pseud_norm, ao3_user NULL, verified, created_at)  -- checked at ingest
+requests     (id, kind, work_id NULL, pseud_norm NULL, contact_email, statement,
+              status, ip_hash, created_at)        -- kind: remove_work | opt_out
+optouts      (id, pseud_norm, ao3_user NULL, request_id, active, created_at)  -- checked at ingest
 ```
 
 **Dedupe.** AO3 epubs carry the original work URL
@@ -106,7 +109,12 @@ merge synonyms later.
    presigned R2 `PUT` URL, valid for 10 minutes and locked to
    `Content-Type: application/epub+zip`. R2 presigned URLs support PUT but not
    form POST, and the bucket needs a CORS rule for `app.<domain>`.
-2. **Upload.** The browser PUTs the file straight to R2.
+2. **Upload.** With JS, the browser PUTs the file straight to R2 so it can show
+   progress. Without JS, the upload page is a plain
+   `<form enctype="multipart/form-data">` POST to the web Worker. The Worker
+   checks the same things as step 1 and streams each file into R2 through its
+   binding, well under the 100 MB request body limit. Both paths then go on to
+   step 3 (FRONTEND-DISCOVERY, *Where the frontend changes the architecture*).
 3. **Confirm.** `POST /uploads/:id/complete` HEADs the object, checks its size,
    and enqueues `{upload_id}`.
 4. **Process.** The ingest consumer runs with a batch size of about 5, retries,
@@ -126,7 +134,7 @@ link back to AO3. FanFicFare files of AO3 works come later, through a second
 preface parser. Search covers metadata only: title, author, tags and summary.
 Chapter text isn't indexed.
 
-1. **Claim.** Queues may deliver a message more than once, so the job starts
+1. **Lease the job.** Queues may deliver a message more than once, so the job starts
    with an atomic `UPDATE uploads SET status='processing', lease_until=…` that
    only matches when the upload is `pending` or its lease has expired. All
    output goes under a prefix keyed by the upload ID, so a retry overwrites its
@@ -189,7 +197,9 @@ Chapter text isn't indexed.
      chapters differ, or if its tags or authors changed. This blocks someone
      editing an epub to tamper with a work.
    - **is marked `duplicate`** if it isn't newer. It's stored but not used.
-   - **always replaces** if it came from the author who claimed the work.
+
+   Nobody's upload gets special treatment, the author's included. We can't
+   tell who the author is while AO3 is down.
 
    Every version is kept, so a bad replacement can be rolled back.
 8. **Save, in order.** Write chapter fragments and images to R2. Then run one
@@ -265,8 +275,11 @@ can be snapshotted.
   work from a backfill queue.
 - **Caching.** Fragments in R2 never change once written, since each version
   has its own prefix. The Worker caches them with the Cache API. Reader
-  settings (font, spacing, theme) are applied on the client from a cookie
-  through CSS variables, so the same chapter HTML serves every reader. Pages
+  settings (font, spacing, theme) come from a cookie. The server writes them as
+  `data-*` attributes on `<html>`, or a script flips the attributes when they
+  change, and the stylesheet's CSS variables key off those attributes. Inline
+  `style` is never used, since the CSP blocks it. So the same chapter fragment
+  serves every reader. Pages
   for signed-out readers can get a short edge cache, apart from the nonce: use
   a cached template with the nonce swapped in, or cache only the fragment.
 - Before the first chapter of a work rated Mature or Explicit, or carrying
@@ -302,26 +315,37 @@ can be snapshotted.
 - Accounts are needed only to upload, report or save reading position. Reading
   never needs an account.
 
-## Author controls & takedowns
+## Author requests & takedowns
 
 The archive shows people's work without asking them first, so these features
 are part of the MVP, not extras.
 
-- **Remove my work.** Any request hides the work at once while it's reviewed.
-  We err on the side of the author.
-- **Opt out.** An author can block all current and future uploads of their
-  pseud(s). Adding an opt-out hides every existing work by those pseuds at
-  once, and the list is checked again at ingest for new uploads.
+**No claims while AO3 is down.** AO3 is the only place that could vouch for who
+wrote a work, and it's offline. Rather than accept weak proof, we don't offer
+work claims, author accounts or author self-service at all. Authors don't need
+an account. Whoever asks gets the same thing: a work hidden or an opt-out
+applied. Authors update a work the same way anyone does, by uploading a newer
+epub, under the normal versioning rules.
+
+- **Remove my work.** A public form at `/remove` asks for the work's URL here
+  or its AO3 URL, a contact email and a short statement. No sign-in, but
+  Turnstile is required. The work is hidden **at once** and a moderator
+  reviews the request. We err on the side of the person asking.
+- **Opt out.** The same form, given a pseud instead of a work. It hides every
+  existing work by that pseud at once, and the opt-out list is checked again
+  at ingest for new uploads. A moderator confirms it. A mistaken opt-out can be
+  reversed.
+- **Abuse of instant hiding.** Since nobody has to prove who they are, anyone
+  can hide any work for a while. Limits: requests are rate-limited per email
+  and per IP. A hidden work shows "Temporarily hidden after a removal request",
+  not a 404. Moderators can see every request from the same email or IP
+  together, restore in bulk, and block a requester. We accept this risk: an
+  unfair hide is temporary, while ignoring a genuine author is not.
 - **Removal really removes.** Setting a work to `removed`, through a takedown,
   an author request or a moderator, also deletes `works/<id>/` and the raw
   upload from R2, and purges the work's pages, cached fragments, images and
   download URLs from the cache. Images and downloads are cached as
   `immutable`, so without the purge parts of a removed work stay reachable.
-- **Claim.** With AO3 down, an author can't easily prove who they are. Accept
-  weaker evidence for now, such as a code posted on a linked Tumblr, Bluesky,
-  Dreamwidth or Twitter profile. Mark claims `provisional` and recheck them
-  against AO3 once it's back. A claimed author can update, replace or remove
-  their works.
 - **DMCA.** To get safe-harbor protection under US law (17 U.S.C. §512), we need
   a designated agent registered with the US Copyright Office, a public takedown
   form, a counter-notice process and a repeat-infringer policy. Get a lawyer to
@@ -329,7 +353,8 @@ are part of the MVP, not extras.
 - **Reports.** Every work has a report button. Works with N or more open
   reports are hidden automatically until a moderator looks at them.
 - **Moderation.** A small admin area has queues for reports, takedowns and
-  claims, plus actions to hide, remove, restore and ban.
+  removal or opt-out requests, plus actions to hide, remove, restore, block a
+  requester and ban an uploader.
 
 ## Surge controls
 
@@ -365,7 +390,8 @@ are part of the MVP, not extras.
    download original
 5. Browse by fandom, tag or rating, sorted by updated date or word count
 6. Search: title, author, tags, summary (Postgres FTS plus trigram)
-7. Author controls, reports, DMCA form, minimal moderation queue
+7. Remove-my-work and opt-out requests, reports, DMCA form, minimal
+   moderation queue
 8. Terms, a privacy notice and a clear "unofficial, temporary" banner
 
 **Later**
@@ -384,7 +410,7 @@ are part of the MVP, not extras.
 apps/web/          Hono Worker: pages, auth, upload handshake, search, admin
 apps/content/      Worker serving epub images and original downloads from R2
 apps/ingest/       Queue consumer
-packages/epub/     unzip + OPF + AO3 preface parser + sanitizer (unit-tested in Node)
+packages/epub/     unzip + OPF + AO3 preface parser + sanitizer (tested in workerd)
 packages/db/       SQL migrations + typed queries
 fixtures/epubs/    real AO3 epub samples for parser and sanitizer tests
 docs/
@@ -403,7 +429,7 @@ little client JS for upload progress and the reader settings.
   should keep that as it is and never try to identify the author.
 - **Deleted or orphaned works.** Someone may upload a work the author deleted
   from AO3. While AO3 is down we can't check, so we rely on the opt-out list and
-  "remove my work" until we can verify.
+  remove-my-work requests.
 - **Domain and name.** These depend on the working name, and have to stay clear
   of anything that suggests a link to AO3 or OTW.
 - **Legal review.** Get a review of the DMCA setup and terms before public
