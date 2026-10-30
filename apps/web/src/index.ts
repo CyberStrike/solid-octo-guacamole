@@ -1,9 +1,14 @@
 import { Hono } from "hono";
 import { notFoundPage, turnstilePage } from "./pages";
-import { contentSecurityPolicy, type SecurityVariables } from "./security";
+import {
+  contentSecurityPolicy,
+  strictTransportSecurity,
+  type SecurityVariables,
+} from "./security";
 
 const app = new Hono<{ Variables: SecurityVariables }>();
 
+app.use(strictTransportSecurity);
 app.use(contentSecurityPolicy);
 
 app.get("/login", (c) => c.html(turnstilePage("Sign in", c.get("nonce"))));

@@ -19,6 +19,12 @@ const strictPolicy = (nonce: string) =>
 const TURNSTILE_PATHS = new Set(["/login", "/upload", "/remove"]);
 const TURNSTILE_FRAME = "frame-src https://challenges.cloudflare.com";
 
+/** Sets HSTS on every response, so it must run outermost (ARCHITECTURE, Hosts). */
+export const strictTransportSecurity: MiddlewareHandler = async (c, next) => {
+  await next();
+  c.res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+};
+
 /** A fresh base64 nonce of 16 random bytes. */
 const newNonce = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
 
