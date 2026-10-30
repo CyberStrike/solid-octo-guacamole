@@ -47,8 +47,9 @@ while IFS= read -r f; do
   esac
 done <<< "$files"
 
-# docs means only docs changed; any other protocol already runs the standing checks.
-[ "${#need[@]}" -gt 1 ] && unset 'need[docs]'
+# docs is printed whenever docs changed, even beside other protocols, so the Decisions-table
+# check still runs on a mixed code and design change. SKILL.md skips the standing checks only
+# when docs is the sole protocol.
 
 echo "changed: $(echo "$files" | cut -d/ -f1-2 | sort -u | tr '\n' ' ')" >&2
 for p in epub db ingest web content integration docs; do

@@ -55,7 +55,8 @@ A check that fails in a workspace the item should not have touched is a stop eve
 The parser and sanitizer are the security boundary (ARCHITECTURE, *Sanitizing*). Its tests run in the Workers runtime under `@cloudflare/vitest-pool-workers`, since `HTMLRewriter` does not exist in Node.
 
 - Every fixture's snapshot still matches, or each changed snapshot is listed in the PR with the reason. A snapshot updated without a reason is a failure.
-- The hostile fixtures are still rejected with their codes: zip bomb, path traversal, missing OPF, a chapter count that disagrees with `Stats:`.
+- The hostile fixtures are still rejected with their codes: zip bomb, path traversal, missing OPF.
+- A chapter count that disagrees with `Stats:` is not a rejection: parsing succeeds and the work is flagged for review with a `chapter_count_mismatch` reason (ARCHITECTURE, *EPUB processor* step 5).
 - The XSS corpus passes: no `script`, `on*` attribute, `style`, `javascript:` or remote `src` survives in any field, summary and notes included.
 - AO3 fields are matched by label text, never by CSS class. Search the diff's added lines in the preface parser for class selectors (`.`, `[class`) and account for each.
 - Running the parser twice on the same file gives the same output.
@@ -70,7 +71,7 @@ The parser and sanitizer are the security boundary (ARCHITECTURE, *Sanitizing*).
 
 - The same upload delivered twice produces one work and one version (ARCHITECTURE, *EPUB processor*, Lease the job).
 - Each job writes only under its own `works/<ao3_work_id>/<upload_id>/` prefix, plus content-hashed images under `works/<ao3_work_id>/img/` (ARCHITECTURE, *Why these pieces* and *EPUB processor* step 6).
-- R2 is written before the Postgres transaction, and the work goes `live` last. A failure before the transaction leaves only files under the upload's prefix.
+- R2 is written before the Postgres transaction, and the work goes `live` last. A failure before the transaction leaves only files under the upload's prefix, plus any content-hashed images it wrote under `works/<ao3_work_id>/img/`, which the periodic sweep removes once no version references them.
 - Each rejection code the diff touches has a test that reaches it, and the uploader-facing message says what happened in plain words.
 - The versioning rules hold: a newer, consistent upload replaces; a newer upload that changes earlier chapters or the tags or authors is `held_for_review`; one that is not newer is `duplicate`. `held_for_review` and `duplicate` are statuses, not rejections: their files are kept. No uploader gets special treatment: there are no work claims while AO3 is down.
 - The opt-out and takedown lists are checked before anything is written.
@@ -83,7 +84,7 @@ The parser and sanitizer are the security boundary (ARCHITECTURE, *Sanitizing*).
 - Session cookies are `HttpOnly; Secure; SameSite=Lax` with no `Domain`, so they cover the app host only.
 - Sign-in (ARCHITECTURE, *Auth*): our routes, not Better Auth, do these, because server-side `auth.api` calls skip its own checks:
   - `POST /login` refuses a cross-site `Origin` / `Sec-Fetch-Site`.
-  - `next` is reduced to a same-site path.
+  - `next` is reduced to a same-site path, checked after URL normalization, so `/a/..//evil.example` can't become `//evil.example`.
   - Sign-in is rate limited per IP and per email.
   - `GET /login/confirm` uses nothing up.
   - Magic-link tokens stay in the Postgres `verification` table, never KV.
@@ -103,9 +104,9 @@ Root configuration, `wrangler` configs, dependencies, `scripts/`, `.github` and 
 
 - Run every protocol above, and `bash .claude/skills/gate/classify.test.sh` when the classifier changed.
 
-### docs — only `docs/`, `*.md` or `.claude/` Markdown changed
+### docs — `docs/`, `*.md` or `.claude/` Markdown changed
 
-- Typecheck, tests and build are reported not run: docs only.
+- When docs is the only protocol printed, typecheck, tests and build are reported not run: docs only. Beside any other protocol, the standing checks run as usual.
 - A change to `docs/ARCHITECTURE.md` keeps the *Decisions so far* table consistent with the sections below it. A section that now disagrees with the table is a failure.
 
 ### Every protocol

@@ -24,7 +24,7 @@ check "docs" README.md .claude/skills/gate/SKILL.md
 check "docs" .github/pull_request_template.md
 check "docs" .github/ISSUE_TEMPLATE/bug.yml
 check "integration" .github/workflows/ci.yml
-check "integration" .github/workflows/ci.yml .github/pull_request_template.md
+check "integration docs" .github/workflows/ci.yml .github/pull_request_template.md
 check "integration" .claude/skills/gate/classify.sh
 check "integration" .claude/settings.json
 check "integration" .claude/hooks/pre-tool.js
@@ -42,6 +42,6 @@ check "db" packages/db/migrations/0001_init.sql
 check "ingest" apps/ingest/src/a.ts
 check "web" apps/web/src/a.ts
 check "content" apps/content/src/a.ts
-check "epub ingest web" packages/epub/src/a.ts apps/web/src/a.ts docs/ARCHITECTURE.md
+check "epub ingest web docs" packages/epub/src/a.ts apps/web/src/a.ts docs/ARCHITECTURE.md
 
 exit "$fail"
