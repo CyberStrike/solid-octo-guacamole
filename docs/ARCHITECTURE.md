@@ -371,6 +371,11 @@ can be snapshotted.
     Worker. The mailer only sends: it has no database or R2 access.
   - **Reader privacy:** the mailer never logs email addresses or links; it
     logs provider message IDs and outcomes only.
+  - **Failures:** a message that fails on both providers is retried by the
+    queue, then moved to a dead-letter queue, never dropped silently. Queued
+    messages hold an address and a sign-in link (which expires after 15
+    minutes), so the dead-letter queue keeps them for one day at most, and
+    nothing prints its contents to logs.
   - The mailer sends with Resend's batch API, to stay under its
     per-second API limit (by default about 2 requests a second; ask for more
     before launch).

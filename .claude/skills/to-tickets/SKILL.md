@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 Turn a plan into **tickets**: tracer-bullet vertical slices, each one PR that passes `/gate`, each naming the tickets that **block** it. They're published as GitHub issues on `CyberStrike/solid-octo-guacamole`, in the shape `/gate` reads (§1: definition-of-done bullets and a `Depends on:` line).
 
-Adapted from Matt Pocock's [`to-tickets`](https://github.com/mattpocock/skills/blob/main/skills/engineering/to-tickets/SKILL.md) skill (MIT, Copyright (c) 2026 Matt Pocock).
+Adapted from Matt Pocock's [`to-tickets`](https://github.com/mattpocock/skills/blob/main/skills/engineering/to-tickets/SKILL.md) skill (MIT, Copyright (c) 2026 Matt Pocock). The upstream license is in `LICENSE-upstream.md` next to this file.
 
 ## 1. Gather the source
 
@@ -74,7 +74,12 @@ gh issue create --repo CyberStrike/solid-octo-guacamole --title "<title>" --body
 ```
 
 - **Labels:** `ready-for-agent` on every ticket, unless the user says otherwise; tickets are agent-grabbable by construction. Add `mvp` or `later` to match the scenario directory. If a label doesn't exist yet, create it first (`gh label create`), and say so.
-- **Sub-issues:** when the source was an existing issue, add each ticket as a sub-issue of it (`gh api` to the sub-issues endpoint). Don't close or edit the parent.
+- **Sub-issues:** when the source was an existing issue, add each ticket as a sub-issue of it:
+  ```bash
+  gh api -X POST repos/CyberStrike/solid-octo-guacamole/issues/<parent>/sub_issues \
+    -F sub_issue_id=$(gh api repos/CyberStrike/solid-octo-guacamole/issues/<ticket> --jq .id)
+  ```
+  The endpoint takes the issue's internal `id`, not its number. Don't close or edit the parent.
 - Write each body to a file in your session scratchpad, never in the repo.
 - **Report** the issue numbers in dependency order, and the **frontier**: the tickets whose blockers have all merged.
 

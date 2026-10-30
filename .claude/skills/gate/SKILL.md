@@ -103,7 +103,7 @@ The parser and sanitizer are the security boundary (ARCHITECTURE, *Sanitizing*).
 The mailer is the only Worker holding email-provider keys (ARCHITECTURE, *Auth*, Email).
 - It only sends. It has no Hyperdrive, KV or R2 binding in its `wrangler` config.
 - It sends through Resend's batch API, and a Resend refusal (rate limit, quota, outage) goes to the failover provider. A test reaches each path with stub senders, and no test calls a real provider.
-- A message that fails on both providers is retried by the queue, then dead-lettered. It's never dropped silently.
+- A message that fails on both providers is retried by the queue, then dead-lettered. It's never dropped silently. The dead-letter queue's retention is one day at most, and nothing prints its messages (address plus link) to logs.
 - No log line contains an email address or a link. It logs provider message IDs and outcomes only.
 
 ### integration — anything else changed
