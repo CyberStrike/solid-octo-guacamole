@@ -91,8 +91,8 @@ describe("06-ao3-preface-and-chapters", () => {
   });
 
   it("Parser output is deterministic", async () => {
+    // The baseline's stored snapshot is in snapshots.test.ts; the rest are stored here.
     const epubs = [
-      ao3Epub(),
       ao3Epub({ extraDl: `<dt>Series:</dt><dd>Part 1 of <a href="http://archiveofourown.org/series/9">S</a></dd><dt>Odd:</dt><dd>x</dd>` }),
       ao3Epub({ stats: "Chapters: 1/1" }),
       ao3Epub({
@@ -109,6 +109,7 @@ describe("06-ao3-preface-and-chapters", () => {
       const second = await processEpub(epub.slice());
       expect(second).toEqual(first);
       expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+      expect(second).toMatchSnapshot();
     }
   });
 });
