@@ -30,10 +30,13 @@ export const strictTransportSecurity: MiddlewareHandler = async (c, next) => {
 /**
  * Answers every request on www, whatever the method, with a 308 to the same path
  * and query on the bare domain, before any route runs. A 308 keeps a POST a POST.
+ * The trailing-dot spellings of both hosts are separate origins, so they go too.
  */
+const REDIRECTED_HOSTS = new Set(["www.rarepair.fans", "www.rarepair.fans.", "rarepair.fans."]);
+
 export const wwwToBareDomain: MiddlewareHandler = async (c, next) => {
   const url = new URL(c.req.url);
-  if (url.hostname !== "www.rarepair.fans") return next();
+  if (!REDIRECTED_HOSTS.has(url.hostname)) return next();
   return c.body(null, 308, { Location: `https://rarepair.fans${url.pathname}${url.search}` });
 };
 

@@ -109,6 +109,13 @@ describe("11-reader-and-csp", () => {
         expect(await res.text()).toBe("");
       }
     }
+
+    // The fully qualified spellings are other origins to a browser: redirect them too.
+    for (const host of ["www.rarepair.fans.", "rarepair.fans."]) {
+      const res = await fetchW(`https://${host}/login?x=1`);
+      expect(res.status).toBe(308);
+      expect(res.headers.get("location")).toBe("https://rarepair.fans/login?x=1");
+    }
   });
 
   it("Page cannot be framed", async () => {
