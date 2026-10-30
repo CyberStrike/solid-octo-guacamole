@@ -1,0 +1,33 @@
+{
+  // Mailer Worker: consumes the email queue and sends sign-in emails (ARCHITECTURE, Auth, Email).
+  // It only sends: no Hyperdrive, KV, R2 or D1 binding, and no routes.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "rarepair-mailer",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-08-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "queues": {
+    "consumers": [
+      {
+        "queue": "email",
+        // Up to 100 messages per batch, the most Resend takes in one call: fewer calls against
+        // its per-second API limit (about 2 a second by default).
+        "max_batch_size": 100,
+        "max_batch_timeout": 5,
+        // One batch at a time: no two calls to Resend run in parallel. It does not space calls
+        // out, so a backlog can still meet a 429, which the queue retries.
+        "max_concurrency": 1,
+        // Two retries a minute apart, inside the 15-minute life of a sign-in link.
+        "max_retries": 2,
+        "retry_delay": 60,
+        // Retention must be one day at most, set outside this file:
+        // wrangler queues update email-dlq --message-retention-period-secs 86400
+        "dead_letter_queue": "email-dlq"
+      }
+    ]
+  },
+  // Set with `wrangler secret put`. MAIL_FROM stays here until the sending subdomain is chosen.
+  "secrets": { "required": ["RESEND_API_KEY", "MAIL_FROM"] },
+  "observability": { "enabled": true }
+}
