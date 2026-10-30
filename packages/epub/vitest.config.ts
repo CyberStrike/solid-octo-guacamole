@@ -1,8 +1,8 @@
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
 // Tests run inside workerd because HTMLRewriter only exists there.
-// The compatibility date must not be newer than the workerd bundled with the pool.
+// The compatibility date must not be newer than the installed workerd.
 export default defineConfig({
   plugins: [
     cloudflareTest({

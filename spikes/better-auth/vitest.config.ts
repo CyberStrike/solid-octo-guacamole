@@ -1,4 +1,4 @@
-import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
+import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
 // Same pattern as packages/epub, plus: a Worker entry, a local D1 database, and
@@ -9,8 +9,8 @@ export default defineConfig({
       main: "./src/worker.ts",
       miniflare: {
         compatibilityDate: "2026-08-01",
-        // Note: the pool injects nodejs_compat_v2 into the test runner regardless
-        // (vitest-pool-workers dist/pool/index.mjs ~60765), so dropping this flag
+        // Note: the test plugin injects nodejs_compat_v2 into the test runner whatever
+        // this config says (search its dist for nodejs_compat_v2), so dropping this flag
         // locally proves nothing. Production needs it (or a date >= 2026-08-04).
         compatibilityFlags: ["nodejs_compat"],
         d1Databases: ["DB"],
