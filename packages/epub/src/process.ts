@@ -42,7 +42,8 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
     throw new EpubError("not_epub", "Missing or wrong mimetype entry");
   }
 
-  // One node budget for every document parsed from this epub, the nav document included.
+  // One node budget for the spine documents and the nav document of this epub.
+  // (container.xml, the OPF and the NCX aren't charged to it.)
   const budget = nodeBudget();
   const pkg = readPackage(files, budget);
   const reviewReasons: string[] = [];

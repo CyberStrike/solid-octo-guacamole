@@ -57,7 +57,8 @@ const parser = new XMLParser({
 
 // The nav document is XHTML with mixed content (`<a><span>1.</span> One</a>`),
 // so its parser keeps document order and the whitespace between inline elements.
-// It holds the XHTML parser's depth cap (dom.ts counts its root as one level).
+// It holds the XHTML parser's depth cap: dom.ts takes 255 levels below its
+// root, and fast-xml-parser throws only past maxNestedTags + 1.
 const navParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "",
@@ -67,7 +68,7 @@ const navParser = new XMLParser({
   trimValues: false,
   processEntities: true,
   preserveOrder: true,
-  maxNestedTags: MAX_DEPTH - 1,
+  maxNestedTags: MAX_DEPTH - 2,
 });
 
 type XmlNode = Record<string, unknown>;
@@ -89,9 +90,10 @@ function parseXml(bytes: Uint8Array, what: string): XmlNode {
 }
 
 /**
- * At least as many nodes as `text` parses into: one per start tag or
- * processing instruction, one per run of text between tags. Quoted `>` in
- * attributes and `<` inside comments or CDATA only over-count.
+ * At least as many nodes as `text` parses into: one per `<` that doesn't open
+ * an end tag (an element, processing instruction, CDATA section, comment or
+ * doctype), one per run of text between tags. A `>` inside quotes, a comment
+ * or CDATA ends the tag early, which only over-counts.
  */
 function countXmlNodes(text: string): number {
   let nodes = 0;
@@ -105,8 +107,7 @@ function countXmlNodes(text: string): number {
       if (pendingText) nodes++;
       pendingText = false;
       inTag = true;
-      const next = text.charCodeAt(i + 1);
-      if (next === 0x3f /* ? */ || (next | 0x20) >= 0x61 && (next | 0x20) <= 0x7a) nodes++;
+      if (text.charCodeAt(i + 1) !== 0x2f /* / */) nodes++;
     } else {
       pendingText = true;
     }

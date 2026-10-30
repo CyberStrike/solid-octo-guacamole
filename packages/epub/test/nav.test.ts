@@ -231,13 +231,29 @@ describe("hostile nav documents", () => {
     await expectEpubError(processEpub(epub3(nav)), "too_large");
   });
 
+  it.each([
+    ["names starting with _ or a non-ASCII letter", "<_x/><é/>"],
+    ["CDATA sections", "<p><![CDATA[x]]></p>"],
+  ])("counts %s against the node budget", async (_, unit) => {
+    // Two nodes per unit: 300,002 in all, past the budget on their own.
+    const nav = bareNav(`<nav epub:type="toc"><ol>${flatItems()}</ol></nav>${unit.repeat(150_001)}`);
+    await expectEpubError(processEpub(epub3(nav)), "too_large");
+  });
+
   it("rejects a nav outside the spine nested past the depth cap as parse_failed", async () => {
     const nav = bareNav(`${"<div>".repeat(300)}${tocNav(flatItems())}${"</div>".repeat(300)}`);
     await expectEpubError(processEpub(epub3(nav)), "parse_failed");
   });
 
+  // html > body > divs > nav > ol > li > a: 6 levels besides the divs. The
+  // XHTML parser takes 255 levels and rejects 256.
+  it("rejects a nav 256 elements deep, as the XHTML parser does", async () => {
+    const nav = bareNav(`${"<div>".repeat(250)}${tocNav(flatItems())}${"</div>".repeat(250)}`);
+    await expectEpubError(processEpub(epub3(nav)), "parse_failed");
+  });
+
   it("reads a nav nested deep but within the depth cap", async () => {
-    const nav = bareNav(`${"<div>".repeat(240)}${tocNav(flatItems())}${"</div>".repeat(240)}`);
+    const nav = bareNav(`${"<div>".repeat(249)}${tocNav(flatItems())}${"</div>".repeat(249)}`);
     const work = await processEpub(epub3(nav));
     expect(work.chapters.map((c) => c.title)).toEqual(["Nav first", "Nav second", "Nav third"]);
   });
