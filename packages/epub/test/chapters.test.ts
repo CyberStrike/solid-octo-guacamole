@@ -182,6 +182,7 @@ describe("06-ao3-preface-and-chapters", () => {
       ["c2-a", "c2-aside", "c2-b"],
       ["c3-a", "c3-b"],
     ]);
+    expect(work.chapters[1]!.html).toContain("Aside");
     expect(work.reviewReasons).toEqual([]);
   });
 

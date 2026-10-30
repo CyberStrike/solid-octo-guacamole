@@ -13,11 +13,15 @@ function patchEntry(epub: Uint8Array, name: string, edit: (text: string) => stri
     if (path === "mimetype") continue; // zipEntries writes it again, first
     patched[path] = path === name ? edit(strFromU8(data)) : data;
   }
+  if (!(name in entries)) throw new Error(`patchEntry: no entry ${name}`);
   return zipEntries(patched);
 }
 
 const withOpfElement = (epub: Uint8Array, element: string) =>
-  patchEntry(epub, "content.opf", (opf) => opf.replace("</metadata>", `${element}</metadata>`));
+  patchEntry(epub, "content.opf", (opf) => {
+    if (!opf.includes("</metadata>")) throw new Error("withOpfElement: no </metadata>");
+    return opf.replace("</metadata>", `${element}</metadata>`);
+  });
 
 describe("06-ao3-preface-and-chapters", () => {
   it("OPF work URL matching the preface is accepted", async () => {
@@ -28,6 +32,13 @@ describe("06-ao3-preface-and-chapters", () => {
       expect(work.ao3WorkId).toBe("1000001");
       expect(work.reviewReasons).toEqual([]);
     }
+  });
+
+  it("An OPF work URL that disagrees with the preface is flagged", async () => {
+    const other = `<dc:identifier>http://archiveofourown.org/works/2000002</dc:identifier>`;
+    const work = await processEpub(withOpfElement(ao3Epub(), other));
+    expect(work.ao3WorkId).toBe("1000001");
+    expect(work.reviewReasons).toEqual(["work_id_mismatch: preface 1000001, OPF 2000002"]);
   });
 
   it("Fields are matched by label text", async () => {
@@ -72,22 +83,31 @@ describe("06-ao3-preface-and-chapters", () => {
   });
 
   it("Summary, notes and end notes come from headed blocks", async () => {
-    const work = await processEpub(
+    // Blockquotes under other labels sit before the Summary label and after the Notes block.
+    const decoy = (id: string) => `<p>Aside ${id}</p><blockquote><p>marker-decoy-${id}</p></blockquote>`;
+    const epub = patchEntry(
       ao3Epub({
         summary: `<p>marker-summary</p><blockquote><p>marker-decoy-nested</p></blockquote>`,
         notes: `<p>marker-notes</p>`,
         endNotes: `<p>marker-end</p>`,
       }),
+      "Synthetic_preface.xhtml",
+      (x) => {
+        const patched = x
+          .replace(`<p class="calibre7">Summary</p>`, `${decoy("before")}<p class="calibre7">Summary</p>`)
+          .replace(`<div class="endnote-link">`, `${decoy("after")}<div class="endnote-link">`);
+        if (patched === x) throw new Error("decoys not inserted");
+        return patched;
+      },
     );
+    const work = await processEpub(epub);
     expect(work.summaryHtml).toContain("marker-summary");
     expect(work.notesHtml).toBe("<p>marker-notes</p>");
     expect(work.endNotesHtml).toBe("<p>marker-end</p>");
-    for (const html of [work.summaryHtml, work.notesHtml, work.endNotesHtml]) {
-      expect(html).not.toMatch(/See the end of the work/);
-      expect(html).not.toMatch(/drop by the archive/);
-    }
-    expect(work.notesHtml).not.toContain("marker-decoy");
-    expect(work.endNotesHtml).not.toContain("marker-notes");
+    expect(work.summaryHtml).not.toContain("marker-decoy-before");
+    expect(work.summaryHtml).not.toContain("marker-decoy-after");
+    expect(work.notesHtml).not.toMatch(/marker-decoy/);
+    expect(work.endNotesHtml).not.toMatch(/marker-decoy/);
   });
 
   it("Parser output is deterministic", async () => {
