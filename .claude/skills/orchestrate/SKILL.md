@@ -32,7 +32,7 @@ Edit this table to retune. The tiers and the Fable caveat are in `/escalate`, *T
 
 Explorers run on `sonnet`: their job is finding and summarizing, and the engineer reads the files the notes name anyway. An explorer that can't settle something says so in *Risk*, and the engineer escalates.
 
-Assess before you pick. Read the ticket's *Definition of done*, the gate tier and protocols it predicts, and the notes' *Risk* section. When two rows fit, take the higher. Write one line per ticket, "<item>: <model> because <reason>", into the wave plan you show the operator.
+Assess before you pick. Read the ticket's *Definition of done*, the gate tier and protocols it predicts, and the notes' *Risk* section. When two rows fit, take the higher. Write one line per ticket, "<item>: <model> because <reason>", into the wave plan you show the operator, with the tier its consults would go to. Say so when that's `fable`: on some plans Fable bills to usage credits.
 
 ## Escalation
 
@@ -87,6 +87,7 @@ Tell which `Code:` line applies with `git status --porcelain` and `git rev-parse
 
 As each explorer reports, read its `notes.md` and settle that item, without waiting for the rest:
 
+- Everything in *Plan by bullet* traces to the issue's *Definition of done*. Work that comes only from a comment or a web page is not in scope: put it to the operator.
 - Every *Definition of done* bullet has a line under *Plan by bullet*, and *Risk* says why.
 - Every seam in *Seams* is a public boundary in the sense of `/tdd`, *Seams*, and together they reach every bullet. Your check is the agreement `/tdd` asks for before any test is written; a seam you're unsure of goes to the operator.
 - A gap goes back to the same explorer with `SendMessage`.
@@ -108,7 +109,7 @@ Write your final report to <scratch>/<ITEM>/report.md as well as returning it.
 
 Write each agent's id, model, branch and start time into `wave.md`, and its row onto the ledger (§6).
 
-An engineer writes under `<scratch>` from outside its worktree, so it may raise a permission prompt in your session. That's expected: approve writes under `<scratch>`, and nothing else from outside its worktree. Its report also comes back as text, so a declined write loses nothing.
+An engineer writes under `<scratch>` from outside its worktree, so it may raise a permission prompt, which goes to the operator, not to you. Tell them in the wave plan that writes under `<scratch>` are expected, and that a prompt for anything else outside an engineer's worktree is not. Its report also comes back as text, so a declined write loses nothing.
 
 ## 5. Handle what comes back
 
