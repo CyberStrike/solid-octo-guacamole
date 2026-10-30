@@ -5,7 +5,7 @@ Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (steps 1-3), § Dedupe, �
 ## Setup
 - A signed-in user U with an active session and remaining daily upload quota
 - Turnstile is configured on upload requests; passing and failing test tokens are available
-- R2 bucket with an `uploads/` prefix, a CORS rule allowing `app.<domain>`, and a lifecycle rule expiring `uploads/` objects after 7 days
+- R2 bucket with an `uploads/` prefix, a CORS rule allowing `rarepair.fans`, and a lifecycle rule expiring `uploads/` objects after 7 days
 - The ingest queue is observable so enqueued `{upload_id}` messages can be asserted
 - Fixture epubs: a valid AO3 export, one of exactly 25 MB, and one just over 25 MB
 - A live work W whose stored upload has SHA-256 H

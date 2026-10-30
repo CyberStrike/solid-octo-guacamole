@@ -82,8 +82,9 @@ The parser and sanitizer are the security boundary (ARCHITECTURE, *Sanitizing*).
 - Those three pages show a `<noscript>` message with JS off. Reading, browsing, search and reader settings still work fully without JS.
 - Chapter HTML reaches a page only from a sanitized fragment under `works/`, never from `uploads/` or `originals/`.
 - Session cookies are `HttpOnly; Secure; SameSite=Lax` with no `Domain`, so they cover the app host only.
+- Every response sends `Strict-Transport-Security: max-age=31536000; includeSubDomains`, and any request to `www.rarepair.fans` gets a 308 to the same path and query on `rarepair.fans` (ARCHITECTURE, *Hosts*).
 - Sign-in (ARCHITECTURE, *Auth*): our routes, not Better Auth, do these, because server-side `auth.api` calls skip its own checks:
-  - `POST /login` refuses a cross-site `Origin` / `Sec-Fetch-Site` with 403.
+  - `POST /login` refuses with 403 a present `Origin` other than `https://rarepair.fans` or a present `Sec-Fetch-Site` other than `same-origin`, so a sibling host such as `content.rarepair.fans` is refused too.
   - `next` is reduced to a same-site path, checked after URL normalization, so `/a/..//evil.example` can't become `//evil.example`.
   - Sign-in is rate limited per IP and per email.
   - `GET /login/confirm` uses nothing up.

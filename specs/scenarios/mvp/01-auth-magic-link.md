@@ -3,7 +3,7 @@
 Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § Data model, § Surge controls; docs/FRONTEND-DISCOVERY.md § Decisions so far (JavaScript), § Key journeys (2. Sign in), § Page inventory (Sign in, Accept terms, Too many requests), § Where the frontend changes the architecture (1. Forms with Turnstile need JS)
 
 ## Setup
-- The web Worker serves `app.<domain>` with `/login` and `/login/confirm`, and builds a Better Auth instance (magic-link plugin) per request from its bindings
+- The web Worker serves `rarepair.fans` with `/login` and `/login/confirm`, and builds a Better Auth instance (magic-link plugin) per request from its bindings, with `baseURL` `https://rarepair.fans` and only that origin in `trustedOrigins`
 - Better Auth's `user`, `session`, `account` and `verification` tables exist in Postgres; magic-link tokens are stored hashed in `verification`; `user` has a `terms_accepted_at` field
 - Turnstile is configured on the sign-in form; a test Turnstile token that passes and one that fails are available
 - The Workers rate-limiting binding is configured per IP and per email for `POST /login`
@@ -27,7 +27,7 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § 
 ### Requesting a magic link queues an email with a single-use token
 - GIVEN a signed-out visitor with a valid email address and a passing Turnstile token
 - WHEN they submit the `/login` form, a plain `application/x-www-form-urlencoded` POST
-- THEN an email linking to `/login/confirm` with a token is put on the email queue
+- THEN an email linking to `https://rarepair.fans/login/confirm` with a token is put on the email queue, whatever host the request came in on
 - AND only a hash of the token is stored in the `verification` table, never the token itself
 - AND the token is valid for 15 minutes
 
@@ -44,7 +44,7 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § 
 - AND the response is 400 and shows the sign-in form again with an error
 
 ### Cross-site login request is refused
-- GIVEN a `POST /login` whose `Origin` (or `Sec-Fetch-Site`) shows it came from another site
+- GIVEN a `POST /login` whose `Origin` is present and is not exactly `https://rarepair.fans` (another site, or another `rarepair.fans` host such as `content.rarepair.fans`), or whose `Sec-Fetch-Site` is present and is not `same-origin`
 - WHEN the web Worker receives it
 - THEN the response is 403
 - AND no token is created and no email is queued
@@ -73,7 +73,7 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § 
 - THEN the token's `verification` row is deleted
 - AND a session row is created in Postgres
 - AND the cookie `__Secure-better-auth.session_token` is set with `HttpOnly`, `Secure`, `SameSite=Lax` and `Path=/`
-- AND the cookie has no `Domain` attribute, so it covers `app.<domain>` only and never `content.<domain>`
+- AND the cookie has no `Domain` attribute, so it covers `rarepair.fans` only and never `content.rarepair.fans`
 
 ### Confirming works without JavaScript
 - GIVEN an unused token and a browser with JavaScript off
@@ -111,7 +111,7 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § 
 ### Sign-in never acts as an open redirect
 - GIVEN a sign-in request whose `next` is an external or protocol-relative URL (`https://evil.example`, `//evil.example`, `/\evil.example`)
 - WHEN the user completes sign-in through the emailed link
-- THEN they are redirected within `app.<domain>` (the home page), never to the external URL
+- THEN they are redirected within `rarepair.fans` (the home page), never to the external URL
 
 ### Sign-in emails go through Resend in batches
 - GIVEN several sign-in emails waiting on the email queue

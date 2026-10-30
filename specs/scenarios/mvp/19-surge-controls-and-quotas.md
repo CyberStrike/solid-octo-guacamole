@@ -82,7 +82,7 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Load target), § Surge con
 - THEN browsing, search and reading keep responding while the queue drains at bounded consumer concurrency
 
 ### Content origin is edge-cached
-- GIVEN an image or original download on `content.<domain>`
+- GIVEN an image or original download on `content.rarepair.fans`
 - WHEN it is served
 - THEN it has `Cache-Control: public, max-age=31536000, immutable`
 
