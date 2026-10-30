@@ -1,12 +1,13 @@
 # Scenario: Reports and DMCA takedown notices
 
-Relates to: docs/ARCHITECTURE.md § Data model (reports.reporter_id, takedowns), § Author requests & takedowns (Reports, DMCA, Removal really removes); docs/FRONTEND-DISCOVERY.md § Key journeys (5. Report a work), § Page inventory (Report, DMCA notice)
+Relates to: docs/ARCHITECTURE.md § Data model (reports.reporter_id, reports.kind, takedowns, requester_blocks), § Author requests & takedowns (Reports, DMCA, Block and ban stop only the action, What hidden, held and removed works show, Removal really removes, Moderation), § EPUB processor (step 4, takedown list), § Surge controls (Status codes); docs/FRONTEND-DISCOVERY.md § Key journeys (5. Report a work, 6. Moderate), § Page inventory (Report, DMCA notice, Hidden work)
 
 ## Setup
 - A live work W with no open reports
-- The auto-hide threshold N is configured
+- The auto-hide threshold is open reports from 3 distinct signed-in accounts, one counted per account
 - `/works/:id/report` and `/dmca` are served by the web Worker
-- A signed-in reader U and a signed-out reader
+- Signed-in readers U, U2 and U3, and a signed-out reader
+- A banned account Z (`banned_at` set), and a signed-in account K whose email matches a requester blocked by a moderator
 
 ## Cases
 
@@ -23,19 +24,19 @@ Relates to: docs/ARCHITECTURE.md § Data model (reports.reporter_id, takedowns),
 ### Signed-out reader is sent to sign in before reporting
 - GIVEN a signed-out reader on W's work page
 - WHEN they follow "Report"
-- THEN they are sent to sign in instead of seeing the report form
+- THEN they are redirected to sign in, carrying `next`, instead of seeing the report form
 - AND after completing sign-in through the emailed link they are brought back to `/works/:id/report` for W using the stored `next` value
 
-### Signed-out report submission is refused
+### Signed-out report submission redirects to sign in
 - GIVEN a signed-out reader with no session cookie
 - WHEN they POST a report for W to `/works/:id/report`
 - THEN no `reports` row is stored
-- AND they are sent to sign in
+- AND the response redirects them to sign in, carrying `next=/works/:id/report`
 
 ### Report form asks for a reason and optional details
 - GIVEN signed-in reader U on `/works/:id/report`
 - WHEN the form renders
-- THEN it asks for a reason and optional details
+- THEN it asks for a reason, one of which is "This version is wrong", and optional details
 - AND it works with JavaScript off
 
 ### Submitting a report stores it and confirms
@@ -49,15 +50,45 @@ Relates to: docs/ARCHITECTURE.md § Data model (reports.reporter_id, takedowns),
 - WHEN U submits a reason and leaves details empty
 - THEN the report is stored with `reporter_id` set to U
 
-### Fewer than N open reports keeps the work live
-- GIVEN work W with N-1 open reports
+### This version is wrong queues the work in Works to check
+- GIVEN signed-in reader U on W's report form
+- WHEN U submits the reason "This version is wrong"
+- THEN a `wrong_version` report is stored for W
+- AND W is listed in the moderators' *Works to check* queue
+
+### This version is wrong reports never count toward hiding
+- GIVEN work W with open reports from U and U2
+- WHEN U3 submits a report for W with the reason "This version is wrong"
+- THEN the `wrong_version` report is stored and W is listed in *Works to check*
+- AND W stays live, because `wrong_version` reports never count toward the 3-account auto-hide
+
+### Reports from two accounts keep the work live
+- GIVEN work W with open reports from U and U2
 - WHEN a moderator has not yet acted
 - THEN W stays live
 
-### N open reports hides the work automatically
-- GIVEN work W with N-1 open reports
-- WHEN a signed-in reader submits the Nth report
+### Report from a third account hides the work automatically
+- GIVEN work W with open reports from U and U2
+- WHEN U3 submits a report for W
 - THEN W is hidden automatically until a moderator looks at it
+- AND W's pages return 451 with "Temporarily hidden after reader reports"
+
+### Repeat reports from one account count once
+- GIVEN work W with open reports from U and U2
+- WHEN U submits two more reports for W
+- THEN the reports are stored but count once for U
+- AND W stays live
+
+### Banned account cannot report
+- GIVEN banned account Z
+- WHEN Z submits a report for W
+- THEN no `reports` row is stored
+
+### Reports matching a blocked requester do not count toward hiding
+- GIVEN work W with open reports from U and U2
+- WHEN account K, whose email matches a blocked requester, submits a report for W
+- THEN the report is stored and queued for a moderator
+- AND W stays live
 
 ### DMCA form is public
 - GIVEN any visitor
@@ -70,14 +101,33 @@ Relates to: docs/ARCHITECTURE.md § Data model (reports.reporter_id, takedowns),
 - WHEN they submit a notice naming work W
 - THEN a `takedowns` row is stored for W
 - AND it appears in the moderators' takedowns queue
+- AND W stays live until a moderator decides, unlike a `/remove` request
+
+### Incomplete DMCA notice is noted in the queue
+- GIVEN a visitor on `/dmca`
+- WHEN they submit a notice naming work W but missing some statutory elements
+- THEN a `takedowns` row is stored for W and appears in the takedowns queue marked incomplete
+- AND W stays live
+
+### Moderator hides a work after a DMCA notice
+- GIVEN a takedown on work W
+- WHEN a moderator decides to hide W
+- THEN W is hidden and its pages return 451 with "Temporarily hidden by a moderator"
 
 ### Takedown approval removes the work
 - GIVEN a takedown on work W
 - WHEN a moderator approves it and W is set to `removed`
 - THEN `works/<ao3_work_id>/` and the raw upload are deleted from R2 and the work's cached pages, fragments, images and download URLs are purged
 - AND W's page returns 410
+- AND W's AO3 work ID goes on the takedown list
 
 ### Taken-down work cannot be re-uploaded
-- GIVEN a takedown on AO3 work ID 12345
+- GIVEN a DMCA notice on the work with AO3 work ID 12345, after which a moderator removed the work, so 12345 is on the takedown list
 - WHEN a new epub of work 12345 is ingested
 - THEN it is rejected with `opted_out`
+
+### Pending DMCA notice does not block an upload
+- GIVEN a DMCA notice on the work with AO3 work ID 12345 that no moderator has acted on yet
+- WHEN a new epub of work 12345 is ingested
+- THEN it is not rejected with `opted_out`
+- AND it goes through the normal versioning rules

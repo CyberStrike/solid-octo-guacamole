@@ -1,12 +1,14 @@
 # Scenario: Chapter reader and strict CSP
 
-Relates to: docs/ARCHITECTURE.md § Decisions so far (Chapter rendering), § Reading; docs/FRONTEND-DISCOVERY.md § Key journeys (1. Find and read a work), § Page inventory (Chapter reader, Entire work), § Components (Chapter nav), § Reading experience
+Relates to: docs/ARCHITECTURE.md § Decisions so far (Chapter rendering), § Reading, § Author requests & takedowns (What hidden, held and removed works show); docs/FRONTEND-DISCOVERY.md § Key journeys (1. Find and read a work), § Page inventory (Chapter reader, Entire work, Hidden work, Removed work), § Components (Chapter nav, Review notice), § Reading experience
 
 ## Setup
 - A live work W with 5 chapters, chapter notes on chapter 2 and end notes on chapter 2, rated General Audiences with no archive warnings
 - Chapter fragments are stored in R2 under the version's prefix
 - A chapter fixture containing an injected `<script>` that survived the sanitizer (test-only)
 - The pages with a Turnstile check are `/login`, `/upload` and `/remove`
+- A live work F whose current version has review reasons no moderator has cleared
+- A work H hidden after reader reports, and a work R in status `removed`
 
 ## Cases
 
@@ -92,6 +94,23 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Chapter rendering), § Rea
 - GIVEN live work W
 - WHEN a reader opens `/works/:id/full`
 - THEN every chapter is shown on one page in order
+
+### Reader pages show the may-be-imperfect notice
+- GIVEN live work F
+- WHEN a reader opens one of its chapters or `/works/:id/full`
+- THEN the page shows "Chapters may be imperfect; a moderator will check."
+
+### Hidden work's chapters and entire work return 451
+- GIVEN work H hidden after reader reports
+- WHEN anyone opens any `/works/:id/chapters/:n` or `/works/:id/full` of H
+- THEN the response status is 451
+- AND the page says only "Temporarily hidden after reader reports", with no chapter text or other details
+
+### Removed work's chapters and entire work return 410
+- GIVEN work R in status `removed`
+- WHEN anyone opens any `/works/:id/chapters/:n` or `/works/:id/full` of R
+- THEN the response status is 410
+- AND the page says "This work has been removed" with no details
 
 ### Chapter number out of range
 - GIVEN live work W with 5 chapters

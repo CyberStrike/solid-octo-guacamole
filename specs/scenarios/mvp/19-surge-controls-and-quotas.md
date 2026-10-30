@@ -1,40 +1,40 @@
 # Scenario: Surge controls, rate limits and upload quotas
 
-Relates to: docs/ARCHITECTURE.md § Decisions so far (Load target), § Surge controls, § Ingestion pipeline, § Auth (magic link)
+Relates to: docs/ARCHITECTURE.md § Decisions so far (Load target), § Surge controls (Status codes), § Ingestion pipeline, § Auth (magic link); docs/FRONTEND-DISCOVERY.md § Page inventory (Too many requests), § Copy and tone
 
 ## Setup
 - Turnstile is configured on signup, login, upload and `/remove` requests
 - The Workers rate-limiting binding covers login, upload requests and search, keyed per IP and per user, over 10- or 60-second windows
-- Upload quotas are counted in Postgres (`users.upload_quota_used`)
-- Users: an established user E, a brand-new user N, a trusted user T
-- The default daily quota is about 50 epubs per account
+- Upload quotas are counted in Postgres (`user.upload_quota_used`)
+- Users: a user E with quota left (on either tier), a brand-new user N, a trusted user T
+- There are two daily quota tiers, a lower one for new accounts and a higher one for trusted users; the numbers and the rule for "trusted" are configuration, set before launch from load testing, and the cases below use whatever values are configured
 
 ## Cases
 
 ### Turnstile guards login and signup
 - GIVEN a visitor
 - WHEN they request a magic link without a passing Turnstile token
-- THEN the request is refused
+- THEN the response is 400 and shows the sign-in form again with an error
 
 ### Turnstile guards upload requests
 - GIVEN signed-in user E
 - WHEN E requests an upload without a passing Turnstile token
-- THEN the request is refused
+- THEN the response is 400 and the upload page shows the error
 
 ### Login is throttled per IP
 - GIVEN one IP that has sent more login requests than the limit within a window
 - WHEN it sends another
-- THEN it is throttled
+- THEN the response is 429 with a `Retry-After` header and a plain page saying when to try again
 
 ### Upload requests are throttled per user
 - GIVEN user E who has sent more upload requests than the rate limit within a window
 - WHEN E sends another
-- THEN it is throttled, even with quota left
+- THEN the response is 429 with a `Retry-After` header, even with quota left
 
 ### Search is throttled per IP
 - GIVEN one IP that has sent more searches than the limit within a window
 - WHEN it searches again
-- THEN it is throttled
+- THEN the response is 429 with a `Retry-After` header and a plain page saying when to try again
 
 ### Throttling recovers after the window
 - GIVEN an IP throttled on search
@@ -49,22 +49,22 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Load target), § Surge con
 ### Daily quota refuses uploads past the limit
 - GIVEN user E who has used all of today's quota
 - WHEN E requests another upload
-- THEN the request is refused
+- THEN the response is 429 with a `Retry-After` header and a plain message saying when E can upload again
 
 ### Quota is a hard limit under concurrency
 - GIVEN user E with one upload left in today's quota
 - WHEN E sends two upload requests at the same time from different locations
 - THEN exactly one succeeds, because the quota is counted in Postgres rather than the approximate rate limiter
 
-### Brand-new accounts get a lower quota
+### Brand-new accounts get the lower quota
 - GIVEN brand-new user N
 - WHEN N's daily quota is checked
-- THEN it is lower than the default for established accounts
+- THEN it is the configured new-account limit
 
-### Trusted users get a higher quota
-- GIVEN trusted user T
+### Trusted users get the higher quota
+- GIVEN trusted user T, who meets the configured rule for "trusted"
 - WHEN T's daily quota is checked
-- THEN it is higher than the default
+- THEN it is the configured trusted-user limit, which is higher than the new-account limit
 
 ### Oversized objects are cleaned up at confirm
 - GIVEN an object PUT through a presigned URL that exceeds 25 MB
