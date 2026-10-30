@@ -1,7 +1,7 @@
 import { strFromU8, unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { processEpub } from "../src";
-import { ao3Epub, type SpineFile, zipEntries } from "./helpers";
+import { ao3Epub, expectEpubError, type SpineFile, zipEntries } from "./helpers";
 
 // Three chapters over two files, as chapters.test.ts builds them. The nav
 // labels differ from the headings, so the heading fallback can't pass for
@@ -50,13 +50,15 @@ interface Epub3Options {
   navPath?: string;
   /** Keep the generated `toc.ncx` and its manifest item. */
   keepNcx?: boolean;
+  /** NCX entries for chapters, as `ao3Epub`'s `navPoints`. */
+  ncx?: { label: string; src: string }[];
 }
 
 /** Turns an `ao3Epub()` into an EPUB3 file whose table of contents is `nav`. */
 function epub3(nav: string, opts: Epub3Options = {}): Uint8Array {
   const navPath = opts.navPath ?? "nav.xhtml";
   const { mimetype: _, ...entries } = unzipSync(
-    ao3Epub({ title: "Nav Parts", stats: "Published: 2020-01-01 Chapters: 3/3 Words: 4", files }),
+    ao3Epub({ title: "Nav Parts", stats: "Published: 2020-01-01 Chapters: 3/3 Words: 4", files, navPoints: opts.ncx }),
   );
   const navItem = `<item id="nav" href="${encodeURI(navPath)}" properties="nav" media-type="application/xhtml+xml"/>`;
   let opf = strFromU8(entries["content.opf"]!).replace('version="2.0"', 'version="3.0"');
@@ -137,6 +139,29 @@ describe("06 AO3 preface and chapters", () => {
         [3, "Three"],
       ]);
       expect(work.reviewReasons).toEqual([]);
+    });
+
+    it("takes the table of contents from the NCX when there is both an NCX and a nav", async () => {
+      const ncx = [
+        { label: "NCX first", src: "Nav%20Parts_split_000.xhtml" },
+        { label: "NCX second", src: "Nav%20Parts_split_000.xhtml#toc2" },
+        { label: "NCX third", src: "Nav%20Parts_split_001.xhtml#toc3" },
+      ];
+      const work = await processEpub(epub3(navDoc(tocNav(flatItems())), { keepNcx: true, ncx }));
+      expect(work.chapters.map((c) => [c.n, c.title])).toEqual([
+        [1, "NCX first"],
+        [2, "NCX second"],
+        [3, "NCX third"],
+      ]);
+      expect(work.reviewReasons).toEqual([]);
+    });
+
+    it("rejects a nav that declares XML entities as not_epub", async () => {
+      const nav = navDoc(tocNav(flatItems())).replace(
+        "<!DOCTYPE html>",
+        '<!DOCTYPE html [<!ENTITY chapter "Nav first">]>',
+      );
+      await expectEpubError(processEpub(epub3(nav)), "not_epub");
     });
 
     it("reads the nav when it is also in the spine", async () => {
