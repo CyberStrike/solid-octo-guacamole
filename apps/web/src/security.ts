@@ -17,12 +17,14 @@ const strictPolicy = (nonce: string) =>
 
 // The pages with a Turnstile check, matched exactly: only they may frame the challenge.
 const TURNSTILE_PATHS = new Set(["/login", "/upload", "/remove"]);
-const TURNSTILE_FRAME = "frame-src https://challenges.cloudflare.com";
+export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
+const TURNSTILE_FRAME = `frame-src ${TURNSTILE_ORIGIN}`;
 
 /** Sets HSTS on every response, so it must run outermost (ARCHITECTURE, Hosts). */
 export const strictTransportSecurity: MiddlewareHandler = async (c, next) => {
   await next();
-  c.res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  // c.header, not c.res.headers.set: it copies a response whose headers are immutable.
+  c.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
 };
 
 /**
@@ -49,9 +51,9 @@ export const contentSecurityPolicy: MiddlewareHandler<{ Variables: SecurityVaria
   const nonce = newNonce();
   c.set("nonce", nonce);
   await next();
-  if (c.res.headers.get("content-type")?.startsWith("text/html")) {
+  if (c.res.headers.get("content-type")?.toLowerCase().startsWith("text/html")) {
     const policy = strictPolicy(nonce);
-    c.res.headers.set(
+    c.header(
       "Content-Security-Policy",
       TURNSTILE_PATHS.has(c.req.path) ? `${policy}; ${TURNSTILE_FRAME}` : policy,
     );

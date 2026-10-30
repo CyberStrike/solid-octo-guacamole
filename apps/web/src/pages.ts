@@ -2,7 +2,9 @@
 // removal pages (A1, U3, X1) replace them. They exist so the Turnstile pages'
 // policy and nonced challenge script can be served and tested.
 
-const TURNSTILE_API = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+import { TURNSTILE_ORIGIN } from "./security";
+
+const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
 /** A whole HTML document. `title` and `body` are trusted markup from this file. */
 export const page = (title: string, body: string, head = "") => `<!doctype html>
