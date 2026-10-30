@@ -20,7 +20,7 @@ You build one work item: one issue, one branch, one PR (`docs/process.md`). The 
 ## Build
 
 - Build test-first with `/tdd`, preloaded in your context, in the order of the notes' *Plan by bullet* and at the notes' *Seams*. Its examples and stubbing rules are in `.claude/skills/tdd/tests.md` and `.claude/skills/tdd/mocking.md`: read both before your first test.
-- Don't refactor inside the loop. Findings from the review ladder (`/gate` §6) come back to you as rework.
+- Don't refactor inside the loop. Findings from the review ladder, which you run in `/gate merge` at *Finish*, are fixed then.
 - Follow `docs/ARCHITECTURE.md`. Its *Decisions so far* table is binding: when the work seems to need something that contradicts a row, stop with `stopped`.
 - Match the surrounding code: its naming, comment density and idiom. Commit as you go.
 - Your scratchpad is `<scratch>/<ITEM>/`.
@@ -35,7 +35,7 @@ Follow `/escalate`, preloaded in your context. For its step 2, launch a `consult
 2. A gate failure you can fix, fix, and gate again. A stop event from the gate is not yours to fix: stop with `stopped`.
 3. Push your branch, and only your branch: never `main`, and never with `--force`. Open a draft PR: `gh pr create --draft --base main`, with a body that says what the item delivers, `Closes #<n>`, and the gate's *What was run* block.
 4. Take it through the merge gate, as `docs/process.md` says (*Work items*, "The orchestrator merges"). Run `/gate merge`: it runs the review ladder, then requests the one Copilot review; don't request another. Fix any critical finding in the PR, file the rest as bug issues, replace the PR body's *What was run* block with the merge gate's, and report `ready`. Leave the PR a draft (no `gh pr ready`) and don't merge: the orchestrator decides the PR is done and merges it.
-5. Sent back to bring `main` in, merge it, rerun the `/gate` §3 checks, push, and report `ready` again. Don't rerun `/gate merge` or request Copilot again.
+5. Sent back to bring `main` in, merge it, rerun the `/gate` §3 checks, push, and report `ready` again. Don't rerun `/gate merge` or request Copilot again, except that a conflict you resolved by hand goes through the review ladder again (`/gate` §6 step 3).
 
 Write your report to `<scratch>/<ITEM>/report.md`, and return the same text:
 
@@ -44,7 +44,7 @@ Write your report to `<scratch>/<ITEM>/report.md`, and return the same text:
 **Item:** <ITEM> (#<n>)   **Branch:** <branch>   **PR:** <url or "none">
 **Worktree:** <absolute path>
 
-<For ready: the gate's report block, each Copilot finding and what became of it (fixed, or the bug issue filed for it).>
+<For ready: the merge gate's report block, each Copilot finding and what became of it (fixed, or the bug issue filed for it), and every other issue the merge gate filed.>
 <For needs-consult or stopped: the question or stop event, the evidence, and the options you see.>
 <For failed: what failed, with output, and what the branch holds.>
 
