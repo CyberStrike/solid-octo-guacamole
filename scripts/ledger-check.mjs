@@ -124,8 +124,13 @@ async function check() {
     const mergedAt = latest(merged.map((p) => p.mergedAt));
     if (DONE.has(item.status)) {
       if (open.length) say(where, `status "${item.status}" but PR #${open[0].number} is open`);
+      // `closed` is an item that ended without merging; `merged` or `done` needs a merged PR.
+      else if (item.status !== "closed" && linked.length && !merged.length)
+        say(where, `status "${item.status}" but every PR closed without merging`);
       else if (settled && !item.mergedAt)
         change("items", item.id, { mergedAt }, "done without mergedAt");
+      else if (settled && Date.parse(item.mergedAt) !== Date.parse(mergedAt))
+        change("items", item.id, { mergedAt }, `mergedAt ${item.mergedAt} differs from GitHub's`);
       continue;
     }
     if (settled && working.has(item.id))

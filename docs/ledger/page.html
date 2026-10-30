@@ -260,9 +260,11 @@ const fields = (pairs) => {
 function byId() { return Object.fromEntries(state.items.map((i) => [i.id, i])); }
 
 // A queued item is Ready once every gate has merged, otherwise Waiting on the gates still open.
+// A gate counts as cleared only when it exists and merged (or is done); one that is missing,
+// or `closed` without merging, still blocks.
 function effective(item, idx) {
   if (item.status !== "queued") return { s: item.status, open: [] };
-  const open = (item.gates || []).filter((g) => idx[g] && !isDone(idx[g].status));
+  const open = (item.gates || []).filter((g) => !idx[g] || !(idx[g].status === "merged" || idx[g].status === "done"));
   return open.length ? { s: "waiting", open } : { s: "ready", open };
 }
 
@@ -416,8 +418,10 @@ function renderFollowups() {
 function renderLog() {
   const days = [...state.log].sort((a, b) => (a.id < b.id ? 1 : -1));
   document.getElementById("log").innerHTML = days.map((d) => {
-    const entries = [...(d.entries || [])].sort((a, b) => (a.at < b.at ? 1 : -1));
-    return `<div class="log-day"><span class="label">${esc(d.id)}</span><ol>${entries.map((e) => `<li><time>${esc(hm(e.at))}</time><span>${esc(e.text)}</span></li>`).join("")}</ol></div>`;
+    // Sort by the instant and show it in UTC, so an entry written with an offset still lands in order.
+    const instant = (e) => Date.parse(e.at || "") || 0;
+    const entries = [...(d.entries || [])].sort((a, b) => instant(b) - instant(a));
+    return `<div class="log-day"><span class="label">${esc(d.id)}</span><ol>${entries.map((e) => `<li><time>${esc(hm(utc(e.at)))}</time><span>${esc(e.text)}</span></li>`).join("")}</ol></div>`;
   }).join("") || `<div class="empty">Nothing logged yet.</div>`;
 }
 
