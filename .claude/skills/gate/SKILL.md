@@ -135,7 +135,8 @@ This repo has no run recipe yet, so a live check is reported **not run: no run s
 1. `git fetch`, then check the branch contains main: `git merge-base --is-ancestor origin/main origin/<branch>`. If not, merge main into the branch and rerun §3.
 2. CI on the PR's head is green, or report it not run when the repo has no CI yet.
 3. The review ladder below, scaled by the PR's risk tier. The operator may waive it or stop it at any rung. *What was run* names the tier and the rungs that ran. A rung starts once the fixes from the rung before are pushed.
-4. Merge with `gh pr merge <n> --squash` only when the operator has said to merge.
+4. One Copilot review on the settled head, after the ladder's fixes are pushed: `gh pr edit <n> --add-reviewer "@copilot"`. This works on a draft. Never request a second. The request doesn't show in `requested_reviewers`, so wait on `.../pulls/<n>/reviews`. If no review arrives within 30 minutes, record it as not run. A critical finding is fixed in the PR, and the fix is verified without re-requesting Copilot. A finding is critical when Copilot marks it high severity, when it is a real defect on the tier 3 security boundary below, or when it breaks a *Definition of done* bullet. File every other finding as a bug issue, and reply on its thread with the link.
+5. The orchestrator merges with `gh pr merge <n> --squash`. The standing rule in `docs/process.md` (*Work items*, "The orchestrator merges") is the operator's word to merge. Before it merges, `main` is brought in if it has moved, §3 is rerun, and a draft is marked ready (`gh pr ready <n>`). Run outside `/orchestrate`, the session that ran this gate merges.
 
 **Risk tiers.** Each changed file gets a tier by the first rule it matches, checked from tier 3 down, and the PR takes the highest tier any file gets. When unsure, use the higher.
 

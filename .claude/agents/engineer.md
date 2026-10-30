@@ -1,6 +1,6 @@
 ---
 name: engineer
-description: Builds one work item for the /orchestrate skill, in its own worktree on its own branch, from the explorer's notes in the shared scratchpad. Builds test-first with /tdd, gates the item with /gate, opens its PR, and follows /escalate when it isn't confident. One fresh engineer per ticket.
+description: Builds one work item for the /orchestrate skill, in its own worktree on its own branch, from the explorer's notes in the shared scratchpad. Builds test-first with /tdd, gates the item with /gate, takes its PR through the merge gate and one Copilot review to ready, and follows /escalate when it isn't confident. One fresh engineer per ticket.
 isolation: worktree
 model: sonnet
 skills:
@@ -33,17 +33,17 @@ Follow `/escalate`, preloaded in your context. For its step 2, launch a `consult
 
 1. Commit everything. Run `/gate pr` with the issue number.
 2. A gate failure you can fix, fix, and gate again. A stop event from the gate is not yours to fix: stop with `stopped`.
-3. Push your branch, and only your branch: never `main`, and never with `--force`. Open the PR: `gh pr create --base main`, with a body that says what the item delivers, `Closes #<n>`, and the gate's *What was run* block.
-4. Don't merge, and don't run `/gate merge`. Those are the operator's.
+3. Push your branch, and only your branch: never `main`, and never with `--force`. Open a draft PR: `gh pr create --draft --base main`, with a body that says what the item delivers, `Closes #<n>`, and the gate's *What was run* block.
+4. Take it to ready, as `docs/process.md` says (*Work items*, "The orchestrator merges"). Run `/gate merge` through the review ladder, then request one Copilot review. Fix any critical finding in the PR. File the rest as bug issues, and report `ready`. Don't merge: the orchestrator decides the PR is done and merges it.
 
 Write your report to `<scratch>/<ITEM>/report.md`, and return the same text:
 
 ```markdown
-**Status:** pr-open | needs-consult | stopped | failed
+**Status:** ready | needs-consult | stopped | failed
 **Item:** <ITEM> (#<n>)   **Branch:** <branch>   **PR:** <url or "none">
 **Worktree:** <absolute path>
 
-<For pr-open: the gate's report block.>
+<For ready: the gate's report block, each Copilot finding and what became of it (fixed, or the bug issue filed for it).>
 <For needs-consult or stopped: the question or stop event, the evidence, and the options you see.>
 <For failed: what failed, with output, and what the branch holds.>
 

@@ -96,7 +96,7 @@ Then settle the item's model and launch its engineer.
 
 ## 4. Build
 
-Launch one `engineer` per item, as soon as its notes are settled: a fresh agent, never a fork and never one reused from another ticket. Run at most four engineers at once, unless the operator sets another limit; the rest wait, in the order of the wave plan, and launch as running ones reach `pr-open`, `stopped` or `failed`. Its definition puts it in its own worktree. Pass `model` from *Models* on each call. The brief:
+Launch one `engineer` per item, as soon as its notes are settled: a fresh agent, never a fork and never one reused from another ticket. Run at most four engineers at once, unless the operator sets another limit; the rest wait, in the order of the wave plan, and launch as running ones reach `ready`, `stopped` or `failed`. Its definition puts it in its own worktree. Pass `model` from *Models* on each call. The brief:
 
 ```
 Item <ITEM>, issue #<n>: <title>.
@@ -115,7 +115,13 @@ An engineer writes under `<scratch>` from outside its worktree, so it may raise 
 
 Each engineer ends with one status:
 
-- **`pr-open`**: the PR exists and its body has `/gate`'s *What was run* block. Check the PR (`gh pr view <n>`), and set the item to `gating` on the ledger. Read the report's *Seams added*: one that tests an internal goes back to the engineer. The wave stops here for that item: the merge ladder (`/gate merge`) and the merge itself are the operator's call.
+- **`ready`**: the engineer ran `/gate merge` and one Copilot review, fixed any critical finding, and filed the rest as bug issues. You decide whether it's done, and you merge it, as `docs/process.md` says (*Work items*, "The orchestrator merges"):
+  1. Check the PR: its *What was run* block names the tier's ladder, a Copilot review posted or is recorded as not run, no critical finding is open, and every other finding has a bug issue.
+  2. Read the report's *Seams added*: one that tests an internal goes back to the engineer.
+  3. Check the PR contains `main` (`git merge-base --is-ancestor origin/main origin/<branch>`). If it doesn't, send the engineer to merge `main` in and rerun the tests, and wait for `ready` again.
+  4. Mark the PR ready (`gh pr ready <n>`) and merge it (`gh pr merge <n> --squash`), one at a time. Then run the ledger check (§6).
+
+  While the engineer is in the merge gate, its item is `gating` on the ledger.
 - **`needs-consult`**: see *Escalation*.
 - **`stopped`**: a stop event, or a question for the operator. Put it to them with the engineer's evidence, and send their ruling back to the same engineer, quoting their words.
 - **`failed`**: say what failed and what the branch holds. Ask the operator whether to relaunch, on the same model or one tier up.
@@ -129,11 +135,10 @@ When an item touched files that another open PR in the wave also touched, the se
 The ledger, its row ids and its statuses are in `docs/process.md`, *The ledger*. Write it through ArtifactData, with times from `date -u`, and put the writes of one moment in one `batch`.
 
 - **At each launch:** an `agents` row with `item`, `model`, `lane`, `status: "running"` and `startedAt`. Its kind follows the agent type: `explorer`, `builder` for an engineer, or `consultant`. Name it `<ITEM> explorer`, `<ITEM> engineer` or `<ITEM> consult <n>`; a consultant's `note` holds its question in a line. At an engineer's launch, also set the item's `status` to `building` and its `model`.
-- **At each report:** an explorer's or consultant's row becomes `finished`, with `finishedAt`; a consultant's `note` gets its confidence and the answer's file. An engineer that `failed` becomes `failed`. One that ends waiting becomes `idle`:
-  - at `pr-open`, with its `pr`. Also append the PR number to the item's `pr` array, keeping any already there: the board and `scripts/ledger-check.mjs` read the item's PRs, not the agent's.
+- **At each report:** an explorer's or consultant's row becomes `finished`, with `finishedAt`; a consultant's `note` gets its confidence and the answer's file. An engineer at `ready` becomes `idle`, with its `pr`, and the PR number is appended to the item's `pr` array, keeping any already there: the board and `scripts/ledger-check.mjs` read the item's PRs, not the agent's. One that `failed` becomes `failed`. One that ends waiting on you becomes `idle`:
   - at `needs-consult` or `stopped`, with the question or stop event in a line as its `note`.
 
-  It goes back to `running` when you send it work with `SendMessage`. When its PR merges, `scripts/ledger-check.mjs` reports the `idle` row, and you set it `finished`.
+  It goes back to `running` when you send it work with `SendMessage`. Once you've merged its PR, set it `finished`.
 - **Consults an engineer runs itself** don't reach you until its report. Add their rows then, from the report's *Consults* line, with the times from the files under `consults/`.
 - **At the end of the wave:** a `log` entry listing each item and its outcome. Then run `scripts/ledger-check.mjs` as `docs/process.md` says.
 
@@ -147,6 +152,7 @@ End with:
 | Item | Model | Branch | PR | Status | Consults |
 |------|-------|--------|----|--------|----------|
 
-- **Waiting on you:** <each stop event, open question or merge ready for `/gate merge`>
-- **Not done:** <each item not at pr-open, with the reason>
+- **Waiting on you:** <each stop event or open question>
+- **Not done:** <each item not merged, with the reason>
+- **Bugs filed:** <each issue the merge gates filed>
 ```
