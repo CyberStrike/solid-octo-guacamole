@@ -1,5 +1,5 @@
 import { splitChapters, type SpineDoc } from "./chapters";
-import { hasClass, numberTree, parseHtml, type ElementNode } from "./dom";
+import { hasClass, nodeBudget, numberTree, parseHtml, type ElementNode } from "./dom";
 import { collapseWhitespace } from "./entities";
 import { EpubError } from "./errors";
 import { collectImages, type ImageCandidate } from "./images";
@@ -19,15 +19,19 @@ export async function processEpub(input: Uint8Array | ArrayBuffer, options: Proc
   if (bytes.byteLength > LIMITS.maxInputBytes) {
     throw new EpubError("too_large", `File is larger than ${LIMITS.maxInputBytes} bytes`);
   }
+  let result: { work: ParsedWork; images: ImageCandidate[] };
   try {
-    return await run(bytes, options);
+    result = await run(bytes, options);
   } catch (e) {
     if (e instanceof EpubError) throw e;
     throw new EpubError("parse_failed", e instanceof Error ? e.message : String(e), { cause: e });
   }
+  // Outside the try: an error from the caller's callback is theirs, not a parse failure.
+  for (const image of result.images) await options.onImage?.(image.ref, image.bytes);
+  return result.work;
 }
 
-async function run(bytes: Uint8Array, options: ProcessOptions): Promise<ParsedWork> {
+async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: ParsedWork; images: ImageCandidate[] }> {
   const files = unzipEpub(bytes);
 
   const mimetype = files.get("mimetype");
@@ -37,7 +41,12 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<ParsedWo
 
   const pkg = readPackage(files);
   const reviewReasons: string[] = [];
+  // A missing spine item is held for review like a missing spine file: the
+  // chapter count check alone would not notice if the rest still match Stats.
+  for (const idref of pkg.unknownSpineRefs) reviewReasons.push(`unknown_spine_item: ${JSON.stringify(idref)}`);
 
+  // One node budget for every document parsed from this epub.
+  const budget = nodeBudget();
   const docs: SpineDoc[] = [];
   let next = 0;
   for (const item of pkg.spine) {
@@ -46,7 +55,7 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<ParsedWo
       reviewReasons.push(`missing_spine_file: ${item.path}`);
       continue;
     }
-    const root = await parseHtml(new TextDecoder().decode(data), item.path);
+    const root = await parseHtml(new TextDecoder().decode(data), item.path, budget);
     next = numberTree(root, next);
     docs.push({ path: item.path, root });
   }
@@ -90,12 +99,13 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<ParsedWo
 
   let summaryHtml = html(preface.summary);
   if (summaryHtml === null && opf.descriptions[0]) {
-    summaryHtml = html(await parseHtml(opf.descriptions[0], pkg.opfPath));
+    summaryHtml = html(await parseHtml(opf.descriptions[0], pkg.opfPath, budget));
   }
   const notesHtml = html(preface.notes);
 
   const split = splitChapters(docs, pkg.navPoints);
   if (split.method === "files") reviewReasons.push("chapters_one_per_file: no usable table of contents or chapter headings");
+  reviewReasons.push(...split.reviewReasons);
   const chapters: Chapter[] = split.chapters.map((c, i) => {
     const body = serializeChildren(c.nodes, ctx).trim();
     return { n: i + 1, title: c.title, html: body, words: countWords(body) };
@@ -113,9 +123,8 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<ParsedWo
   }
 
   const images = [...used.values()];
-  for (const image of images) options.onImage?.(image.ref, image.bytes);
 
-  return {
+  const work: ParsedWork = {
     ao3WorkId,
     title,
     authors: preface.authors.length > 0 ? preface.authors : opf.creators.map((pseud) => ({ pseud, user: null })),
@@ -137,4 +146,5 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<ParsedWo
     rawMeta: preface.rawMeta,
     reviewReasons,
   };
+  return { work, images };
 }

@@ -29,6 +29,8 @@ export interface EpubPackage {
   metadata: OpfMetadata;
   manifest: Map<string, ManifestItem>; // keyed by path
   spine: ManifestItem[];
+  /** Spine `idref`s with no manifest item. */
+  unknownSpineRefs: string[];
   navPoints: NavPoint[];
 }
 
@@ -170,9 +172,12 @@ export function readPackage(files: Map<string, Uint8Array>): EpubPackage {
 
   const spineNode = child(pkg, "spine");
   const spine: ManifestItem[] = [];
+  const unknownSpineRefs: string[] = [];
   for (const ref of asArray(spineNode?.["itemref"])) {
-    const item = byId.get(attr(ref, "idref") ?? "");
-    if (item && (item.mediaType === "application/xhtml+xml" || item.mediaType === "text/html")) spine.push(item);
+    const idref = attr(ref, "idref") ?? "";
+    const item = byId.get(idref);
+    if (!item) unknownSpineRefs.push(idref);
+    else if (item.mediaType === "application/xhtml+xml" || item.mediaType === "text/html") spine.push(item);
   }
 
   let navPoints: NavPoint[] = [];
@@ -193,6 +198,7 @@ export function readPackage(files: Map<string, Uint8Array>): EpubPackage {
     },
     manifest,
     spine,
+    unknownSpineRefs,
     navPoints,
   };
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { expandSelfClosing, parseHtml, type ElementNode, type Node } from "../src/dom";
+import { expectEpubError } from "./helpers";
 
 // Pins the HTMLRewriter behaviour the tokenizer relies on, as observed in workerd.
 
@@ -72,11 +73,29 @@ describe("parseHtml", () => {
     expect(shape(root)).toBe(`#root(p("a"),p("b"),"c")`);
   });
 
-  it("flattens nesting past the depth cap instead of recursing without bound", async () => {
-    const root = await parseHtml("<div>".repeat(5_000) + "deep" + "</div>".repeat(5_000));
+  it("rejects nesting past the depth cap instead of flattening it", async () => {
+    // Flattening would move the form's contents into an allowed ancestor.
+    const html = "<div>".repeat(300) + "<form><p>leak</p></form>" + "</div>".repeat(300);
+    await expectEpubError(parseHtml(html), "parse_failed");
+    const root = await parseHtml("<div>".repeat(250) + "fine" + "</div>".repeat(250));
     let depth = 0;
     for (let n: Node = root; n.type === "element" && n.children.length > 0; n = n.children[0]!) depth++;
-    expect(depth).toBeLessThanOrEqual(257);
+    expect(depth).toBe(251);
+  });
+
+  it("rejects input past the node budget, shared across documents", async () => {
+    const budget = { remaining: 1_000 };
+    await parseHtml("<b>x</b>".repeat(400), "a.xhtml", budget);
+    expect(budget.remaining).toBe(200);
+    await expectEpubError(parseHtml("<b>x</b>".repeat(101), "b.xhtml", budget), "too_large");
+  });
+
+  it("never lets a self-closing raw-text tag end a raw-text element early", async () => {
+    expect(expandSelfClosing(`<script>var s = "<script/>"; alert(1)</script><div/>`)).toBe(
+      `<script>var s = ""; alert(1)</script><div></div>`,
+    );
+    const root = await parseHtml(`<style>p { x: "<style/>" } <p>inside</p></style><p>after</p>`);
+    expect(shape(root)).toBe(`#root(style(${JSON.stringify(`p { x: "" } <p>inside</p>`)}),p("after"))`);
   });
 
   // workerd freezes clocks during synchronous code, so there is no timing

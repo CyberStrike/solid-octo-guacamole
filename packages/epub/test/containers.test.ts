@@ -1,4 +1,4 @@
-import { strToU8 } from "fflate";
+import { strFromU8, strToU8, unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { processEpub } from "../src";
 import { ao3Epub, expectEpubError, MiB, zipEntries } from "./helpers";
@@ -33,6 +33,23 @@ describe("hostile containers", () => {
     await expectEpubError(processEpub(zipEntries({ "big.bin": new Uint8Array(30 * MiB) })), "zip_bomb");
   });
 
+  it("rejects an entry that inflates past 20 MB while declaring a small size", async () => {
+    // Patch the local header's uncompressed size, so only the streaming check can catch it.
+    const zip = zipEntries({ "big.bin": new Uint8Array(30 * MiB) });
+    const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+    const name = new TextEncoder().encode("big.bin");
+    let patched = false;
+    for (let at = 0; at + 30 + name.length <= zip.length; at++) {
+      if (view.getUint32(at, true) !== 0x04034b50 || view.getUint16(at + 26, true) !== name.length) continue;
+      if (!name.every((b, i) => zip[at + 30 + i] === b)) continue;
+      view.setUint32(at + 22, 1024, true);
+      patched = true;
+      break;
+    }
+    expect(patched).toBe(true);
+    await expectEpubError(processEpub(zip), "zip_bomb");
+  });
+
   it("rejects an archive that inflates past 100 MB in total", async () => {
     const chunk = new Uint8Array(19 * MiB);
     const entries: Record<string, Uint8Array> = {};
@@ -45,6 +62,14 @@ describe("hostile containers", () => {
     for (let i = 0; i < 2_000; i++) entries[`f${i}.txt`] = "x";
     // Plus the mimetype entry: 2,001 in all.
     await expectEpubError(processEpub(zipEntries(entries)), "zip_bomb");
+  });
+
+  it("flags a spine itemref with no manifest item", async () => {
+    const files = unzipSync(ao3Epub());
+    const opf = strFromU8(files["content.opf"]!).replace("</spine>", `<itemref idref="ghost"/></spine>`);
+    const { mimetype: _, ...rest } = files;
+    const work = await processEpub(zipEntries({ ...rest, "content.opf": opf }));
+    expect(work.reviewReasons).toEqual(['unknown_spine_item: "ghost"']);
   });
 
   it("rejects input over 25 MB before unzipping", async () => {

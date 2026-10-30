@@ -1,4 +1,4 @@
-import { cleanText, find, findAll, hasClass, idOf, isAncestor, isBlankText, type ElementNode, type Node } from "./dom";
+import { cleanText, find, findAll, hasClass, idOf, isBlankText, walk, type ElementNode, type Node } from "./dom";
 import type { NavPoint } from "./package";
 import { regionsById } from "./preface";
 
@@ -21,6 +21,8 @@ export interface RawChapter {
 export interface ChapterSplit {
   chapters: RawChapter[];
   method: "toc" | "headings" | "files";
+  /** Content the split could not place with confidence. */
+  reviewReasons: string[];
 }
 
 interface Start {
@@ -30,15 +32,28 @@ interface Start {
 
 const HEADING = /^h[1-6]$/;
 
-/** Deep-copies the parts of `node` whose positions fall in [lo, hi). */
-function cloneRange(node: Node, lo: number, hi: number, parent: ElementNode | null): Node | null {
-  if (node.end < lo || node.pos >= hi) return null;
+/** Index of the first of `nodes` (siblings, in document order) whose subtree reaches `lo`. */
+function firstReaching(nodes: readonly Node[], lo: number): number {
+  let a = 0;
+  let b = nodes.length;
+  while (a < b) {
+    const m = (a + b) >> 1;
+    if (nodes[m]!.end < lo) a = m + 1;
+    else b = m;
+  }
+  return a;
+}
+
+/** Calls `f` for each of `nodes` that overlaps [lo, hi), without visiting the others. */
+function eachInRange(nodes: readonly Node[], lo: number, hi: number, f: (n: Node) => void): void {
+  for (let i = firstReaching(nodes, lo); i < nodes.length && nodes[i]!.pos < hi; i++) f(nodes[i]!);
+}
+
+/** Deep-copies the parts of `node` (which overlaps [lo, hi)) whose positions fall in the range. */
+function cloneRange(node: Node, lo: number, hi: number, parent: ElementNode | null): Node {
   if (node.type === "text") return { ...node, parent };
   const copy: ElementNode = { ...node, attrs: { ...node.attrs }, children: [], parent };
-  for (const child of node.children) {
-    const c = cloneRange(child, lo, hi, copy);
-    if (c) copy.children.push(c);
-  }
+  eachInRange(node.children, lo, hi, (child) => copy.children.push(cloneRange(child, lo, hi, copy)));
   return copy;
 }
 
@@ -70,21 +85,43 @@ function takeLeadingHeading(nodes: Node[]): string | null {
   return cleanText(h) || null;
 }
 
-function startsFromToc(docs: SpineDoc[], regions: ElementNode[], navPoints: NavPoint[]): Start[] | null {
+/** First element with each id in `root`. */
+function idIndex(root: ElementNode): Map<string, ElementNode> {
+  const out = new Map<string, ElementNode>();
+  walk(root, (n) => {
+    if (n.type !== "element") return;
+    const id = idOf(n);
+    if (id !== undefined && !out.has(id)) out.set(id, n);
+  });
+  return out;
+}
+
+function startsFromToc(docs: SpineDoc[], perDoc: Map<SpineDoc, ElementNode[]>, navPoints: NavPoint[]): Start[] | null {
   const byPath = new Map(docs.map((d) => [d.path, d]));
+  const ids = new Map<SpineDoc, Map<string, ElementNode>>();
+  const regionSet = new Set([...perDoc.values()].flat());
+  const regionOf = (el: ElementNode): ElementNode | null => {
+    for (let p: ElementNode | null = el; p; p = p.parent) if (regionSet.has(p)) return p;
+    return null;
+  };
+
   const starts: Start[] = [];
   for (const np of navPoints) {
     const doc = byPath.get(np.path);
     if (!doc) continue;
-    const inDoc = regions.filter((r) => r.pos >= doc.root.pos && r.pos <= doc.root.end);
+    let target: ElementNode | null = null;
+    if (np.anchor) {
+      if (!ids.has(doc)) ids.set(doc, idIndex(doc.root));
+      target = ids.get(doc)!.get(np.anchor) ?? null;
+      // A broken TOC: the heading fallback is safer than merging chapters.
+      if (!target) return null;
+    }
     let pos: number | null = null;
-    const target = np.anchor ? find(doc.root, (el) => idOf(el) === np.anchor) : null;
-    if (np.anchor && !target) continue;
-    if (target && !inDoc.includes(target)) {
-      if (inDoc.some((r) => isAncestor(r, target))) pos = target.pos;
+    if (target && !regionSet.has(target)) {
+      if (regionOf(target)) pos = target.pos;
     } else {
       // No anchor (or the anchor is the region itself): the file's first non-empty #chapters block.
-      const region = target ?? inDoc.find((r) => r.end > r.pos);
+      const region = target ?? perDoc.get(doc)!.find((r) => r.end > r.pos);
       if (region) pos = region.pos + 1;
     }
     if (pos === null) continue; // preface, afterword, or anything outside #chapters
@@ -103,15 +140,12 @@ function startsFromHeadings(regions: ElementNode[]): Start[] | null {
   return headings.length > 0 ? headings.map((h) => ({ pos: h.pos, title: null })) : null;
 }
 
+/** Copies of the content in [lo, hi) under `scopes` (in document order, not nested). */
 function rangeContent(scopes: ElementNode[], lo: number, hi: number): Node[] {
   const out: Node[] = [];
-  for (const scope of scopes) {
-    if (scope.end < lo || scope.pos >= hi) continue;
-    for (const child of scope.children) {
-      const c = cloneRange(child, lo, hi, null);
-      if (c) out.push(c);
-    }
-  }
+  eachInRange(scopes, lo, hi, (scope) => {
+    eachInRange((scope as ElementNode).children, lo, hi, (child) => out.push(cloneRange(child, lo, hi, null)));
+  });
   return out;
 }
 
@@ -128,25 +162,44 @@ function build(scopes: ElementNode[], starts: Start[]): RawChapter[] {
   });
 }
 
+function split(regions: ElementNode[], starts: Start[], method: "toc" | "headings", reviewReasons: string[]): ChapterSplit {
+  if (hasText(rangeContent(regions, 0, starts[0]!.pos))) {
+    reviewReasons.push("content_before_first_chapter: text in #chapters before the first chapter start");
+  }
+  return { chapters: build(regions, starts), method, reviewReasons };
+}
+
 export function splitChapters(docs: SpineDoc[], navPoints: NavPoint[]): ChapterSplit {
-  const regions = regionsById(docs.map((d) => d.root), "chapters");
+  const perDoc = new Map(docs.map((d) => [d, regionsById([d.root], "chapters")]));
+  const regions = docs.flatMap((d) => perDoc.get(d)!);
+  const reviewReasons: string[] = [];
 
   if (regions.length > 0) {
-    const toc = startsFromToc(docs, regions, navPoints);
-    if (toc) return { chapters: build(regions, toc), method: "toc" };
+    // A spine file after the chapters start that has no region of its own is
+    // not read. Calibre may continue a chapter in one; without a real example
+    // of that, flag it rather than guess.
+    const first = docs.findIndex((d) => perDoc.get(d)!.length > 0);
+    for (const doc of docs.slice(first + 1)) {
+      if (perDoc.get(doc)!.length > 0) continue;
+      if (find(doc.root, (el) => idOf(el) === "preface" || idOf(el) === "afterword")) continue;
+      const body = find(doc.root, (el) => el.tag === "body") ?? doc.root;
+      if (hasText([body])) reviewReasons.push(`content_outside_chapters: ${doc.path}`);
+    }
+
+    const toc = startsFromToc(docs, perDoc, navPoints);
+    if (toc) return split(regions, toc, "toc", reviewReasons);
     const headings = startsFromHeadings(regions);
-    if (headings) return { chapters: build(regions, headings), method: "headings" };
+    if (headings) return split(regions, headings, "headings", reviewReasons);
   }
 
   // Last resort: one chapter per spine file that has content.
   const chapters: RawChapter[] = [];
   for (const doc of docs) {
-    const inDoc = regions.filter((r) => r.pos >= doc.root.pos && r.pos <= doc.root.end);
-    const scopes = regions.length > 0 ? inDoc : [find(doc.root, (el) => el.tag === "body") ?? doc.root];
+    const scopes = regions.length > 0 ? perDoc.get(doc)! : [find(doc.root, (el) => el.tag === "body") ?? doc.root];
     const nodes = rangeContent(scopes, 0, Number.POSITIVE_INFINITY);
     if (!hasText(nodes)) continue;
     const heading = takeLeadingHeading(nodes);
     chapters.push({ title: heading ?? `Chapter ${chapters.length + 1}`, nodes });
   }
-  return { chapters, method: "files" };
+  return { chapters, method: "files", reviewReasons };
 }

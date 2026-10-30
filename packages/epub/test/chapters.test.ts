@@ -113,4 +113,46 @@ describe("chapter boundaries", () => {
     ]);
     expect(work.reviewReasons).toEqual([expect.stringMatching(/^chapters_one_per_file/)]);
   });
+
+  it("falls back to headings when a TOC anchor does not resolve", async () => {
+    const broken = [navPoints[0]!, { ...navPoints[1]!, src: "Three%20Parts_split_000.xhtml#nowhere" }, navPoints[2]!];
+    const work = await processEpub(ao3Epub(spec("Chapters: 3/3", { navPoints: broken })));
+    expect(work.chapters.map((c) => c.title)).toEqual(["One", "Two", "Three"]);
+    expect(work.reviewReasons).toEqual([]);
+  });
+
+  it("flags text before the first chapter start", async () => {
+    const lead = files.map((f, i) => (i === 0 ? { ...f, body: f.body.replace(`<div class="meta">`, `<p>marker-c0-lead</p><div class="meta">`) } : f));
+    const anchored = [{ ...navPoints[0]!, src: "Three%20Parts_split_000.xhtml#toc1" }, navPoints[1]!, navPoints[2]!];
+    const work = await processEpub(ao3Epub(spec("Chapters: 3/3", { files: lead, navPoints: anchored })));
+    expect(work.chapters).toHaveLength(3);
+    expect(work.reviewReasons).toEqual([expect.stringMatching(/^content_before_first_chapter/)]);
+  });
+
+  it("flags a spine file between chapters that has no #chapters region", async () => {
+    const orphan = { name: "Three Parts_split_000b.xhtml", body: `<div class="userstuff2"><p>marker-cx-orphan</p></div>` };
+    const work = await processEpub(ao3Epub(spec("Chapters: 3/3", { files: [files[0]!, orphan, files[1]!, files[2]!] })));
+    expect(work.chapters).toHaveLength(3);
+    expect(work.reviewReasons).toEqual(["content_outside_chapters: Three Parts_split_000b.xhtml"]);
+  });
+});
+
+describe("preface labels and entities", () => {
+  it("keeps labels that collide with Object.prototype names in rawMeta", async () => {
+    const work = await processEpub(
+      ao3Epub({ extraDl: `<dt>Constructor:</dt><dd>one</dd><dt>__proto__:</dt><dd>two</dd><dt>toString:</dt><dd>three</dd>` }),
+    );
+    expect(Object.entries(work.rawMeta)).toEqual([
+      ["Constructor", "one"],
+      ["__proto__", "two"],
+      ["toString", "three"],
+    ]);
+  });
+
+  it("decodes XHTML named entities in tags", async () => {
+    const work = await processEpub(
+      ao3Epub({ extraDl: `<dt>Characters:</dt><dd><a href="http://archiveofourown.org/tags/c">Ren&eacute;e &Omega; &euro;</a></dd>` }),
+    );
+    expect(work.characters).toEqual(["Renée Ω €"]);
+  });
 });

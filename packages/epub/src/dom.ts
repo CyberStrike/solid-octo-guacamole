@@ -1,4 +1,6 @@
 import { collapseWhitespace, decodeEntities } from "./entities";
+import { EpubError } from "./errors";
+import { LIMITS } from "./unzip";
 
 // A small document tree built from HTMLRewriter's token stream. HTMLRewriter is
 // used purely as a tokenizer here: its own output is discarded.
@@ -47,35 +49,60 @@ const CLOSES_P = new Set([
  * exposes no `selfClosing` flag. Rewrite non-void self-closing tags to an
  * explicit pair first. This only shapes the tree: everything still goes
  * through the allowlist serializer afterwards.
+ *
+ * Raw-text elements end only at their own end tag, and an expansion only ever
+ * adds `</x>` for the tag it expands. So a self-closing raw-text tag is removed
+ * instead: expanded inside a script's text, `<script/>` would end that script
+ * early. The serializer drops all of these elements anyway.
  */
 const SELF_CLOSING =
   /<([a-zA-Z][a-zA-Z0-9:-]*)((?:\s+[^\s"'<>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>=`/]+))?)*)\s*\/>/g;
 
+const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "noscript", "plaintext"]);
+
 export function expandSelfClosing(html: string): string {
-  return html.replace(SELF_CLOSING, (whole, tag: string, attrs: string) =>
-    VOID.has(tag.toLowerCase()) ? whole : `<${tag}${attrs}></${tag}>`,
-  );
+  return html.replace(SELF_CLOSING, (whole, tag: string, attrs: string) => {
+    const name = tag.toLowerCase();
+    if (RAW_TEXT.has(name)) return "";
+    return VOID.has(name) ? whole : `<${tag}${attrs}></${tag}>`;
+  });
 }
 
 function element(tag: string, file: string, parent: ElementNode | null): ElementNode {
   return { type: "element", tag, attrs: Object.create(null), children: [], parent, file, pos: 0, end: 0 };
 }
 
-function appendText(parent: ElementNode, raw: string): void {
-  const last = parent.children[parent.children.length - 1];
-  if (last?.type === "text") last.raw += raw;
-  else parent.children.push({ type: "text", raw, parent, pos: 0, end: 0 });
-}
-
-// Deeper elements are flattened into their ancestor. Bounds recursion in every
-// tree walk, and the cost of per-element text lookups on hostile input.
+// Deeper documents are rejected. Flattening them instead would move the
+// contents of a dropped element (a <form>, say) into an allowed ancestor. Also
+// bounds recursion in every tree walk.
 const MAX_DEPTH = 256;
 
+/** Nodes left to allocate; share one across every document of an epub. */
+export interface NodeBudget {
+  remaining: number;
+}
+
+export const nodeBudget = (): NodeBudget => ({ remaining: LIMITS.maxNodes });
+
 /** Parses an HTML/XHTML string into a tree under a synthetic `#root` element. */
-export async function parseHtml(html: string, file = ""): Promise<ElementNode> {
+export async function parseHtml(html: string, file = "", budget: NodeBudget = nodeBudget()): Promise<ElementNode> {
   const root = element("#root", file, null);
   const stack: ElementNode[] = [root];
   const top = (): ElementNode => stack[stack.length - 1]!;
+
+  // Set once the document is rejected; later tokens are skipped. (Throwing from
+  // a handler surfaces in workerd as an uncaught exception.)
+  let failure: EpubError | null = null;
+  const spend = (): boolean => {
+    if (--budget.remaining >= 0) return true;
+    failure = new EpubError("too_large", `More than ${LIMITS.maxNodes} elements and text nodes`);
+    return false;
+  };
+  const appendText = (parent: ElementNode, raw: string): void => {
+    const last = parent.children[parent.children.length - 1];
+    if (last?.type === "text") last.raw += raw;
+    else if (spend()) parent.children.push({ type: "text", raw, parent, pos: 0, end: 0 });
+  };
 
   // Close by node reference, so a mismatched end tag also closes whatever was
   // left open inside it. An end tag for a node no longer open is ignored.
@@ -87,30 +114,37 @@ export async function parseHtml(html: string, file = ""): Promise<ElementNode> {
   const rewriter = new HTMLRewriter()
     .on("*", {
       element(el) {
+        if (failure) return;
         const tag = el.tagName.toLowerCase();
         if (CLOSES_P.has(tag) && top().tag === "p") stack.pop();
+        if (!spend()) return;
         const node = element(tag, file, top());
         for (const [name, value] of el.attributes) {
           const key = name!.toLowerCase();
           if (!(key in node.attrs)) node.attrs[key] = value ?? "";
         }
         top().children.push(node);
-        if (VOID.has(tag) || stack.length >= MAX_DEPTH) return;
+        if (VOID.has(tag)) return;
         try {
           el.onEndTag(() => close(node));
         } catch {
           return; // lol-html refuses end-tag handlers on elements that cannot have one.
+        }
+        if (stack.length >= MAX_DEPTH) {
+          failure = new EpubError("parse_failed", `Elements nested more than ${MAX_DEPTH} deep in ${file}`);
+          return;
         }
         stack.push(node);
       },
     })
     .onDocument({
       text(t) {
-        if (t.text) appendText(top(), t.text);
+        if (!failure && t.text) appendText(top(), t.text);
       },
     });
 
   await rewriter.transform(new Response(expandSelfClosing(html))).arrayBuffer();
+  if (failure) throw failure;
   return root;
 }
 
@@ -190,6 +224,27 @@ export function textContent(node: Node): string {
 
 export function cleanText(node: Node): string {
   return collapseWhitespace(textContent(node));
+}
+
+/**
+ * `cleanText`, or null once the subtree holds more than `maxChars` of raw text
+ * or `maxNodes` nodes. For predicates run on every element, where a full
+ * `cleanText` would make the scan quadratic in the document size.
+ */
+export function boundedText(node: Node, maxChars: number, maxNodes = 4 * maxChars): string | null {
+  let s = "";
+  let nodes = 0;
+  const visit = (n: Node): boolean => {
+    if (++nodes > maxNodes) return false;
+    if (n.type === "text") {
+      s += n.raw;
+      return s.length <= maxChars;
+    }
+    if (n.tag === "script" || n.tag === "style") return true;
+    for (const child of n.children) if (!visit(child)) return false;
+    return true;
+  };
+  return visit(node) ? collapseWhitespace(decodeEntities(s)) : null;
 }
 
 /** Source formatting whitespace only (a no-break space is content). */

@@ -1,5 +1,5 @@
 import {
-  cleanText, find, findAll, findOutermost, hasClass, idOf, nextElementSibling, type ElementNode,
+  boundedText, cleanText, find, findAll, findOutermost, hasClass, idOf, nextElementSibling, type ElementNode,
 } from "./dom";
 import { collapseWhitespace, decodeEntities } from "./entities";
 import type { Author, SeriesRef, Stats } from "./types";
@@ -35,22 +35,27 @@ export function workIdFromUrl(url: string): string | null {
 
 type TagField = "rating" | "warnings" | "categories" | "fandoms" | "relationships" | "characters" | "freeforms";
 
-const TAG_LABELS: Record<string, TagField> = {
-  "rating": "rating",
-  "ratings": "rating",
-  "archive warning": "warnings",
-  "archive warnings": "warnings",
-  "category": "categories",
-  "categories": "categories",
-  "fandom": "fandoms",
-  "fandoms": "fandoms",
-  "relationship": "relationships",
-  "relationships": "relationships",
-  "character": "characters",
-  "characters": "characters",
-  "additional tag": "freeforms",
-  "additional tags": "freeforms",
-};
+// A Map, so a label such as "Constructor:" is not found on Object.prototype.
+const TAG_LABELS = new Map<string, TagField>([
+  ["rating", "rating"],
+  ["ratings", "rating"],
+  ["archive warning", "warnings"],
+  ["archive warnings", "warnings"],
+  ["category", "categories"],
+  ["categories", "categories"],
+  ["fandom", "fandoms"],
+  ["fandoms", "fandoms"],
+  ["relationship", "relationships"],
+  ["relationships", "relationships"],
+  ["character", "characters"],
+  ["characters", "characters"],
+  ["additional tag", "freeforms"],
+  ["additional tags", "freeforms"],
+]);
+
+// Text caps for label predicates that run on every preface element.
+const LABEL_CHARS = 64;
+const LINE_CHARS = 2_000;
 
 /** All outermost elements with this id, across the spine in order. */
 export function regionsById(roots: readonly ElementNode[], id: string): ElementNode[] {
@@ -118,7 +123,7 @@ function parseAuthors(prefaces: ElementNode[]): Author[] {
   let byline: ElementNode | null = null;
   for (const region of prefaces) {
     byline = find(region, (el) => hasClass(el, "byline")) ??
-      find(region, (el) => /^by\s/i.test(cleanText(el)) && find(el, (a) => a.tag === "a" && /\bauthor\b/.test(a.attrs["rel"] ?? "")) !== null);
+      find(region, (el) => /^by\s/i.test(boundedText(el, LINE_CHARS) ?? "") && find(el, (a) => a.tag === "a" && /\bauthor\b/.test(a.attrs["rel"] ?? "")) !== null);
     if (byline) break;
   }
   if (!byline) return [];
@@ -148,7 +153,7 @@ function parseAuthors(prefaces: ElementNode[]): Author[] {
 function headedBlock(scope: readonly ElementNode[], label: string): ElementNode | null {
   const want = label.toLowerCase();
   for (const region of scope) {
-    for (const heading of findAll(region, (el) => cleanText(el).toLowerCase() === want)) {
+    for (const heading of findAll(region, (el) => boundedText(el, LABEL_CHARS)?.toLowerCase() === want)) {
       const block = nextElementSibling(heading);
       if (block?.tag === "blockquote") return block;
     }
@@ -160,8 +165,13 @@ function headedBlock(scope: readonly ElementNode[], label: string): ElementNode 
 function findWorkId(prefaces: ElementNode[]): string | null {
   const posted = /posted originally on the archive of our own/i;
   for (const region of prefaces) {
-    const matches = findAll(region, (el) => posted.test(cleanText(el)));
-    const innermost = matches.filter((m) => !matches.some((o) => o !== m && o.pos > m.pos && o.pos <= m.end));
+    const matches = findAll(region, (el) => posted.test(boundedText(el, LINE_CHARS) ?? ""));
+    // `matches` is in document order, so a match contains another exactly when
+    // the next match starts inside it.
+    const innermost = matches.filter((m, i) => {
+      const next = matches[i + 1];
+      return next === undefined || next.pos > m.end;
+    });
     for (const line of innermost) {
       for (const a of findAll(line, (el) => el.tag === "a")) {
         const id = workIdFromUrl(href(a));
@@ -174,7 +184,8 @@ function findWorkId(prefaces: ElementNode[]): string | null {
 
 export function parsePreface(roots: readonly ElementNode[]): Preface {
   const prefaces = regionsById(roots, "preface");
-  const rawMeta: Record<string, string> = {};
+  // No prototype: labels come from the file, and may be "__proto__".
+  const rawMeta: Record<string, string> = Object.create(null);
   const tags: Record<TagField, string[]> = {
     rating: [], warnings: [], categories: [], fandoms: [], relationships: [], characters: [], freeforms: [],
   };
@@ -193,7 +204,7 @@ export function parsePreface(roots: readonly ElementNode[]): Preface {
       }
       if (node.tag !== "dd" || label === null) continue;
       const key = label.toLowerCase();
-      const field = TAG_LABELS[key];
+      const field = TAG_LABELS.get(key);
       if (field) tags[field].push(...tagList(node));
       else if (key === "language") language = cleanText(node) || null;
       else if (key === "series") series = series.concat(parseSeries(node));

@@ -52,4 +52,28 @@ describe("images", () => {
     expect(html).not.toMatch(/svg|fake|huge|data:|missing/);
     for (let i = 1; i <= 7; i++) expect(html).toContain(`img-${i}`);
   });
+
+  const withPng = () =>
+    ao3Epub({
+      files: [{ name: "pics_split_001.xhtml", body: `<div id="chapters"><p>pic <img src="images/p.png" alt="Ren&eacute;e"/></p></div>` }],
+      extraManifest: [{ href: "images/p.png", mediaType: "image/png", data: PNG }],
+    });
+
+  it("awaits an async onImage before resolving, and decodes alt text", async () => {
+    const done: string[] = [];
+    const work = await processEpub(withPng(), {
+      onImage: async (ref) => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        done.push(ref.key);
+      },
+    });
+    expect(done).toEqual([work.images[0]!.key]);
+    expect(work.chapters[0]!.html).toContain(`alt="Renée"`);
+  });
+
+  it("passes an onImage failure through unchanged, not as a parse failure", async () => {
+    const boom = new Error("upload failed");
+    const err = await processEpub(withPng(), { onImage: async () => Promise.reject(boom) }).catch((e: unknown) => e);
+    expect(err).toBe(boom);
+  });
 });

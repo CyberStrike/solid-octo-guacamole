@@ -70,6 +70,7 @@ export interface ProcessOptions {
   /**
    * Receives the bytes of each image the output references, once per key, in
    * the same order as `ParsedWork.images`. Keeps `ParsedWork` free of binary data.
+   * Awaited one at a time: `processEpub` resolves after the last one has.
    */
-  onImage?: (image: ImageRef, bytes: Uint8Array) => void;
+  onImage?: (image: ImageRef, bytes: Uint8Array) => unknown;
 }

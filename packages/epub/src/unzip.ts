@@ -9,7 +9,17 @@ export const LIMITS = {
   maxTotalBytes: 100 * MiB,
   maxEntryBytes: 20 * MiB,
   maxImageBytes: 5 * MiB,
+  /**
+   * Elements plus text nodes across every parsed document. Bounds tree memory
+   * (chapter copies roughly double it) inside a 128 MB Worker; also caps the
+   * largest work accepted. A guess until measured against real long works.
+   */
+  maxNodes: 300_000,
 } as const;
+
+// Compressed bytes fed to the inflater at a time. Deflate expands at most about
+// 1032:1, so one push can produce at most ~16 MiB before the limits are checked.
+const PUSH_BYTES = 16 * 1024;
 
 function isSafeName(name: string): boolean {
   if (name === "" || name.includes("\\") || name.includes("\0")) return false;
@@ -92,7 +102,12 @@ export function unzipEpub(bytes: Uint8Array): Map<string, Uint8Array> {
   unzip.register(UnzipInflate);
 
   try {
-    unzip.push(bytes, true);
+    // In bounded chunks: a single push of the whole archive would inflate an
+    // entry with a falsified size in one allocation, before `ondata` runs.
+    for (let at = 0; at < bytes.length && !failure; at += PUSH_BYTES) {
+      const end = Math.min(at + PUSH_BYTES, bytes.length);
+      unzip.push(bytes.subarray(at, end), end === bytes.length);
+    }
   } catch (e) {
     if (!failure) throw new EpubError("not_epub", `Unreadable zip: ${(e as Error).message}`, { cause: e });
   }
