@@ -80,10 +80,13 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
   const preface = parsePreface(docs.map((d) => d.root));
   const opf = pkg.metadata;
 
+  // AO3-native exports only: the work URL must come from the preface's
+  // "Posted originally" line. An AO3 URL only in the OPF (FanFicFare and
+  // similar) is not enough; the OPF is a cross-check.
+  const ao3WorkId = preface.workId;
+  if (!ao3WorkId) throw new EpubError("not_ao3", "No AO3 preface with a work URL");
   const opfWorkId = [...opf.identifiers, ...opf.sources].map(workIdFromUrl).find((id) => id !== null) ?? null;
-  const ao3WorkId = preface.workId ?? opfWorkId;
-  if (!ao3WorkId) throw new EpubError("not_ao3", "No archiveofourown.org work URL found");
-  if (preface.workId && opfWorkId && preface.workId !== opfWorkId) {
+  if (opfWorkId && opfWorkId !== ao3WorkId) {
     reviewReasons.push(`work_id_mismatch: preface ${preface.workId}, OPF ${opfWorkId}`);
   }
 

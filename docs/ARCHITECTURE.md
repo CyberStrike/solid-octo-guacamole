@@ -78,56 +78,95 @@ AO3 URL and says plainly that this is an unofficial stopgap.
 
 ```sql
 user         (id, email, name, email_verified, image, created_at, updated_at,  -- Better Auth's table
-              role, upload_quota_used, banned_at)                             -- plus our fields
+              role, upload_quota_used, banned_at,                             -- plus our fields
+              terms_accepted_at NULL,  -- NULL until a new account accepts the terms
+              warnings_off)            -- signed-in reader turned the warnings screen off
 session, account, verification  -- Better Auth's tables; verification holds hashed magic-link tokens
 works        (id, ao3_work_id UNIQUE NULL, title, summary_html, rating, language,
               words, chapters_count, complete, published_at, updated_at,
-              status,            -- processing | live | held | hidden | removed
+              status,            -- processing | live | hidden | removed
+              hidden_cause NULL, -- removal_request | reports | moderator, while hidden
               current_version_id, raw_meta jsonb, search tsvector)
 work_authors (work_id, pseud, ao3_user NULL)
-work_versions(id, work_id, upload_id, chapter_count, r2_prefix, created_at)
+work_versions(id, work_id, upload_id, chapter_count, r2_prefix, created_at,
+              review_reasons text[],  -- from the parser; non-empty shows the notice
+              checked_at NULL)        -- set when a moderator approves the version
 chapters     (work_id, version_id, n, title, words, r2_key)
 tags         (id, type, name, name_norm) -- type: fandom|relationship|character|freeform|warning|category|rating
 work_tags    (work_id, tag_id)
 uploads      (id, user_id, r2_key, sha256, bytes, status, lease_until,
               error_stage, error, work_id NULL, created_at)
-reports      (id, work_id, reporter_id, kind, body, status, created_at)  -- reporting needs an account
+reports      (id, work_id, reporter_id, kind, body, status, created_at)  -- reporting needs an account;
+                                                  -- kind includes wrong_version ("This version is wrong")
 takedowns    (id, work_id, requester, basis, status, resolved_by, created_at)
 requests     (id, kind, work_id NULL, pseud_norm NULL, contact_email, statement,
               status, ip_hash, created_at)        -- kind: remove_work | opt_out
 optouts      (id, pseud_norm, ao3_user NULL, request_id, active, created_at)  -- checked at ingest
+requester_blocks (id, contact_email NULL, ip_hash NULL, created_by, created_at)
 ```
+
+A held upload doesn't make its work held: a first upload always goes live (with
+the notice if the parser gave review reasons), and a later upload that is held
+leaves the work live at its current version. Held is a state of the version
+(its upload is `held_for_review`), never of the work, so `works.status` has no
+held value.
 
 **Dedupe.** AO3 epubs carry the original work URL
 (`archiveofourown.org/works/<id>`) in the preface. That ID is the canonical key.
 Later uploads of the same work go through the versioning rules in the EPUB
-processor section. Files without an AO3 ID are rejected in v1. Exact
-re-uploads are caught early by the file's SHA-256.
+processor section. Files without an AO3 preface carrying that URL are
+rejected in v1, even if the OPF names an AO3 work. Byte-identical
+re-uploads are caught at `/complete` by the file's SHA-256: the upload is marked
+`duplicate` straight away, with no ingest run and no second copy kept
+(Ingestion pipeline, step 3).
 
 **Tags.** AO3's tag wrangling (canonical tags and synonyms) can't be rebuilt in
 a week. Store tags exactly as written, plus a normalized form (`name_norm`:
 lowercased, whitespace and punctuation folded) used for matching. Moderators can
 merge synonyms later.
 
+**Pseuds.** Opt-outs match on `pseud_norm`: the pseud in Unicode NFKC,
+case-folded, with leading and trailing whitespace trimmed and inner runs of
+whitespace collapsed to one space. Unlike `name_norm`, punctuation is kept, so
+`a_b` and `a b` are different pseuds. The same rule is applied to the opt-out
+request and to every byline at ingest.
+
 ## Ingestion pipeline
 
 1. **Ask.** `POST /uploads` checks the session, Turnstile, the daily quota and
-   the declared size (25 MB or less). It inserts an `uploads` row and returns a
-   presigned R2 `PUT` URL, valid for 10 minutes and locked to
-   `Content-Type: application/epub+zip`. R2 presigned URLs support PUT but not
+   the declared size (25 MB or less). The upload page's script calls it, so a
+   signed-out request gets 401 rather than a redirect it can't follow (the
+   page itself redirects to sign in), a failed or missing Turnstile token gets 400, a declared size over
+   25 MB gets 413 and a spent quota gets 429 with `Retry-After` (Surge
+   controls); the upload page shows the message. Otherwise it inserts an
+   `uploads` row and returns a presigned R2 `PUT` URL, valid for 10 minutes
+   and locked to `Content-Type: application/epub+zip`. R2 presigned URLs support PUT but not
    form POST, and the bucket needs a CORS rule for `app.<domain>`.
 2. **Upload.** The browser PUTs the file straight to R2 and shows progress.
    Uploading needs JavaScript, as every form with a Turnstile check does
    (Turnstile can't produce a token without it); without JS the upload page
    says so (FRONTEND-DISCOVERY, *Where the frontend changes the architecture*).
 3. **Confirm.** `POST /uploads/:id/complete` HEADs the object, checks its size,
-   and enqueues `{upload_id}`.
+   and hashes it (SHA-256). If the hash matches an earlier upload that was
+   ingested into a work that is `live` or `hidden` (that upload's status is
+   `live`, `held_for_review` or `duplicate`, with a `work_id`), the new upload
+   is marked `duplicate` straight away, with `work_id` set to that work:
+   nothing is enqueued, there is no ingest run, and the object is never copied
+   to `originals/`, so no second copy is kept. The uploader sees the "Already
+   in the archive" badge with a link to the work. Any other match (an upload
+   still `pending` or `processing`, one that was rejected, or one whose work
+   was removed) gets no shortcut: the new upload is enqueued like any other,
+   and the versioning rules or the same rejection decide it. Otherwise it
+   enqueues `{upload_id}`.
 4. **Process.** The ingest consumer runs with a batch size of about 5, retries,
    and a dead-letter queue. See the EPUB processor section below.
 5. **Track.** The uploader's page polls `GET /uploads/:id` for its status:
    `processing`, `live`, `held_for_review`, `duplicate`, or one of the
    rejection codes below. `held_for_review` and `duplicate` are not
-   rejections: the upload is kept, it just isn't (yet) the current version.
+   rejections: the upload is kept (a byte-identical re-upload keeps only its
+   row), it just isn't (yet) the current version. An upload that went live
+   with review reasons is `live`; the notice is shown on the work, not as an
+   upload status.
 
 ### EPUB processor
 
@@ -152,18 +191,36 @@ Chapter text isn't indexed.
    - at most 20 MB per entry
 
    Count bytes during decompression as well, because a zip can lie about its
-   sizes. Reject entry names with `..`, a leading `/` or a drive letter. The
-   `mimetype` entry must be `application/epub+zip`. Breaking any of these
-   rules gives `not_epub` or `zip_bomb`. Unzip with `fflate`.
+   sizes. Unzip with `fflate`. Each problem has one code, here and while the
+   documents are parsed in the next steps:
+   - **`zip_bomb`:** more than 2,000 entries, or more than 20 MB in one entry
+     or 100 MB in total, whether declared in the index or found while
+     inflating.
+   - **`not_epub`:** the file isn't a zip; the `mimetype` entry is missing or
+     isn't `application/epub+zip`; an entry name is unsafe (`..`, a leading
+     `/` or a drive letter) or appears twice; the central directory disagrees
+     with the local headers; the archive is ZIP64; `META-INF/container.xml`
+     or the OPF is missing; an XML file declares entities (`<!ENTITY`); or
+     `container.xml`, the OPF or the NCX isn't well-formed XML.
+   - **`too_large`:** the input is over 25 MB, or the documents together pass
+     the parser's node budget (300,000 elements and text nodes).
+   - **`parse_failed`:** elements are nested more than 256 deep, or a content
+     document (XHTML) fails to parse in some other way. Malformed package XML
+     (container, OPF, NCX) is `not_epub`, above.
 3. **Index files.** `META-INF/container.xml` points to the OPF, which gives the
    metadata, the file list, the reading order and the table of contents (NCX
    or EPUB3 nav). Workers have no `DOMParser`, so XML is parsed with
    `fast-xml-parser`. XHTML goes through `HTMLRewriter`.
 4. **AO3 preface.**
-   - **Provenance:** look for the work URL
-     (`archiveofourown.org/works/<id>`) in the preface's "Posted originally on
-     the Archive of Our Own" line, or in the OPF identifier or source. If it's
-     missing, the file is rejected with `not_ao3`.
+   - **Provenance:** the work URL (`archiveofourown.org/works/<id>`) must come
+     from the preface's "Posted originally on the Archive of Our Own" line. If
+     that line or its URL is missing, the file is rejected with `not_ao3`,
+     even when an AO3 work URL appears in the OPF identifier or source: a file
+     with no AO3 preface isn't an AO3-native export. When the OPF identifier
+     or source also holds an AO3 work URL, it is cross-checked against the
+     preface's; a mismatch gives the `work_id_mismatch` review reason (step 5).
+     A native file whose preface has no `Rating:` gets the `missing_rating`
+     review reason.
    - **Fields are matched by label text, never by CSS class.** AO3 builds
      epubs with Calibre, which may rename classes. Read the `dt`/`dd` pairs
      under labels such as `Rating:`, `Archive Warning:`, `Category:`,
@@ -173,7 +230,9 @@ Chapter text isn't indexed.
    - Unknown labels are kept in a `raw_meta` JSON column, so we never lose
      data the parser doesn't understand yet.
    - Then check the opt-out and takedown lists. A match rejects the file with
-     `opted_out`.
+     `opted_out`. The takedown list holds the AO3 work IDs of works a
+     moderator removed after a DMCA notice; a notice no moderator has acted on
+     isn't on it, so it doesn't block uploads.
 5. **Chapter boundaries.** Files in the reading order are not chapters.
    Calibre splits documents by size (`*_split_NNN.xhtml`), so one chapter can
    span several files and one file can hold several chapters. Ways to find the
@@ -182,11 +241,21 @@ Chapter text isn't indexed.
       order and start a new chapter buffer when the anchor's element appears.
    2. AO3 chapter headings, if the table of contents is missing or doesn't
       match.
-   3. One chapter per file, as a last resort. The work is then flagged for
-      review.
+   3. One chapter per file, as a last resort. This adds a review reason.
 
-   The parsed chapter count must match the count in the preface `Stats:`. If it
-   doesn't, the work is flagged for review instead of going live.
+   The parsed chapter count should match the count in the preface `Stats:`. If
+   it doesn't, that is a review reason too.
+
+   **Review reasons** are things the parser could do but isn't sure of: a
+   one-chapter-per-file split, a chapter count that disagrees with `Stats:`,
+   content outside the chapters, a manifest item it couldn't read, a missing
+   rating (`missing_rating`) or title, a title or work ID that differs between
+   preface and OPF (`work_id_mismatch`), and so on. They are stored on the version (`work_versions.review_reasons`).
+   A version with review reasons still goes **live**, with a notice on the work
+   and reader pages: "Chapters may be imperfect; a moderator will check." The
+   work also lands in the moderators' *Works to check* queue, and approving it
+   there clears the notice. This is not `held_for_review` (step 7), which keeps
+   a newer upload off the site entirely.
 6. **Sanitize.** Apply the allowlist below to chapter bodies, the summary and
    the notes. Images listed in the manifest are checked by their file signature
    (PNG, JPEG, GIF or WebP only), capped at 5 MB each, stored by SHA-256 under
@@ -206,15 +275,27 @@ Chapter text isn't indexed.
      threshold.
    - **is held for review** (`held_for_review`) if it is newer but its shared
      chapters differ, or if its tags or authors changed. This blocks someone
-     editing an epub to tamper with a work.
+     editing an epub to tamper with a work. A held version is never public:
+     the work keeps serving its current version, the held one is listed only
+     for its uploader (My uploads) and for moderators (*Works to check*), and
+     only a moderator's approval makes it current.
    - **is marked `duplicate`** if it isn't newer. It's stored but not used.
-     This is a status, not a rejection: the uploader is told the work is
-     already in the archive.
+     This is a status, not a rejection: the uploader sees "Already in the
+     archive" with a link to the work. A byte-identical file never gets this
+     far; `/complete` marks it `duplicate` (Ingestion pipeline, step 3).
+
+   A newer, consistent upload with review reasons (step 5) still replaces the
+   current version, and goes live with the notice. Review reasons never make an
+   upload `held_for_review`; only the checks above do.
 
    Nobody's upload gets special treatment, the author's included. We can't
    tell who the author is while AO3 is down.
 
-   Every version is kept, so a bad replacement can be rolled back.
+   Every version is kept, so a bad replacement can be rolled back. Only
+   moderators roll back: a work's admin page lists every version (date,
+   uploader, chapter count) with a "Make current" action that repoints
+   `current_version_id`. Readers who spot a bad version report it as "This
+   version is wrong" (Author requests & takedowns, Reports).
 8. **Save, in order.** Write chapter fragments and images to R2. Then run one
    Postgres transaction that upserts the work, adds the version, chapters and
    tags, and points `current_version_id` at the new version. Set the work
@@ -226,7 +307,12 @@ Chapter text isn't indexed.
 
 **Rejection codes:** `not_epub`, `zip_bomb`, `too_large`, `not_ao3`,
 `opted_out`, `parse_failed`. Each one shows a plain-language message to the
-uploader. (`held_for_review` and `duplicate` are statuses, not rejections.)
+uploader. Step 2 lists which problem gives which of the first three.
+`not_ao3` covers any file without an AO3 preface "Posted originally" line,
+including one whose AO3 work URL is only in the OPF (step 4). `opted_out`
+covers the opt-out list and the takedown list of moderator-removed works.
+`parse_failed` also covers a job that fails for good (step 8). (`held_for_review`
+and `duplicate` are statuses, not rejections, and review reasons are neither.)
 
 **Testing.** `HTMLRewriter` exists only in the Workers runtime, so the
 `packages/epub` tests run under `@cloudflare/vitest-pool-workers`. Fixtures are
@@ -238,7 +324,8 @@ about 50 real AO3 epubs covering:
 - non-English and right-to-left text
 
 There are also hand-built bad files: zip bombs, path traversal, a missing OPF,
-a chapter count that doesn't match `Stats:`, and XSS payloads in every field.
+a chapter count that doesn't match `Stats:`, an AO3 work URL only in the OPF,
+and XSS payloads in every field.
 The parser must give the same output whenever it runs, so a fixture's output
 can be snapshotted.
 
@@ -307,11 +394,25 @@ can be snapshotted.
   serves every reader. Pages
   for signed-out readers can get a short edge cache, apart from the nonce: use
   a cached template with the nonce swapped in, or cache only the fragment.
-- Before the first chapter of a work rated Mature or Explicit, or carrying
-  archive warnings, or marked "Choose Not To Use Archive Warnings", readers see
-  an interstitial with its rating and warnings. Logged-in users can turn it off.
+- **Warnings screen.** A work rated Mature or Explicit, or carrying archive
+  warnings, or marked "Choose Not To Use Archive Warnings", or with no rating
+  at all, shows an interstitial with its rating and warnings the first time a
+  reader enters its reading pages, from any entry point: chapter 1, a direct
+  link to a later chapter, or `/full`. "Continue" goes on to the page they asked for. Having
+  seen it is then remembered for that work in a session cookie, so other
+  chapters of the same work open directly until the browser session ends. The
+  check runs before any edge-cached page is served. A work with no rating (the
+  `missing_rating` review reason) is shown as "Not Rated" on its card, work
+  page and warnings screen, and always gets the screen, as if it had warnings.
+  A signed-in reader can turn warnings off; the choice is stored on their
+  account (`user.warnings_off`), not in the settings cookie. Signed-out readers can't turn them off.
+- **"May be imperfect" notice.** When the current version has review reasons
+  that no moderator has cleared (EPUB processor, step 5), the work page and
+  every reader page show one line: "Chapters may be imperfect; a moderator will
+  check."
 - The reader has font size, line spacing, light/dark/sepia themes, and a
-  one-page "entire work" view. These settings are stored in a cookie.
+  one-page "entire work" view. These settings are stored in a cookie. (The
+  warnings choice above is the exception: it lives on the account.)
 - Signed-in users get their reading position saved to KV, keyed by
   `user:work`, with a short debounce.
 - "Download original epub" serves the file from `originals/` with
@@ -334,8 +435,10 @@ can be snapshotted.
   `auth.api.signInMagicLink` on the server. Calls made that way skip Better
   Auth's CSRF check, its redirect check and its rate limiter, so our route does
   all three:
-  - it checks `Origin` / `Sec-Fetch-Site`
+  - it checks `Origin` / `Sec-Fetch-Site`; a cross-site POST gets 403
   - it rate limits per IP and per email with the Workers rate-limiting binding
+    (429 with `Retry-After`; a failed or missing Turnstile token gets 400 and
+    the form again with an error, as in Surge controls)
   - it reduces `next` to a same-site path (root-relative only: no `//`, no
     `\`, no control characters) before passing it on. The `//` check runs
     again after URL normalization, because `/a/..//evil.example` normalizes
@@ -346,8 +449,21 @@ can be snapshotted.
   which only shows a "Sign in" button: a POST form that uses nothing up. Mail
   scanners that open links in advance therefore can't burn it.
   `POST /login/confirm` calls `auth.api.magicLinkVerify`, which redirects to
-  `next` with the session cookie. A used or expired link comes back to `/login`
-  with a plain message.
+  `next` with the session cookie. A used, expired or unknown link is
+  redirected to `/login` with a plain message.
+- **Signed-out requests to signed-in pages.** Opening a page that needs an
+  account (`/upload`, `/me/uploads`, `/works/:id/report`) while signed out, or
+  POSTing a report, redirects to sign in, carrying the page as `next`, so the
+  reader comes back to it after confirming the link. `/admin` is the
+  exception: it answers 404 (Author requests & takedowns, Moderation).
+- **Unknown email.** Signing in with an email that has no account creates one
+  when the link is confirmed. This is Better Auth's default; we don't set
+  `disableSignUp`. A brand-new account must accept the terms on a one-time page,
+  `/welcome/terms`, before anything else: until it does, every page requested
+  with its session redirects there, except that page itself, `/terms`,
+  `/privacy` and signing out. Accepting sets `user.terms_accepted_at` and
+  continues to the stored `next`. Accounts that have accepted never see the
+  page again.
 - **Single use.** The token is consumed by one `DELETE … RETURNING` in
   Postgres, and only the request that gets the row back is signed in, so two
   simultaneous uses can't both succeed. This holds only while tokens live in
@@ -387,8 +503,8 @@ can be snapshotted.
     hit.
   - The login page tells people that links can take a minute to arrive during
     busy periods.
-- Accounts are needed only to upload, report or save reading position. Reading
-  never needs an account.
+- Accounts are needed only to upload, report, save reading position or turn
+  the warnings screen off. Reading never needs an account.
 
 ## Author requests & takedowns
 
@@ -405,17 +521,39 @@ epub, under the normal versioning rules.
 - **Remove my work.** A public form at `/remove` asks for the work's URL here
   or its AO3 URL, a contact email and a short statement. No sign-in, but
   Turnstile is required. The work is hidden **at once** and a moderator
-  reviews the request. We err on the side of the person asking.
+  reviews the request. We err on the side of the person asking. If the AO3 URL
+  given isn't a work in the archive, nothing is stored: the confirmation says
+  the work isn't here and suggests opting out the pseud instead, which also
+  covers future uploads.
 - **Opt out.** The same form, given a pseud instead of a work. It hides every
   existing work by that pseud at once, and the opt-out list is checked again
   at ingest for new uploads. A moderator confirms it. A mistaken opt-out can be
   reversed.
 - **Abuse of instant hiding.** Since nobody has to prove who they are, anyone
   can hide any work for a while. Limits: requests are rate-limited per email
-  and per IP. A hidden work shows "Temporarily hidden after a removal request",
-  not a 404. Moderators can see every request from the same email or IP
-  together, restore in bulk, and block a requester. We accept this risk: an
-  unfair hide is temporary, while ignoring a genuine author is not.
+  and per IP (429 with `Retry-After`). A hidden work says why it is hidden,
+  not a 404 (see below). Moderators can see every request from the same email
+  or IP together, restore in bulk, and block a requester. We accept this risk:
+  an unfair hide is temporary, while ignoring a genuine author is not.
+- **Block and ban stop only the action.** Blocking a requester (by contact
+  email and IP hash) means their later `/remove` requests, and reports from an
+  account with that email or IP hash, are still recorded and queued but no
+  longer hide anything (an opt-out from them isn't applied until a moderator
+  approves it). Every requester sees the same confirmation (FRONTEND-DISCOVERY,
+  journey 4), and the page never reveals that a requester is blocked. Banning
+  an uploader (an account, `banned_at`) stops it uploading and reporting; its
+  existing uploads stay until a moderator acts on them.
+- **What hidden, held and removed works show.**
+  - **Hidden** (`hidden`, by a removal request or opt-out, by reports, or by a
+    moderator): 451 on the work page, every chapter URL and `/full`, with one
+    line that names the cause (`works.hidden_cause`): "Temporarily hidden after
+    a removal request", "Temporarily hidden after reader reports" or
+    "Temporarily hidden by a moderator". Nothing else about the work is shown,
+    and it is left out of search, listings and the home page.
+  - **Held** (a `held_for_review` version, never public): 404 to the public.
+    The work keeps serving its current version. The held version is visible
+    to its uploader in My uploads and to moderators.
+  - **Removed** (`removed`): 410 everywhere, "This work has been removed".
 - **Removal really removes.** Setting a work to `removed`, through a takedown,
   an author request or a moderator, also deletes `works/<ao3_work_id>/` and the raw
   upload from R2, and purges the work's pages, cached fragments, images and
@@ -424,15 +562,39 @@ epub, under the normal versioning rules.
 - **DMCA.** To get safe-harbor protection under US law (17 U.S.C. §512), we need
   a designated agent registered with the US Copyright Office, a public takedown
   form, a counter-notice process and a repeat-infringer policy. Get a lawyer to
-  review this before launch.
+  review this before launch. A notice from `/dmca` lands in the takedowns
+  queue and does **not** hide the work by itself (unlike `/remove`): a
+  moderator decides whether to hide or remove it. While no moderator has acted
+  on it, the notice doesn't block re-uploads of the work either. Once a
+  moderator removes the work, its AO3 work ID goes on the takedown list, and
+  later uploads of it are rejected `opted_out` (EPUB processor, step 4). A
+  notice missing statutory elements is still queued, marked incomplete. The counter-notice process and
+  repeat-infringer policy are part of the lawyer review.
 - **Reports.** Every work has a report button. Reporting needs a signed-in
   account, so each report has a reporter who can be rate limited or blocked;
-  signed-out readers are sent to sign in and brought back to the form. Works
-  with N or more open reports are hidden automatically until a moderator looks
-  at them. (Authors asking for removal use `/remove`, which needs no account.)
-- **Moderation.** A small admin area has queues for reports, takedowns and
-  removal or opt-out requests, plus actions to hide, remove, restore, block a
-  requester and ban an uploader.
+  signed-out readers, opening the form or POSTing a report, are redirected to
+  sign in, carrying `next`, and brought back to the form. A work with open
+  reports from **3 distinct signed-in accounts** is hidden automatically until
+  a moderator looks at it; several reports from one account count once.
+  Reports from banned accounts can't be made, and reports matching a blocked
+  requester don't count. One reason is "This version is wrong"
+  (`wrong_version`), which only queues the work in *Works to check*: those
+  reports never count toward the 3-account auto-hide. (Authors asking for
+  removal use `/remove`, which needs no account.)
+- **Moderation.** A small admin area has four queues, each a table, oldest
+  first:
+  - reports
+  - takedowns (DMCA notices)
+  - removal or opt-out requests
+  - *Works to check*: works with a held version, works live with the "may be
+    imperfect" notice, and works reported as "This version is wrong"
+
+  Actions are hide, remove, restore, approve, reject, block a requester and ban
+  an uploader. A *Works to check* item's page has approve (clears the notice,
+  or publishes the held version), make a version current, hide and remove;
+  each work's admin page lists every version with "Make current". Anyone
+  without the moderator role, signed out included, gets 404 for every
+  `/admin` URL, so the admin area isn't advertised.
 
 ## Surge controls
 
@@ -443,9 +605,23 @@ epub, under the normal versioning rules.
   requests and search, keyed per IP and per user. It's approximate and counts
   per Cloudflare location, over 10- or 60-second windows. That's fine for
   slowing abuse, but not for hard limits.
+- **Status codes.** A rate limit or quota that is hit returns **429** with
+  `Retry-After` and a plain page saying when to try again. A failed or missing
+  Turnstile token returns **400** and shows the form again with an error, and
+  so does a form missing required fields (such as `/remove` without a contact
+  email, or without a work or pseud). A cross-site sign-in POST (a bad
+  `Origin` / `Sec-Fetch-Site`) gets **403**. An upload request declaring more
+  than 25 MB gets **413**. A used, expired or unknown magic link is
+  **redirected to `/login`** with a plain message. A signed-out request to a
+  signed-in page, or a signed-out report POST, is **redirected to sign in**,
+  carrying `next` (Auth); a signed-out request a script makes, such as
+  `POST /uploads`, gets **401** instead, since a script can't follow that
+  redirect. A non-moderator on `/admin`, signed out included,
+  gets **404** (Author requests & takedowns, Moderation).
 - Upload quotas are hard limits, so they're counted in Postgres (or a Durable
-  Object). Start at about 50 epubs a day per account, give brand-new accounts a
-  lower limit, and raise it for trusted users.
+  Object). There are two daily tiers: new accounts get a lower limit, trusted
+  users a higher one. The numbers and the rule for "trusted" are configuration,
+  set before launch from load testing.
 - **Orphaned uploads.** A presigned PUT can't enforce a size limit, and a
   client may never call `/complete`. So `/complete` deletes oversized objects,
   and an R2 lifecycle rule expires anything under `uploads/` after 7 days.
@@ -463,7 +639,7 @@ epub, under the normal versioning rules.
 ## MVP vs later
 
 **MVP (ship in days)**
-1. Magic-link sign-in
+1. Magic-link sign-in, with a one-time terms page for new accounts
 2. Upload: presigned PUT, then queue, then parse, sanitize and dedupe
 3. Work page: metadata, tags, warnings, link to the original AO3 URL
 4. Reader: chapters, reader settings, warnings interstitial, saved position,

@@ -1,14 +1,15 @@
 # Scenario: Magic-link sign-in and sessions
 
-Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § Data model, § Surge controls; docs/FRONTEND-DISCOVERY.md § Decisions so far (JavaScript), § Key journeys (2. Sign in), § Page inventory (Sign in), § Where the frontend changes the architecture (1. Forms with Turnstile need JS)
+Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § Data model, § Surge controls; docs/FRONTEND-DISCOVERY.md § Decisions so far (JavaScript), § Key journeys (2. Sign in), § Page inventory (Sign in, Accept terms, Too many requests), § Where the frontend changes the architecture (1. Forms with Turnstile need JS)
 
 ## Setup
 - The web Worker serves `app.<domain>` with `/login` and `/login/confirm`, and builds a Better Auth instance (magic-link plugin) per request from its bindings
-- Better Auth's `user`, `session`, `account` and `verification` tables exist in Postgres; magic-link tokens are stored hashed in `verification`
+- Better Auth's `user`, `session`, `account` and `verification` tables exist in Postgres; magic-link tokens are stored hashed in `verification`; `user` has a `terms_accepted_at` field
 - Turnstile is configured on the sign-in form; a test Turnstile token that passes and one that fails are available
 - The Workers rate-limiting binding is configured per IP and per email for `POST /login`
 - The web Worker puts sign-in emails on the `email` queue; the mailer Worker (`apps/mailer`) consumes it, with a stub Resend sender capturing sent messages and a failover provider stub (Postmark or SES) wired in
 - No passwords are stored anywhere
+- `disableSignUp` is not set, so Better Auth creates an account for an unknown email when its link is confirmed
 
 ## Cases
 
@@ -40,22 +41,25 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § 
 - GIVEN a signed-out visitor
 - WHEN they submit `POST /login` with a missing or failing Turnstile token
 - THEN no token is created and no email is queued
-- AND the sign-in page shows an error state
+- AND the response is 400 and shows the sign-in form again with an error
 
 ### Cross-site login request is refused
 - GIVEN a `POST /login` whose `Origin` (or `Sec-Fetch-Site`) shows it came from another site
 - WHEN the web Worker receives it
-- THEN no token is created and no email is queued
+- THEN the response is 403
+- AND no token is created and no email is queued
 
 ### Login requests are rate-limited per IP
 - GIVEN one IP address that has reached the login rate limit within the current window
 - WHEN it submits another `POST /login`, even for a different email address
-- THEN the request is throttled and no email is queued
+- THEN the response is 429 with a `Retry-After` header and no email is queued
+- AND a plain page says when to try again
 
 ### Login requests are rate-limited per email
 - GIVEN one email address that has reached the login rate limit within the current window
 - WHEN another `POST /login` is submitted for that email from a different IP
-- THEN the request is throttled and no email is queued
+- THEN the response is 429 with a `Retry-After` header and no email is queued
+- AND a plain page says when to try again
 
 ### Opening the emailed link uses nothing up
 - GIVEN an unused token issued less than 15 minutes ago
@@ -80,7 +84,7 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § 
 - GIVEN a token that has already been used to sign in
 - WHEN `POST /login/confirm` is submitted with it again
 - THEN no new session is created and no session cookie is set
-- AND the user lands on `/login` with a plain message that the link is used or expired
+- AND the response redirects to `/login`, which shows a plain message that the link is used or expired
 
 ### Concurrent use of the same token creates at most one session
 - GIVEN an unused, unexpired token
@@ -91,13 +95,13 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § 
 - GIVEN a token issued more than 15 minutes ago and never used
 - WHEN `POST /login/confirm` is submitted with it
 - THEN no session is created
-- AND the user lands on `/login` with a plain message that the link is used or expired
+- AND the response redirects to `/login`, which shows a plain message that the link is used or expired
 
 ### Unknown token is refused
 - GIVEN a token value that was never issued
 - WHEN `POST /login/confirm` is submitted with it
 - THEN no session is created
-- AND the user lands on `/login` with a plain message that the link is used or expired
+- AND the response redirects to `/login`, which shows a plain message that the link is used or expired
 
 ### Sign-in returns the user to where they started
 - GIVEN a signed-out visitor who started signing in from a work page
@@ -119,6 +123,23 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § 
 - WHEN a sign-in email is taken off the email queue
 - THEN it is sent through the failover provider instead
 
+### New email creates an account on confirm
+- GIVEN an email address with no account, and an unused token issued to it less than 15 minutes ago
+- WHEN the user presses "Sign in", submitting `POST /login/confirm` with the token
+- THEN a `user` row is created for that email, with `terms_accepted_at` empty
+- AND a session is created for the new account
+
+### New account must accept the terms before continuing
+- GIVEN a new account, signed in with `terms_accepted_at` empty, that started signing in from a work page
+- WHEN it opens any page other than `/welcome/terms`, `/terms`, `/privacy` or sign-out
+- THEN it is redirected to `/welcome/terms`
+- AND once it accepts there, `terms_accepted_at` is set and it continues to the work page it started from
+
+### Returning user skips the terms page
+- GIVEN an existing account whose `terms_accepted_at` is set
+- WHEN it signs in again through an emailed link
+- THEN it goes straight to its `next` page and is never shown `/welcome/terms`
+
 ### Reading needs no account
 - GIVEN a signed-out visitor with no session cookie
 - WHEN they open the home page, a work page and a chapter of a live work
@@ -126,5 +147,7 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § 
 
 ### Uploading needs an account
 - GIVEN a signed-out visitor
-- WHEN they open `/upload` or call `POST /uploads`
-- THEN they are not allowed to upload without signing in
+- WHEN they open `/upload`, or their browser's script calls `POST /uploads`
+- THEN opening `/upload` redirects them to sign in, carrying `next=/upload`
+- AND `POST /uploads` answers 401, since a script can't follow a sign-in redirect
+- AND no `uploads` row is inserted and no presigned URL is returned

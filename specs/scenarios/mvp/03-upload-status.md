@@ -1,6 +1,6 @@
 # Scenario: Upload status and rejection messages
 
-Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (step 5), § EPUB processor (Rejection codes); docs/FRONTEND-DISCOVERY.md § Key journeys (3. Upload works), § Page inventory (My uploads), § Where the frontend changes the architecture (3. Upload status without JS), § Components (Status badge), § Copy and tone
+Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (step 5), § EPUB processor (Rejection codes), § Auth (Signed-out requests to signed-in pages); docs/FRONTEND-DISCOVERY.md § Key journeys (3. Upload works), § Page inventory (My uploads), § Where the frontend changes the architecture (3. Upload status without JS), § Components (Status badge), § Copy and tone
 
 ## Setup
 - A signed-in user U with several uploads in different states
@@ -32,7 +32,7 @@ Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (step 5), § EPUB process
 ### My uploads lists every upload with a text status badge
 - GIVEN user U with uploads that are processing, live, held, duplicate and rejected
 - WHEN U opens `/me/uploads`
-- THEN each upload is listed with a text-only badge such as "Processing", "Live" or "Held for review"
+- THEN each upload is listed with a text-only badge such as "Processing", "Live", "Held for review" or "Already in the archive"
 
 ### My uploads shows only the signed-in user's uploads
 - GIVEN users U and V each with their own uploads
@@ -88,9 +88,21 @@ Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (step 5), § EPUB process
 ### Duplicate upload says the work is already in the archive
 - GIVEN an upload by U marked `duplicate`
 - WHEN U views it on `/me/uploads`
-- THEN a plain-language message tells U the work is already in the archive
+- THEN the badge reads "Already in the archive", with a link to the work
 - AND the badge does not say "Rejected", because `duplicate` is a status, not a rejection
 - AND the upload is kept, not deleted
+
+### Held upload is shown to its uploader
+- GIVEN an upload by U that the versioning rules held, for a work that is live at an earlier version
+- WHEN U views it on `/me/uploads`
+- THEN it is listed with the badge "Held for review"
+- AND V does not see it on V's `/me/uploads`
+
+### Live upload with review reasons is still live
+- GIVEN an upload by U whose version went live with review reasons
+- WHEN U polls `GET /uploads/:id`
+- THEN the status is `live`, not `held_for_review`
+- AND the work it links to shows the notice "Chapters may be imperfect; a moderator will check."
 
 ### Failed upload shows a plain-language message
 - GIVEN an upload by U that ended as `parse_failed`
@@ -106,3 +118,4 @@ Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (step 5), § EPUB process
 - GIVEN a signed-out visitor
 - WHEN they open `/me/uploads`
 - THEN no upload list is shown to them
+- AND the response redirects them to sign in, carrying `next=/me/uploads`

@@ -122,7 +122,7 @@ describe("hostile containers", () => {
     await expectEpubError(processEpub(ao3Epub({ workId: null })), "not_ao3");
   });
 
-  it("flags a non-native file that only has an AO3 URL in the OPF", async () => {
+  it("rejects a non-native file that only has an AO3 URL in the OPF", async () => {
     const bytes = zipEntries({
       "META-INF/container.xml": `<container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>`,
       "OEBPS/content.opf": `<package xmlns="http://www.idpf.org/2007/opf" version="2.0">
@@ -135,16 +135,7 @@ describe("hostile containers", () => {
       </package>`,
       "OEBPS/c1.xhtml": `<html><body><p>plain text</p></body></html>`,
     });
-    const work = await processEpub(bytes);
-    expect(work.ao3WorkId).toBe("5");
-    expect(work.title).toBe("Elsewhere");
-    expect(work.authors).toEqual([{ pseud: "someone", user: null }]);
-    expect(work.rating).toBeNull();
-    expect(work.chapters).toHaveLength(1);
-    expect(work.reviewReasons).toEqual([
-      expect.stringMatching(/^chapters_one_per_file/),
-      "missing_rating",
-    ]);
+    await expectEpubError(processEpub(bytes), "not_ao3");
   });
 
   it("rejects a missing OPF", async () => {

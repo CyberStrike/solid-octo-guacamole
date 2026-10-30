@@ -1,11 +1,12 @@
 # Scenario: Work page
 
-Relates to: docs/ARCHITECTURE.md § Opening, § MVP vs later (3. Work page; Later: Export and shut down), § Author requests & takedowns; docs/FRONTEND-DISCOVERY.md § Decisions so far (Warnings, Original AO3 link), § Key journeys (1, 4, 5), § Page inventory (Work page, Hidden work, Removed work), § Typographic system (Hierarchy), § Reading experience
+Relates to: docs/ARCHITECTURE.md § Opening, § MVP vs later (3. Work page; Later: Export and shut down), § Author requests & takedowns (What hidden, held and removed works show), § Reading ("May be imperfect" notice); docs/FRONTEND-DISCOVERY.md § Decisions so far (Warnings, Original AO3 link), § Key journeys (1, 4, 5), § Page inventory (Work page, Hidden work, Removed work), § Components (Review notice), § Typographic system (Hierarchy), § Reading experience
 
 ## Setup
 - A live work W (`ao3_work_id` 12345) with title, author pseud, rating Mature, archive warning "Graphic Depictions Of Violence", fandoms, relationships, characters, freeform tags, a long summary, stats and 5 chapters
 - A live anonymous work A whose author is "Anonymous"
-- A work H in status `hidden` after a removal request, and a work R in status `removed`
+- Works in status `hidden`: H after a removal request, HR after reports from 3 distinct accounts, HM by a moderator; and a work R in status `removed`
+- A live work F whose current version has review reasons no moderator has cleared
 - A signed-in reader with a saved reading position on W, and a signed-out reader
 
 ## Cases
@@ -73,7 +74,7 @@ Relates to: docs/ARCHITECTURE.md § Opening, § MVP vs later (3. Work page; Late
 ### Report link sends signed-out readers to sign in first
 - GIVEN live work W and a signed-out reader
 - WHEN the reader follows "Report"
-- THEN they are sent to sign in
+- THEN they are redirected to sign in, carrying `next`
 - AND after signing in they are brought back to `/works/:id/report` using the stored `next` value
 
 ### Download original link is offered
@@ -92,11 +93,29 @@ Relates to: docs/ARCHITECTURE.md § Opening, § MVP vs later (3. Work page; Late
 - WHEN they open W's work page
 - THEN no "Continue where you left off" link appears
 
-### Hidden work returns 451
+### Work with review reasons shows the notice
+- GIVEN live work F
+- WHEN a reader opens its work page
+- THEN the page shows "Chapters may be imperfect; a moderator will check."
+- AND live work W, which has no review reasons, shows no such notice
+
+### Hidden work returns 451 and names a removal request
 - GIVEN work H hidden after a removal request
 - WHEN anyone opens `/works/:id`
 - THEN the response status is 451
 - AND the page says "Temporarily hidden after a removal request" with no details of the work
+
+### Work hidden after reports names the reports
+- GIVEN work HR hidden after reports
+- WHEN anyone opens `/works/:id`
+- THEN the response status is 451
+- AND the page says "Temporarily hidden after reader reports" with no details of the work
+
+### Work hidden by a moderator says so
+- GIVEN work HM hidden by a moderator
+- WHEN anyone opens `/works/:id`
+- THEN the response status is 451
+- AND the page says "Temporarily hidden by a moderator" with no details of the work
 
 ### Removed work returns 410
 - GIVEN work R in status `removed`

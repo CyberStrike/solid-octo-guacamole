@@ -1,11 +1,14 @@
 # Scenario: Remove-my-work and opt-out requests
 
-Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data model (requests, optouts), § Author requests & takedowns; docs/FRONTEND-DISCOVERY.md § Key journeys (4. Remove a work or opt out), § Page inventory (Remove my work / opt out, Hidden work), § Where the frontend changes the architecture (1. Forms with Turnstile need JS)
+Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data model (requests, optouts, requester_blocks), § Dedupe (Pseuds), § Author requests & takedowns, § Surge controls (Status codes); docs/FRONTEND-DISCOVERY.md § Key journeys (4. Remove a work or opt out), § Page inventory (Remove my work / opt out, Hidden work), § Where the frontend changes the architecture (1. Forms with Turnstile need JS)
 
 ## Setup
-- Live work W at `/works/:id` with AO3 URL `archiveofourown.org/works/12345`, by pseud P
+- Live work W at `/works/:id` with AO3 URL `archiveofourown.org/works/12345`, by pseud P, written `Moon Child`
 - Live works W2 and W3 also by pseud P, and work X by another pseud
+- No work in the archive has AO3 URL `archiveofourown.org/works/99999`
 - Turnstile is configured on `/remove`; rate limits apply per email and per IP
+- `pseud_norm` is the pseud in Unicode NFKC, case-folded, with leading and trailing whitespace trimmed and inner runs of whitespace collapsed to one space; punctuation is kept
+- A requester B blocked by a moderator, by contact email and IP hash
 - The visitor is signed out
 
 ## Cases
@@ -49,15 +52,28 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data 
 - WHEN a visitor submits `/remove` with `archiveofourown.org/works/12345`, a contact email, a statement and a passing Turnstile token
 - THEN W is hidden at once
 
+### Remove request for an AO3 work not in the archive stores nothing
+- GIVEN no work in the archive with AO3 URL `archiveofourown.org/works/99999`
+- WHEN a visitor submits `/remove` with that URL, a contact email, a statement and a passing Turnstile token
+- THEN no request is stored and nothing is hidden
+- AND the confirmation page says the work isn't in the archive and suggests opting out the pseud instead
+
 ### Confirmation page for a work
-- GIVEN a remove request just submitted for W
+- GIVEN a remove request for W just submitted by a requester who isn't blocked
 - WHEN the confirmation page renders
-- THEN it says the work is already hidden and that a moderator will review the request and email them
+- THEN it says "Your request was received; a moderator will review it and email you."
+- AND it says nothing about whether the work is hidden, so it reads the same as a blocked requester's
 
 ### Hidden work shows a temporary-hide page
 - GIVEN W hidden after a removal request
-- WHEN anyone opens W
+- WHEN anyone opens W's work page, any of its chapter URLs or `/works/:id/full`
 - THEN the response is 451 with "Temporarily hidden after a removal request", not a 404
+- AND W is left out of search, listings and the home page
+
+### Opt-out hides use the removal-request wording
+- GIVEN W2 hidden by an opt-out for pseud P
+- WHEN anyone opens W2
+- THEN the response is 451 with "Temporarily hidden after a removal request", because opt-outs come through `/remove`
 
 ### Opt-out by pseud hides every existing work
 - GIVEN works W, W2 and W3 by pseud P and work X by another pseud
@@ -67,9 +83,10 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data 
 - AND X is unaffected
 
 ### Confirmation page for an opt-out
-- GIVEN an opt-out just submitted for pseud P
+- GIVEN an opt-out for pseud P just submitted by a requester who isn't blocked
 - WHEN the confirmation page renders
-- THEN it says every work by the pseud is already hidden and a moderator will review and email them
+- THEN it says "Your request was received; a moderator will review it and email you."
+- AND it says nothing about whether any work is hidden, so it reads the same as a blocked requester's
 
 ### Opt-out blocks future uploads
 - GIVEN an active opt-out for pseud P
@@ -78,9 +95,24 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data 
 
 ### Opt-out matches the normalized pseud
 - GIVEN an active opt-out for pseud P
-- AND an upload whose byline pseud has the same `pseud_norm` as P (normalization rule to be decided)
+- AND an upload whose byline pseud has the same `pseud_norm` as P under the NFKC, case-fold, trim and collapse-whitespace rule
 - WHEN the upload is ingested
 - THEN it is rejected with `opted_out`
+
+### Opt-out matches a pseud that differs only in case
+- GIVEN an active opt-out requested for `Moon Child`
+- WHEN an upload whose byline pseud is `moon CHILD` is ingested
+- THEN it is rejected with `opted_out`
+
+### Opt-out matches a pseud with extra spaces
+- GIVEN an active opt-out requested for `Moon Child`
+- WHEN an upload whose byline pseud is `  Moon   Child ` is ingested
+- THEN it is rejected with `opted_out`
+
+### Opt-out does not match different punctuation
+- GIVEN an active opt-out requested for `Moon Child`
+- WHEN an upload whose byline pseud is `Moon_Child` is ingested
+- THEN it is not rejected with `opted_out`, because punctuation is kept in `pseud_norm`
 
 ### Moderator confirms an opt-out
 - GIVEN a pending opt-out request for P
@@ -96,22 +128,45 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data 
 ### Missing Turnstile is refused
 - GIVEN the `/remove` form
 - WHEN it is submitted with a missing or failing Turnstile token
-- THEN no request is stored and nothing is hidden
+- THEN the response is 400 and shows the form again with an error
+- AND no request is stored and nothing is hidden
 
 ### Missing fields are refused
 - GIVEN the `/remove` form
 - WHEN it is submitted without a contact email or without a work or pseud
-- THEN no request is stored and nothing is hidden
+- THEN the response is 400 and shows the form again with the missing fields marked as errors
+- AND no request is stored and nothing is hidden
 
 ### Requests are rate-limited per email
 - GIVEN one contact email that has reached the request rate limit
 - WHEN another request is submitted with that email from a different IP
-- THEN it is refused and nothing more is hidden
+- THEN the response is 429 with a `Retry-After` header and a plain page saying when to try again
+- AND no request is stored and nothing more is hidden
 
 ### Requests are rate-limited per IP
 - GIVEN one IP address that has reached the request rate limit
 - WHEN another request is submitted from that IP with a different email
-- THEN it is refused and nothing more is hidden
+- THEN the response is 429 with a `Retry-After` header and a plain page saying when to try again
+- AND no request is stored and nothing more is hidden
+
+### Blocked requester's requests only queue
+- GIVEN requester B, blocked by contact email and IP hash
+- WHEN a request to remove live work X arrives from B's email, or from B's IP with another email, with a passing Turnstile token
+- THEN the request is stored and appears in the moderators' requests queue
+- AND X stays live
+
+### Blocked requester's opt-out hides nothing
+- GIVEN requester B, blocked by contact email and IP hash
+- WHEN B submits an opt-out for pseud P
+- THEN the request is stored and queued for a moderator
+- AND W, W2 and W3 stay live
+- AND no active `optouts` row is created unless a moderator approves the request
+
+### Blocked requester sees the same confirmation
+- GIVEN requester B, blocked by contact email and IP hash
+- WHEN B submits a request to remove live work X, or an opt-out for pseud P, with a passing Turnstile token
+- THEN the confirmation page is identical to an unblocked requester's: "Your request was received; a moderator will review it and email you."
+- AND nothing on the page reveals that B is blocked
 
 ### Requests record a hashed IP
 - GIVEN any submitted request
