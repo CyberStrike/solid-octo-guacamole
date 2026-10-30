@@ -12,7 +12,10 @@ import { countWords } from "./words";
 
 /**
  * Parses an AO3-exported epub into metadata and sanitized chapter HTML.
- * Pure: no I/O, no clock, no randomness. Throws `EpubError` with a rejection code.
+ * The parse itself does no I/O and uses no clock or randomness, so the same
+ * bytes give the same result. Throws `EpubError` with a rejection code. The
+ * caller's `onImage` runs only after the parse has succeeded, and is the only
+ * I/O: a retry runs it again.
  */
 export async function processEpub(input: Uint8Array | ArrayBuffer, options: ProcessOptions = {}): Promise<ParsedWork> {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
@@ -121,11 +124,11 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
   const split = splitChapters(docs, pkg.navPoints);
   if (split.method === "files") reviewReasons.push("chapters_one_per_file: no usable table of contents or chapter headings");
   reviewReasons.push(...split.reviewReasons);
-  const chapters: Chapter[] = split.chapters.map((c, i) => {
+  const chapters: Chapter[] = [];
+  for (const c of split.chapters) {
     const body = serializeChildren(c.nodes, ctx).trim();
-    c.nodes = []; // drop each chapter's copy of the tree as soon as it is serialized
-    return { n: i + 1, title: c.title, html: body, words: countWords(body) };
-  });
+    chapters.push({ n: chapters.length + 1, title: c.title, html: body, words: countWords(body) });
+  }
   const endNotesHtml = html(preface.endNotes);
 
   // AO3 always sets a rating; without one the preface was not parsed (e.g. a

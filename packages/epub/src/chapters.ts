@@ -19,7 +19,11 @@ export interface RawChapter {
 }
 
 export interface ChapterSplit {
-  chapters: RawChapter[];
+  /**
+   * Built one at a time as it is iterated, so only one chapter's copy of the
+   * tree exists at once. Iterate it once.
+   */
+  chapters: Iterable<RawChapter>;
   method: "toc" | "headings" | "files";
   /** Content the split could not place with confidence. */
   reviewReasons: string[];
@@ -153,13 +157,25 @@ function hasText(nodes: Node[]): boolean {
   return nodes.some((n) => cleanText(n) !== "" || (n.type === "element" && find(n, (e) => e.tag === "img") !== null));
 }
 
-function build(scopes: ElementNode[], starts: Start[]): RawChapter[] {
-  return starts.map((start, i) => {
+function* build(scopes: ElementNode[], starts: Start[]): Generator<RawChapter> {
+  for (let i = 0; i < starts.length; i++) {
     const hi = starts[i + 1]?.pos ?? Number.POSITIVE_INFINITY;
-    const nodes = rangeContent(scopes, start.pos, hi);
+    const nodes = rangeContent(scopes, starts[i]!.pos, hi);
     const heading = takeLeadingHeading(nodes);
-    return { title: start.title ?? heading ?? `Chapter ${i + 1}`, nodes };
-  });
+    yield { title: starts[i]!.title ?? heading ?? `Chapter ${i + 1}`, nodes };
+  }
+}
+
+function* perFile(docs: SpineDoc[], perDoc: Map<SpineDoc, ElementNode[]>, hasRegions: boolean): Generator<RawChapter> {
+  let n = 0;
+  for (const doc of docs) {
+    const scopes = hasRegions ? perDoc.get(doc)! : [find(doc.root, (el) => el.tag === "body") ?? doc.root];
+    const nodes = rangeContent(scopes, 0, Number.POSITIVE_INFINITY);
+    if (!hasText(nodes)) continue;
+    const heading = takeLeadingHeading(nodes);
+    n++;
+    yield { title: heading ?? `Chapter ${n}`, nodes };
+  }
 }
 
 function split(regions: ElementNode[], starts: Start[], method: "toc" | "headings", reviewReasons: string[]): ChapterSplit {
@@ -193,13 +209,5 @@ export function splitChapters(docs: SpineDoc[], navPoints: NavPoint[]): ChapterS
   }
 
   // Last resort: one chapter per spine file that has content.
-  const chapters: RawChapter[] = [];
-  for (const doc of docs) {
-    const scopes = regions.length > 0 ? perDoc.get(doc)! : [find(doc.root, (el) => el.tag === "body") ?? doc.root];
-    const nodes = rangeContent(scopes, 0, Number.POSITIVE_INFINITY);
-    if (!hasText(nodes)) continue;
-    const heading = takeLeadingHeading(nodes);
-    chapters.push({ title: heading ?? `Chapter ${chapters.length + 1}`, nodes });
-  }
-  return { chapters, method: "files", reviewReasons };
+  return { chapters: perFile(docs, perDoc, regions.length > 0), method: "files", reviewReasons };
 }

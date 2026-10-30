@@ -11,8 +11,9 @@ export const LIMITS = {
   maxImageBytes: 5 * MiB,
   /**
    * Elements plus text nodes across every parsed document. Bounds tree memory
-   * (chapter copies roughly double it) inside a 128 MB Worker; also caps the
-   * largest work accepted. A guess until measured against real long works.
+   * inside a 128 MB Worker (plus one chapter's copy at a time while chapters
+   * are serialized); also caps the largest work accepted. A guess until
+   * measured against real long works.
    */
   maxNodes: 300_000,
 } as const;
