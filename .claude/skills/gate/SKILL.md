@@ -9,7 +9,7 @@ argument-hint: "[pr|merge] [issue number or branch]"
 The mode comes from the arguments, and without one it is `pr`.
 
 - **`pr`** runs §1–§5 and §7 on the branch, after committing, before the PR is opened.
-- **`merge`** runs §1–§5 on the PR's pushed head, then §6. First check that the checkout has no uncommitted changes (`git status --short --untracked-files=no` prints nothing) and that `HEAD` is `origin/<branch>`.
+- **`merge`** runs §1–§5 on the PR's pushed head, then §6, and ends with §7's report, which replaces the PR body's *What was run* block. First check that the checkout has no uncommitted changes (`git status --short --untracked-files=no` prints nothing) and that `HEAD` is `origin/<branch>`.
 
 Put any output whose path you choose (logs, screenshots, scratch tests) in your Claude Code session's scratchpad directory, in a subfolder named for the branch. Never in the repo.
 
@@ -135,7 +135,8 @@ This repo has no run recipe yet, so a live check is reported **not run: no run s
 1. `git fetch`, then check the branch contains main: `git merge-base --is-ancestor origin/main origin/<branch>`. If not, merge main into the branch and rerun §3.
 2. CI on the PR's head is green, or report it not run when the repo has no CI yet.
 3. The review ladder below, scaled by the PR's risk tier. The operator may waive it or stop it at any rung. *What was run* names the tier and the rungs that ran. A rung starts once the fixes from the rung before are pushed.
-4. Merge with `gh pr merge <n> --squash` only when the operator has said to merge.
+4. One Copilot review on the settled head, after the ladder's fixes are pushed: `gh pr edit <n> --add-reviewer "@copilot"`. This works on a draft. Never request a second, not even when this gate runs again on the same PR. The request doesn't show in `requested_reviewers`, so wait on `.../pulls/<n>/reviews`. If no review arrives within 30 minutes, record it as not run. A finding is critical when Copilot's comment calls it high severity, when it is a real defect on the security boundary (the tier 3 bullet of that name below), or when it means a *Definition of done* bullet doesn't hold. A critical finding is fixed in the PR, and the fix is verified by rerunning the §3–§5 checks it touches and one `/code-review` round on the fix, without re-requesting Copilot. Reply on its thread with the fixing commit. While one is open, the PR doesn't merge; one you can't fix with confidence goes up `/escalate`. File every other finding as a bug issue, linked to the PR and the comment, and reply on its thread with the link.
+5. Merge with `gh pr merge <n> --squash` only when the operator has said to merge. For a PR built under `/orchestrate`, the standing rule in `docs/process.md` (*Work items*, "The orchestrator merges") is that word, and only the orchestrator merges: a builder, or any agent launched to run this gate, never does. Before the merge, `main` is brought in if it has moved (under `/orchestrate`, by the builder) and §3 is rerun; a conflict resolved by hand goes through the ladder again, but not Copilot. Then a draft is marked ready for review (`gh pr ready <n>`) by whoever merges.
 
 **Risk tiers.** Each changed file gets a tier by the first rule it matches, checked from tier 3 down, and the PR takes the highest tier any file gets. When unsure, use the higher.
 
@@ -152,7 +153,7 @@ This repo has no run recipe yet, so a live check is reported **not run: no run s
 
 **The rungs:**
 
-1. This skill, §1–§5.
+1. This skill, §1–§5: in `merge` mode, the run that started this gate.
 2. `/simplify`, report only.
 3. `/code-review` rounds, as many as the tier names, each with its own error class. The specification-completeness class checks every field at its edge values (empty, zero, maximum and one past it), every absolute claim ("every", "always", "never") for truth, each limit multiplied out to its worst case, repeated and concurrent operations, and agreement with the *Decisions so far* table.
 
