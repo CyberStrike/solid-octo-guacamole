@@ -15,7 +15,7 @@ AO3 URL and says plainly that this is an unofficial stopgap.
 | Who can read uploads | Shared public archive. Every upload is readable by everyone, with takedowns and author removal requests from day one |
 | Hosting | Cloudflare: Workers, R2, Queues, KV, plus Neon Postgres through Hyperdrive |
 | Load target | Surge-ready: assume tens of thousands of signups in the first days |
-| Sign-in | Email magic link, with no passwords stored |
+| Sign-in | Email magic link with no passwords stored, through Better Auth (self-hosted in the Worker, data in Neon) and Resend |
 | Accepted files | AO3-native epub exports only. FanFicFare support comes later |
 | New versions | Replace the current version automatically only if newer and consistent with it. Otherwise hold for review |
 | Author identity | No work claims and no author verification while AO3 is down. Removal and opt-out are requests anyone can make, without proving who they are |
@@ -32,12 +32,12 @@ AO3 URL and says plainly that this is an unofficial stopgap.
    │             └──────┬──────────────┬──────────────────┬───────────────────────┘
    │                    │ Hyperdrive   │ KV               │ Queue: ingest
    │                    ▼              ▼                  ▼
-   │              Neon Postgres    sessions,         ingest Worker (consumer)
-   │              (metadata,       reading pos.,      • unzip, parse OPF + AO3 preface
-   │               tags, FTS)      rate counters      • sanitize chapter XHTML
+   │              Neon Postgres    caches,           ingest Worker (consumer)
+   │              (metadata, FTS,  reading pos.,      • unzip, parse OPF + AO3 preface
+   │               users, auth)    rate counters      • sanitize chapter XHTML
    │                    ▲                             • write chapters to R2, rows to PG
    │                    └─────────────────────────────┘
-   │  upload: presigned PUT with JS, or form POST through the web Worker without JS
+   │  upload: presigned PUT from the browser (needs JS, like every Turnstile form)
    ├────────────────────────────────────────────────▶ R2: uploads/  (raw epubs)
    │
    │             ┌──────────────────────── content.<domain> ──────────────────────┐
@@ -51,7 +51,11 @@ AO3 URL and says plainly that this is an unofficial stopgap.
 - **R2 for all bytes.** It has no egress fees, which matters most when the
   workload is mostly serving books. Fresh uploads land in `uploads/`, which
   expires on its own. Original files we keep go in `originals/`, and processed
-  chapters go under `works/<work_id>/v<version>/`.
+  chapters go under `works/<ao3_work_id>/<upload_id>/`: one prefix per version,
+  keyed by the upload that produced it, so a retried job overwrites only its own
+  files. `work_versions.r2_prefix` records it; version numbers live only in
+  Postgres. The AO3 work ID is known once the preface is parsed, before anything
+  is written.
 - **Neon Postgres over D1.** D1 is capped at 10 GB per database, the cap can't
   be raised, and each database runs one query at a time. AO3 has more than 15M
   works. Even metadata-only rows (title, summary, tags) for a large share of
@@ -72,7 +76,9 @@ AO3 URL and says plainly that this is an unofficial stopgap.
 ## Data model (first cut)
 
 ```sql
-users        (id, email, display_name, created_at, role, upload_quota_used, banned_at)
+user         (id, email, name, email_verified, image, created_at, updated_at,  -- Better Auth's table
+              role, upload_quota_used, banned_at)                             -- plus our fields
+session, account, verification  -- Better Auth's tables; verification holds hashed magic-link tokens
 works        (id, ao3_work_id UNIQUE NULL, title, summary_html, rating, language,
               words, chapters_count, complete, published_at, updated_at,
               status,            -- processing | live | held | hidden | removed
@@ -84,7 +90,7 @@ tags         (id, type, name, name_norm) -- type: fandom|relationship|character|
 work_tags    (work_id, tag_id)
 uploads      (id, user_id, r2_key, sha256, bytes, status, lease_until,
               error_stage, error, work_id NULL, created_at)
-reports      (id, work_id, reporter_id NULL, kind, body, status, created_at)
+reports      (id, work_id, reporter_id, kind, body, status, created_at)  -- reporting needs an account
 takedowns    (id, work_id, requester, basis, status, resolved_by, created_at)
 requests     (id, kind, work_id NULL, pseud_norm NULL, contact_email, statement,
               status, ip_hash, created_at)        -- kind: remove_work | opt_out
@@ -109,19 +115,18 @@ merge synonyms later.
    presigned R2 `PUT` URL, valid for 10 minutes and locked to
    `Content-Type: application/epub+zip`. R2 presigned URLs support PUT but not
    form POST, and the bucket needs a CORS rule for `app.<domain>`.
-2. **Upload.** With JS, the browser PUTs the file straight to R2 so it can show
-   progress. Without JS, the upload page is a plain
-   `<form enctype="multipart/form-data">` POST to the web Worker. The Worker
-   checks the same things as step 1 and streams each file into R2 through its
-   binding, well under the 100 MB request body limit. Both paths then go on to
-   step 3 (FRONTEND-DISCOVERY, *Where the frontend changes the architecture*).
+2. **Upload.** The browser PUTs the file straight to R2 and shows progress.
+   Uploading needs JavaScript, as every form with a Turnstile check does
+   (Turnstile can't produce a token without it); without JS the upload page
+   says so (FRONTEND-DISCOVERY, *Where the frontend changes the architecture*).
 3. **Confirm.** `POST /uploads/:id/complete` HEADs the object, checks its size,
    and enqueues `{upload_id}`.
 4. **Process.** The ingest consumer runs with a batch size of about 5, retries,
    and a dead-letter queue. See the EPUB processor section below.
 5. **Track.** The uploader's page polls `GET /uploads/:id` for its status:
-   `processing`, `live`, `held_for_review`, or one of the rejection codes
-   below.
+   `processing`, `live`, `held_for_review`, `duplicate`, or one of the
+   rejection codes below. `held_for_review` and `duplicate` are not
+   rejections: the upload is kept, it just isn't (yet) the current version.
 
 ### EPUB processor
 
@@ -137,8 +142,8 @@ Chapter text isn't indexed.
 1. **Lease the job.** Queues may deliver a message more than once, so the job starts
    with an atomic `UPDATE uploads SET status='processing', lease_until=…` that
    only matches when the upload is `pending` or its lease has expired. All
-   output goes under a prefix keyed by the upload ID, so a retry overwrites its
-   own files and never touches another run's.
+   output goes under `works/<ao3_work_id>/<upload_id>/`, so a retry overwrites
+   its own files and never touches another run's.
 2. **Unzip with limits.** Read the object from R2 (25 MB or less) and check
    the zip's file index before decompressing anything:
    - at most 2,000 entries
@@ -184,8 +189,13 @@ Chapter text isn't indexed.
 6. **Sanitize.** Apply the allowlist below to chapter bodies, the summary and
    the notes. Images listed in the manifest are checked by their file signature
    (PNG, JPEG, GIF or WebP only), capped at 5 MB each, stored by SHA-256 under
-   `works/<id>/img/`, and their links rewritten. SVG, fonts and stylesheets are
-   dropped.
+   `works/<ao3_work_id>/img/`, and their links rewritten. SVG, fonts and
+   stylesheets are dropped. Images deliberately sit outside the per-upload
+   prefix: keyed by content hash, they are shared by every version that uses
+   them, a retried job rewrites the same keys, and they can be cached as
+   `immutable`. Images no version references (say, from a job that failed
+   before its transaction) are removed by a periodic sweep, and all of them go
+   when the work is removed.
 7. **Versioning.** Each work is keyed by `ao3_work_id`. The first upload
    creates the work. A later upload:
    - **replaces the current version** only if it is newer (more chapters or a
@@ -197,6 +207,8 @@ Chapter text isn't indexed.
      chapters differ, or if its tags or authors changed. This blocks someone
      editing an epub to tamper with a work.
    - **is marked `duplicate`** if it isn't newer. It's stored but not used.
+     This is a status, not a rejection: the uploader is told the work is
+     already in the archive.
 
    Nobody's upload gets special treatment, the author's included. We can't
    tell who the author is while AO3 is down.
@@ -206,13 +218,14 @@ Chapter text isn't indexed.
    Postgres transaction that upserts the work, adds the version, chapters and
    tags, and points `current_version_id` at the new version. Set the work
    `live` last. If the job fails before the transaction, R2 is left with
-   orphaned files under an upload prefix, which the cleanup rules delete. A
+   orphaned files under its `<upload_id>/` prefix, which the cleanup rules
+   delete. A
    job that fails for good goes to the dead-letter queue as `parse_failed`,
    with the stage and error recorded on the upload row.
 
 **Rejection codes:** `not_epub`, `zip_bomb`, `too_large`, `not_ao3`,
-`opted_out`, `duplicate`, `parse_failed`. Each one shows a plain-language
-message to the uploader.
+`opted_out`, `parse_failed`. Each one shows a plain-language message to the
+uploader. (`held_for_review` and `duplicate` are statuses, not rejections.)
 
 **Testing.** `HTMLRewriter` exists only in the Workers runtime, so the
 `packages/epub` tests run under `@cloudflare/vitest-pool-workers`. Fixtures are
@@ -271,6 +284,10 @@ can be snapshotted.
   form-action 'self'; frame-ancestors 'none'`. Injected markup can't guess the
   nonce, so any script that gets past the sanitizer won't run. Session cookies
   are `HttpOnly`, so scripts can't read them anyway.
+- **Pages with a Turnstile check** (sign-in, upload, `/remove`) add exactly one
+  allowance, `frame-src https://challenges.cloudflare.com`, for the challenge
+  iframe. Turnstile's `api.js` loads through a nonced `<script>`, which
+  `'strict-dynamic'` already covers. Reader and work pages never get it.
 - **What's left without an iframe:** content made to look like our own
   interface, such as a fake "log in again" box or a lookalike link. The
   sanitizer already blocks the main tools for that by stripping `<form>`,
@@ -300,23 +317,59 @@ can be snapshotted.
   `Content-Disposition: attachment` from `content.<domain>`. It's never
   displayed inline.
 
-## Auth (magic link)
+## Auth (magic link: Better Auth + Resend)
 
-- `POST /login` takes an email address and Turnstile. Rate limits apply per IP
-  and per email. It emails a single-use token valid for 15 minutes, stored in KV
-  as a hash.
-- `GET /login/verify?t=…` uses up the token and sets a session cookie
-  (`HttpOnly; Secure; SameSite=Lax`) scoped to `app.<domain>` only. Sessions are
-  stored in KV.
-- Emails go through a queue to a sender behind a small interface. Volume isn't
-  the risk; sending limits are:
-  - **Cloudflare Email Sending** is in beta and needs Workers Paid. It includes
-    3,000 emails a month, then $0.35 per 1,000. New accounts start on a
-    "conservative daily quota" that rises as the domain builds a reputation,
-    so a signup surge on a brand-new domain will hit that cap.
-  - So go live with a second provider (Postmark, SES or Resend) wired in as
-    failover from day one, and ask both for higher limits before launch. Watch
-    out: Resend's default API rate limit is about 2 requests per second.
+- **Library.** [Better Auth](https://www.better-auth.com/) 1.7 with its
+  magic-link plugin, running inside the web Worker. It's open source and
+  self-hosted: users and sessions live in Neon, and no third-party script
+  reaches the browser, which only ever sees our own HTML forms. A spike against
+  1.7.14 confirmed the behaviour below. Notes:
+  - Workers needs `nodejs_compat`, because Better Auth uses `AsyncLocalStorage`.
+  - Build the auth instance per request from `env` (Hyperdrive, secrets),
+    because bindings only exist inside a request.
+  - Pin `better-auth` and `@better-auth/kysely-adapter` to the same version.
+- **Requesting a link.** `POST /login` is our own route: a plain form with
+  Turnstile. Better Auth's own endpoint only accepts JSON, so our route calls
+  `auth.api.signInMagicLink` on the server. Calls made that way skip Better
+  Auth's CSRF check, its redirect check and its rate limiter, so our route does
+  all three:
+  - it checks `Origin` / `Sec-Fetch-Site`
+  - it rate limits per IP and per email with the Workers rate-limiting binding
+  - it reduces `next` to a same-site path (root-relative only: no `//`, no
+    `\`, no control characters) before passing it on
+  Tokens last 15 minutes and are stored hashed (`storeToken: "hashed"`) in
+  Better Auth's `verification` table.
+- **Using the link.** The email links to our `GET /login/confirm?token=…`,
+  which only shows a "Sign in" button: a POST form that uses nothing up. Mail
+  scanners that open links in advance therefore can't burn it.
+  `POST /login/confirm` calls `auth.api.magicLinkVerify`, which redirects to
+  `next` with the session cookie. A used or expired link comes back to `/login`
+  with a plain message.
+- **Single use.** The token is consumed by one `DELETE … RETURNING` in
+  Postgres, and only the request that gets the row back is signed in, so two
+  simultaneous uses can't both succeed. This holds only while tokens live in
+  the database. KV has no atomic get-and-delete, so if KV is ever added as
+  Better Auth's `secondaryStorage`, set `verification.storeInDatabase: true`.
+- **Session cookie.**
+  `__Secure-better-auth.session_token; HttpOnly; Secure; SameSite=Lax; Path=/`,
+  set with `useSecureCookies: true`. There is no `Domain`
+  (`crossSubDomainCookies` stays off), so the cookie never reaches
+  `content.<domain>`.
+- **Better Auth's own rate limiter** only covers requests through
+  `auth.handler`. Its default memory store is per isolate on Workers, so set
+  `rateLimit.storage: "database"` (or a Durable Object through
+  `customStorage`), with `ipAddressHeaders: ["cf-connecting-ip"]`.
+- **Email: Resend primary.** Emails go through a queue to a sender behind a
+  small interface. Volume isn't the risk; sending limits are.
+  - The queue consumer sends with Resend's batch API, to stay under its
+    per-second API limit (by default about 2 requests a second; ask for more
+    before launch).
+  - Mail goes from a dedicated subdomain with SPF, DKIM and DMARC, warmed up
+    before launch.
+  - Postmark or SES is wired in as failover from day one.
+  - Cloudflare Email Sending isn't used for launch: it's in beta, and new
+    accounts start on a "conservative daily quota" that a signup surge would
+    hit.
   - The login page tells people that links can take a minute to arrive during
     busy periods.
 - Accounts are needed only to upload, report or save reading position. Reading
@@ -349,7 +402,7 @@ epub, under the normal versioning rules.
   together, restore in bulk, and block a requester. We accept this risk: an
   unfair hide is temporary, while ignoring a genuine author is not.
 - **Removal really removes.** Setting a work to `removed`, through a takedown,
-  an author request or a moderator, also deletes `works/<id>/` and the raw
+  an author request or a moderator, also deletes `works/<ao3_work_id>/` and the raw
   upload from R2, and purges the work's pages, cached fragments, images and
   download URLs from the cache. Images and downloads are cached as
   `immutable`, so without the purge parts of a removed work stay reachable.
@@ -357,15 +410,20 @@ epub, under the normal versioning rules.
   a designated agent registered with the US Copyright Office, a public takedown
   form, a counter-notice process and a repeat-infringer policy. Get a lawyer to
   review this before launch.
-- **Reports.** Every work has a report button. Works with N or more open
-  reports are hidden automatically until a moderator looks at them.
+- **Reports.** Every work has a report button. Reporting needs a signed-in
+  account, so each report has a reporter who can be rate limited or blocked;
+  signed-out readers are sent to sign in and brought back to the form. Works
+  with N or more open reports are hidden automatically until a moderator looks
+  at them. (Authors asking for removal use `/remove`, which needs no account.)
 - **Moderation.** A small admin area has queues for reports, takedowns and
   removal or opt-out requests, plus actions to hide, remove, restore, block a
   requester and ban an uploader.
 
 ## Surge controls
 
-- Turnstile on signup, login and upload requests.
+- Turnstile on signup, login, upload and `/remove` requests. Turnstile needs
+  JavaScript, so those forms do too; reading, browsing and search work without
+  it.
 - The Workers rate-limiting binding covers abuse throttling on login, upload
   requests and search, keyed per IP and per user. It's approximate and counts
   per Cloudflare location, over 10- or 60-second windows. That's fine for
@@ -408,8 +466,9 @@ epub, under the normal versioning rules.
 - Comments (needs much more moderation, so leave it out unless people ask)
 - Bulk upload from a zip of epubs
 - FanFicFare epubs of AO3 works (second preface parser, keyed on `dc:source`)
-- Export and shut down: once AO3 returns, redirect every work to its AO3 URL
-  and wind the site down
+- Export and shut down: nothing changes automatically when AO3 returns (the
+  AO3 links simply start working). The operator starts the wind-down by hand:
+  redirect every work to its AO3 URL, then shut the site down
 
 ## Proposed repo layout
 
