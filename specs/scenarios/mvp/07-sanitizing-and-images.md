@@ -15,6 +15,7 @@ Relates to: docs/ARCHITECTURE.md § Sanitizing (security requirement), § EPUB p
 - GIVEN a chapter containing `p, br, hr, em, strong, i, b, u, s, sub, sup, blockquote, h1–h6, ul, ol, li, dl, dt, dd, table, thead, tbody, tr, th, td, span, div, a, img, abbr, small, center`
 - WHEN it is sanitized
 - THEN all of those elements remain
+- AND the one exception is empty marker markup: a `span` with no attributes is unwrapped (its text stays), and a `div` with no attributes and no content is dropped
 
 ### Only allowlisted attributes are kept
 - GIVEN an allowed element with `href`, `src`, `alt`, `title`, `colspan`, `rowspan`, `dir`, `lang`, `align` and also `class`, `id` and `data-x`
