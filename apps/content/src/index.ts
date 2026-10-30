@@ -5,7 +5,8 @@ export interface Env {
 const IMMUTABLE = "public, max-age=31536000, immutable";
 
 // The only keys this origin serves. A segment is one plain path segment: no slash,
-// no percent-encoding, no leading dot. The path is used as the R2 key undecoded.
+// no percent-encoding, no leading dot. The path is used as the R2 key undecoded,
+// after the URL parser has already resolved any dot segments, encoded or not.
 const SEGMENT = "[A-Za-z0-9_-][A-Za-z0-9._-]*";
 const IMAGE = new RegExp(`^/works/\\d+/img/${SEGMENT}$`);
 const ORIGINAL = new RegExp(`^/originals/${SEGMENT}$`);
@@ -13,11 +14,14 @@ const ORIGINAL = new RegExp(`^/originals/${SEGMENT}$`);
 // Ingest stores only these image types (ARCHITECTURE, EPUB processor step 6).
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
-/** Every response, errors included, goes out through here: no cookie, no sniffing. */
+/**
+ * Every response, errors included, goes out through here with `nosniff`. Its headers
+ * are only this module's literals, so none sets a cookie; cookies a zone feature adds
+ * after the Worker are kept off this host by zone config (ARCHITECTURE, Hosts).
+ */
 function respond(body: BodyInit | null, status: number, headers: Record<string, string> = {}) {
   const h = new Headers(headers);
   h.set("X-Content-Type-Options", "nosniff");
-  h.delete("Set-Cookie");
   return new Response(body, { status, headers: h });
 }
 
