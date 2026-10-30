@@ -1,0 +1,14 @@
+{
+  // The web Worker answers only on rarepair.fans. www is routed here too, so it
+  // can redirect to the bare domain (ARCHITECTURE, Hosts).
+  "name": "rarepair-web",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "routes": [
+    { "pattern": "rarepair.fans/*", "zone_name": "rarepair.fans" },
+    { "pattern": "www.rarepair.fans/*", "zone_name": "rarepair.fans" }
+  ],
+  // No second copy of the app on a workers.dev or preview URL.
+  "workers_dev": false,
+  "preview_urls": false
+}
