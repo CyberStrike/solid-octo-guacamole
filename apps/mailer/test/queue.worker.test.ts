@@ -57,6 +57,63 @@ describe("01-auth-magic-link", () => {
   });
 });
 
+// Everything the Worker wrote to the console during one queue run, as text.
+function captureLogs() {
+  const lines: string[] = [];
+  for (const level of ["log", "info", "warn", "error", "debug"] as const) {
+    vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+      lines.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
+    });
+  }
+  return lines;
+}
+
+describe("mailer logs", () => {
+  it("logs the provider, outcome and provider message IDs of each send", async () => {
+    stubResend(accepted);
+    const logs = captureLogs();
+
+    await consume([signIn(1), signIn(2)]);
+
+    const text = logs.join("\n");
+    expect(text).toContain("resend");
+    expect(text).toContain("sent");
+    expect(text).toContain("resend-0");
+    expect(text).toContain("resend-1");
+  });
+
+  it.each([
+    ["sent", () => accepted],
+    ["refused", () => () => new Response('{"message":"reader1@example.test"}', { status: 429 })],
+    ["failed", () => () => new Response('{"message":"reader1@example.test"}', { status: 422 })],
+  ] as const)("never logs an address or a link when the batch is %s", async (_, respond) => {
+    stubResend(respond());
+    const logs = captureLogs();
+
+    await consume([signIn(1), { kind: "sign-in", to: "reader9@example.test", url: "http://x.test/" }]);
+
+    const text = logs.join("\n");
+    expect(logs.length).toBeGreaterThan(0);
+    expect(text).not.toMatch(/@example\.test/);
+    expect(text).not.toMatch(/https?:\/\//);
+    expect(text).not.toContain("link-1");
+  });
+
+  it("never logs an address or a link when the provider cannot be reached", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(
+      new TypeError("could not reach reader1@example.test for https://rarepair.fans/login/confirm?token=link-1"),
+    );
+    const logs = captureLogs();
+
+    await consume([signIn(1)]);
+
+    const text = logs.join("\n");
+    expect(logs.length).toBeGreaterThan(0);
+    expect(text).not.toMatch(/@example\.test/);
+    expect(text).not.toMatch(/https?:\/\//);
+  });
+});
+
 describe("mailer failures", () => {
   it("a batch every provider refuses is retried by the queue, not acked", async () => {
     stubResend(() => new Response("{}", { status: 503 }));
