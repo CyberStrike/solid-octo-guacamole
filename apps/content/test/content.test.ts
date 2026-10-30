@@ -92,6 +92,8 @@ describe("09-content-origin", () => {
     await E.BUCKET.put(fragment, html, { httpMetadata: { contentType: "text/html" } });
     await E.BUCKET.put("uploads/01J9ZQ4K7M3XYV8T2W5R6N0B1C", EPUB);
     await E.BUCKET.put("index.html", html, { httpMetadata: { contentType: "text/html" } });
+    await E.BUCKET.put("works/123456/img/.hidden", PNG, { httpMetadata: { contentType: "image/png" } });
+    await E.BUCKET.put("originals/.hidden", EPUB);
     const refused = [
       fragment,
       "uploads/01J9ZQ4K7M3XYV8T2W5R6N0B1C",
@@ -103,6 +105,9 @@ describe("09-content-origin", () => {
       "works/123456/img/",
       "works/123456/img/..%2f01J9ZQ4K7M3XYV8T2W5R6N0B1C%2f1.html",
       "works/123456/img/%2e%2e",
+      // Reaches the Worker as is (no dot segment to resolve), so the regex refuses it.
+      "works/123456/img/.hidden",
+      "originals/.hidden",
       "originals/",
       "originals/a/b",
       `/${ORIGINAL_KEY}`,
@@ -151,6 +156,22 @@ describe("content Worker", () => {
     expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(await res.text()).toBe("");
+  });
+
+  it("A 404 carries the common headers and no body, on GET and HEAD", async () => {
+    await seed();
+    await E.BUCKET.put("index.html", new TextEncoder().encode("<p>x</p>"));
+    // A refused path and a well-formed key that is not in the bucket.
+    for (const key of ["index.html", "works/123456/img/missing"]) {
+      for (const method of ["GET", "HEAD"]) {
+        const res = await get(key, { method, headers: { cookie: "session=abc" } });
+        expect(res.status, `${method} ${key}`).toBe(404);
+        expect(res.headers.get("cache-control"), `${method} ${key}`).toBe("no-store");
+        expect(res.headers.get("x-content-type-options"), `${method} ${key}`).toBe("nosniff");
+        expect(res.headers.has("set-cookie"), `${method} ${key}`).toBe(false);
+        expect(await res.text(), `${method} ${key}`).toBe("");
+      }
+    }
   });
 
   it("Methods other than GET and HEAD are refused", async () => {
