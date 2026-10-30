@@ -156,6 +156,19 @@ describe("06 AO3 preface and chapters", () => {
       expect(work.reviewReasons).toEqual([]);
     });
 
+    it("takes the table of contents from the nav when the NCX lists nothing", async () => {
+      const entries = unzipSync(epub3(navDoc(tocNav(flatItems())), { keepNcx: true }));
+      const ncx = strFromU8(entries["toc.ncx"]!).replace(/<navMap>[\s\S]*<\/navMap>/, "<navMap></navMap>");
+      const { mimetype: _, ...rest } = entries;
+      const work = await processEpub(zipEntries({ ...rest, "toc.ncx": ncx }));
+      expect(work.chapters.map((c) => [c.n, c.title])).toEqual([
+        [1, "Nav first"],
+        [2, "Nav second"],
+        [3, "Nav third"],
+      ]);
+      expect(work.reviewReasons).toEqual([]);
+    });
+
     it("rejects a nav that declares XML entities as not_epub", async () => {
       const nav = navDoc(tocNav(flatItems())).replace(
         "<!DOCTYPE html>",
