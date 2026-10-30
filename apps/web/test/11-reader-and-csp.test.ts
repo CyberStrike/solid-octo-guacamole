@@ -54,4 +54,25 @@ describe("11-reader-and-csp", () => {
       expect(withoutNonce(res.headers.get("content-security-policy"))).toBe(STRICT);
     }
   });
+
+  it("Nonce is fresh per response", async () => {
+    // No chapter page exists yet; a Turnstile page also renders the nonce into its body.
+    for (const path of ["/no-such-chapter", "/login"]) {
+      const first = nonceOf((await fetchW(path)).headers.get("content-security-policy"));
+      const second = nonceOf((await fetchW(path)).headers.get("content-security-policy"));
+      // At least 128 bits of base64.
+      expect(first).toMatch(/^[A-Za-z0-9+/]{22,}={0,2}$/);
+      expect(second).toMatch(/^[A-Za-z0-9+/]{22,}={0,2}$/);
+      expect(second).not.toBe(first);
+    }
+  });
+
+  it("Page cannot be framed", async () => {
+    for (const path of ["/", "/login", "/upload", "/remove"]) {
+      const directives = (await fetchW(path)).headers
+        .get("content-security-policy")
+        ?.split("; ");
+      expect(directives).toContain("frame-ancestors 'none'");
+    }
+  });
 });
