@@ -1,6 +1,6 @@
 # Process
 
-Where planning lives and how work is tracked, so none of it depends on one session's memory. The design is `docs/ARCHITECTURE.md` and `docs/FRONTEND-DISCOVERY.md`. The acceptance criteria are `specs/scenarios/`. The gate is `.claude/skills/gate/SKILL.md`, and tickets come from `.claude/skills/to-tickets/SKILL.md`. Where this file and one of those disagree, that file wins and this one is fixed.
+Where planning lives and how work is tracked, so none of it depends on one session's memory. The design is `docs/ARCHITECTURE.md` and `docs/FRONTEND-DISCOVERY.md`. The acceptance criteria are `specs/scenarios/`. The gate is `.claude/skills/gate/SKILL.md`, tickets come from `.claude/skills/to-tickets/SKILL.md`, waves of items are run by `.claude/skills/orchestrate/SKILL.md`, and items are built test-first by `.claude/skills/tdd/SKILL.md`. Where this file and one of those disagree, that file wins and this one is fixed.
 
 Adapted from the folio project's ledger.
 
@@ -14,6 +14,7 @@ Adapted from the folio project's ledger.
 | Where each item is now | The ledger, https://claude.ai/artifact/TxUtdLCvqUiySs749b8sMn |
 | The ledger page's source | `docs/ledger/page.html` |
 | The ledger check | `scripts/ledger-check.mjs` |
+| Running a wave of items | `/orchestrate`, with the agent types in `.claude/agents/` |
 
 ## Work items
 
@@ -21,6 +22,7 @@ Adapted from the folio project's ledger.
 - **Tickets are cut by `/to-tickets`.** Each issue's *Definition of done* cites scenario cases, and its `Depends on:` line names the issues that must merge first. The gate checks that each dependency is closed.
 - **Order follows blockers.** Work the frontier: items whose blockers have all merged. Otherwise landing order doesn't matter, unless the operator marks an item critical.
 - **Start an item only on the operator's word**, even when its blockers have cleared.
+- **A wave runs under `/orchestrate`.** An explorer writes notes on each item into a shared scratchpad. Then a fresh engineer per item, on a model picked for that item, builds it test-first with `/tdd` in its own worktree and branch, and opens its PR after `/gate pr`. The merge ladder stays with the operator.
 
 ## The ledger
 
@@ -42,8 +44,8 @@ Collections, with the fields `docs/ledger/page.html` reads:
     - `gating` or `review` (Testing)
     - `merged`, `done` or `closed` (Done; `closed` for an item that ended without merging)
   - `gates` names the items that must merge first: the issue's `Depends on:` line.
-- **`agents`**: one doc per builder, gate or reviewer. Fields:
-  - kind (`builder`, `gate` or `reviewer`), name, item (or task, for work with no item), model, lane, step, pr[], startedAt, finishedAt, note
+- **`agents`**: one doc per explorer, builder, consultant, gate or reviewer. Fields:
+  - kind (`explorer`, `builder`, `consultant`, `gate` or `reviewer`), name, item (or task, for work with no item), model, lane, step, pr[], startedAt, finishedAt, note
   - status is `running`, `idle`, `finished` or `failed`
 - **`questions`**: one per open design question, with id `Q<n>`, title, state (`open` or `closed`), proceeding and note.
 - **`reviews`**: the operator's task list, with title, detail, ref, url, order and state (`open` or `done`).
