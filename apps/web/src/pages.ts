@@ -6,8 +6,8 @@ import { TURNSTILE_ORIGIN } from "./security";
 
 const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
-/** A whole HTML document. `title` and `body` are trusted markup from this file. */
-export const page = (title: string, body: string, head = "") => `<!doctype html>
+/** A whole HTML document. Every argument is trusted markup from this file, never escaped. */
+const page = (title: string, body: string, head = "") => `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} · rarepair</title>${head}</head>
 <body><main>${body}</main></body>
