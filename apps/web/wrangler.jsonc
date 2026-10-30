@@ -1,6 +1,6 @@
 {
-  // The web Worker answers only on rarepair.fans. www is routed here too, so it
-  // can redirect to the bare domain (ARCHITECTURE, Hosts).
+  // The web Worker is routed on rarepair.fans and www.rarepair.fans only, and www
+  // just redirects to the bare domain (ARCHITECTURE, Hosts).
   "name": "rarepair-web",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",

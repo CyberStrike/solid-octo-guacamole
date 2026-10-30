@@ -89,6 +89,8 @@ describe("11-reader-and-csp", () => {
       ["/login", "https://rarepair.fans/login"],
       ["/login?next=%2Fmy%20uploads", "https://rarepair.fans/login?next=%2Fmy%20uploads"],
       ["/caf%C3%A9", "https://rarepair.fans/caf%C3%A9"],
+      // An empty query is still a query.
+      ["/login?", "https://rarepair.fans/login?"],
     ];
     for (const method of ["GET", "HEAD", "POST", "PUT", "DELETE"]) {
       for (const [path, location] of cases) {

@@ -20,24 +20,29 @@ const TURNSTILE_PATHS = new Set(["/login", "/upload", "/remove"]);
 export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 const TURNSTILE_FRAME = `frame-src ${TURNSTILE_ORIGIN}`;
 
-/** Sets HSTS on every response, so it must run outermost (ARCHITECTURE, Hosts). */
+/**
+ * Sets HSTS on every response that comes back through the app, error pages and
+ * redirects included, so it must run outermost (ARCHITECTURE, Hosts).
+ */
 export const strictTransportSecurity: MiddlewareHandler = async (c, next) => {
   await next();
   // c.header, not c.res.headers.set: it copies a response whose headers are immutable.
   c.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
 };
 
-/**
- * Answers every request on www, whatever the method, with a 308 to the same path
- * and query on the bare domain, before any route runs. A 308 keeps a POST a POST.
- * The trailing-dot spellings of both hosts are separate origins, so they go too.
- */
+// www and the trailing-dot spellings of both hosts, which a browser treats as separate origins.
 const REDIRECTED_HOSTS = new Set(["www.rarepair.fans", "www.rarepair.fans.", "rarepair.fans."]);
 
+/**
+ * Answers every request on those hosts, whatever the method, with a 308 to the same
+ * path and query on the bare domain, before any route runs. A 308 keeps a POST a POST.
+ */
 export const wwwToBareDomain: MiddlewareHandler = async (c, next) => {
   const url = new URL(c.req.url);
   if (!REDIRECTED_HOSTS.has(url.hostname)) return next();
-  return c.body(null, 308, { Location: `https://rarepair.fans${url.pathname}${url.search}` });
+  // Slice the href rather than join pathname and search, which drop a bare "?".
+  const pathAndQuery = url.href.slice(url.origin.length);
+  return c.body(null, 308, { Location: `https://rarepair.fans${pathAndQuery}` });
 };
 
 /** A fresh base64 nonce of 16 random bytes. */
