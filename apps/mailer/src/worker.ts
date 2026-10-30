@@ -1,5 +1,5 @@
 ﻿import { deliver } from "./deliver";
-import type { EmailMessage } from "./message";
+import { parseMessage } from "./message";
 import { render } from "./render";
 import { resendSender } from "./resend";
 
@@ -10,13 +10,26 @@ export interface Env {
 
 export default {
   async queue(batch, env, _ctx) {
-    const messages = batch.messages;
-    const emails = messages.map((m) => render(m.body as EmailMessage, env.MAIL_FROM));
+    const valid: Message[] = [];
+    const emails = [];
+    for (const message of batch.messages) {
+      const parsed = parseMessage(message.body);
+      if (parsed === null) {
+        message.ack();
+        continue;
+      }
+      valid.push(message);
+      emails.push(render(parsed, env.MAIL_FROM));
+    }
+    if (emails.length === 0) return;
+
+    // Only Resend for now: the failover provider is still to be chosen.
     const deliveries = await deliver(emails, [resendSender(env.RESEND_API_KEY)]);
     for (const d of deliveries) {
       for (const i of d.indexes) {
-        if (d.result.outcome === "sent") messages[i]!.ack();
-        else messages[i]!.retry();
+        // Ack and retry per message: a retried message is dead-lettered after max_retries.
+        if (d.result.outcome === "sent") valid[i]!.ack();
+        else valid[i]!.retry();
       }
     }
   },
