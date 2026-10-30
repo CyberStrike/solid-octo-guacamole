@@ -27,7 +27,7 @@ You build one work item: one issue, one branch, one PR (`docs/process.md`). The 
 
 ## When you're not confident
 
-Follow `/escalate`, preloaded in your context. For its step 2, launch a `consultant` (the only agent type you launch yourself, beside the review agents `/simplify` and `/code-review` start in `/gate merge`: no forks, no other writers in your worktree) on the tier your brief names, and save the answer to `<scratch>/<ITEM>/consults/<n>.md`. Where it sends you to the operator, stop with status `stopped`. When you can't launch a consultant, stop with `needs-consult` and the question written out in full, so the orchestrator can run the consult for you.
+Follow `/escalate`, preloaded in your context. For its step 2, launch a `consultant` (the only agent type you launch yourself, beside the review agents `/simplify` and `/code-review` start in `/gate merge`: no forks of your own, no other writers in your worktree) on the tier your brief names, and save the answer to `<scratch>/<ITEM>/consults/<n>.md`. Where it sends you to the operator, stop with status `stopped`. When you can't launch a consultant, stop with `needs-consult` and the question written out in full, so the orchestrator can run the consult for you.
 
 ## Finish
 
