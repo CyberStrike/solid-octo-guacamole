@@ -85,5 +85,22 @@ describe("06 AO3 preface and chapters", () => {
       expect(work.chapters.map((c) => markers(c.html))).toEqual([["c1-a"], ["c2-a", "c2-b"], ["c3-a"]]);
       expect(work.reviewReasons).toEqual([]);
     });
+
+    it("reads nested nav entries under a span group heading", async () => {
+      const items = `<li><a href="Synthetic_preface.xhtml">Preface</a></li>
+<li><span>Part one</span><ol>
+  <li><a href="Nav%20Parts_split_000.xhtml"><span>1.</span> Nav first</a></li>
+  <li><a href="Nav%20Parts_split_000.xhtml#toc2">Nav second</a><ol>
+    <li><a href="Nav%20Parts_split_001.xhtml#toc3">Nav third</a></li>
+  </ol></li>
+</ol></li>`;
+      const work = await processEpub(epub3(navDoc(tocNav(items))));
+      expect(work.chapters.map((c) => [c.n, c.title])).toEqual([
+        [1, "1. Nav first"],
+        [2, "Nav second"],
+        [3, "Nav third"],
+      ]);
+      expect(work.reviewReasons).toEqual([]);
+    });
   });
 });
