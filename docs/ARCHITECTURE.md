@@ -37,7 +37,7 @@ AO3 URL and says plainly that this is an unofficial stopgap.
    │               tags, FTS)      rate counters      • sanitize chapter XHTML
    │                    ▲                             • write chapters to R2, rows to PG
    │                    └─────────────────────────────┘
-   │  upload: presigned PUT with JS, or form POST through the web Worker without JS
+   │  upload: presigned PUT from the browser (needs JS, like every Turnstile form)
    ├────────────────────────────────────────────────▶ R2: uploads/  (raw epubs)
    │
    │             ┌──────────────────────── content.<domain> ──────────────────────┐
@@ -113,12 +113,10 @@ merge synonyms later.
    presigned R2 `PUT` URL, valid for 10 minutes and locked to
    `Content-Type: application/epub+zip`. R2 presigned URLs support PUT but not
    form POST, and the bucket needs a CORS rule for `app.<domain>`.
-2. **Upload.** With JS, the browser PUTs the file straight to R2 so it can show
-   progress. Without JS, the upload page is a plain
-   `<form enctype="multipart/form-data">` POST to the web Worker. The Worker
-   checks the same things as step 1 and streams each file into R2 through its
-   binding, well under the 100 MB request body limit. Both paths then go on to
-   step 3 (FRONTEND-DISCOVERY, *Where the frontend changes the architecture*).
+2. **Upload.** The browser PUTs the file straight to R2 and shows progress.
+   Uploading needs JavaScript, as every form with a Turnstile check does
+   (Turnstile can't produce a token without it); without JS the upload page
+   says so (FRONTEND-DISCOVERY, *Where the frontend changes the architecture*).
 3. **Confirm.** `POST /uploads/:id/complete` HEADs the object, checks its size,
    and enqueues `{upload_id}`.
 4. **Process.** The ingest consumer runs with a batch size of about 5, retries,
@@ -189,8 +187,13 @@ Chapter text isn't indexed.
 6. **Sanitize.** Apply the allowlist below to chapter bodies, the summary and
    the notes. Images listed in the manifest are checked by their file signature
    (PNG, JPEG, GIF or WebP only), capped at 5 MB each, stored by SHA-256 under
-   `works/<ao3_work_id>/img/`, and their links rewritten. SVG, fonts and stylesheets are
-   dropped.
+   `works/<ao3_work_id>/img/`, and their links rewritten. SVG, fonts and
+   stylesheets are dropped. Images deliberately sit outside the per-upload
+   prefix: keyed by content hash, they are shared by every version that uses
+   them, a retried job rewrites the same keys, and they can be cached as
+   `immutable`. Images no version references (say, from a job that failed
+   before its transaction) are removed by a periodic sweep, and all of them go
+   when the work is removed.
 7. **Versioning.** Each work is keyed by `ao3_work_id`. The first upload
    creates the work. A later upload:
    - **replaces the current version** only if it is newer (more chapters or a
@@ -279,6 +282,10 @@ can be snapshotted.
   form-action 'self'; frame-ancestors 'none'`. Injected markup can't guess the
   nonce, so any script that gets past the sanitizer won't run. Session cookies
   are `HttpOnly`, so scripts can't read them anyway.
+- **Pages with a Turnstile check** (sign-in, upload, `/remove`) add exactly one
+  allowance, `frame-src https://challenges.cloudflare.com`, for the challenge
+  iframe. Turnstile's `api.js` loads through a nonced `<script>`, which
+  `'strict-dynamic'` already covers. Reader and work pages never get it.
 - **What's left without an iframe:** content made to look like our own
   interface, such as a fake "log in again" box or a lookalike link. The
   sanitizer already blocks the main tools for that by stripping `<form>`,
@@ -376,7 +383,9 @@ epub, under the normal versioning rules.
 
 ## Surge controls
 
-- Turnstile on signup, login and upload requests.
+- Turnstile on signup, login, upload and `/remove` requests. Turnstile needs
+  JavaScript, so those forms do too; reading, browsing and search work without
+  it.
 - The Workers rate-limiting binding covers abuse throttling on login, upload
   requests and search, keyed per IP and per user. It's approximate and counts
   per Cloudflare location, over 10- or 60-second windows. That's fine for

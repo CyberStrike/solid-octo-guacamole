@@ -1,6 +1,6 @@
-# Scenario: Upload request, transfer and confirm (presigned PUT with JS, multipart POST without JS)
+# Scenario: Upload request, transfer and confirm (presigned PUT)
 
-Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (steps 1-3), § Surge controls (Orphaned uploads); docs/FRONTEND-DISCOVERY.md § Where the frontend changes the architecture (1. Uploads without JS), § Page inventory (Upload)
+Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (steps 1-3), § Surge controls (Orphaned uploads); docs/FRONTEND-DISCOVERY.md § Key journeys (3. Upload works), § Where the frontend changes the architecture (1. Forms with Turnstile need JS), § Page inventory (Upload)
 
 ## Setup
 - A signed-in user U with an active session and remaining daily upload quota
@@ -60,26 +60,18 @@ Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (steps 1-3), § Surge con
 - AND the page shows upload progress
 - AND the file bytes do not pass through the web Worker
 
-### Browser without JS uploads through a multipart form
-- GIVEN user U on `/upload` with JavaScript off
-- WHEN U picks an epub and submits the `<form enctype="multipart/form-data">`
-- THEN the form POSTs to the web Worker
-- AND the Worker streams the file into R2 through its binding
+### Upload of several files in one go
+- GIVEN user U on `/upload` with JavaScript on and quota for at least three uploads
+- WHEN U picks three epub files and submits
+- THEN each file gets its own `uploads` row and its own presigned PUT URL
+- AND each file is PUT straight to R2 with its own progress
+- AND each finished transfer goes through `POST /uploads/:id/complete`
 
-### Multipart upload of several files
-- GIVEN user U on `/upload` with JavaScript off and quota for at least three uploads
-- WHEN U picks three epub files and submits the form
-- THEN each file is streamed into R2 and gets its own `uploads` row
-
-### Multipart upload applies the same checks as the presigned path
-- GIVEN user U on `/upload` with JavaScript off
-- WHEN U submits the form with a failing Turnstile token, or with no remaining quota, or with a file over 25 MB
-- THEN the Worker refuses that file just as `POST /uploads` would
-
-### Both paths end at the same confirm step
-- GIVEN one upload sent by presigned PUT and one sent by multipart POST
-- WHEN each transfer finishes
-- THEN both go through `POST /uploads/:id/complete`
+### Upload page without JavaScript explains it is needed
+- GIVEN user U with JavaScript off
+- WHEN U opens `/upload`
+- THEN the page shows a `<noscript>` message saying uploading needs JavaScript
+- AND no file can be uploaded from the page
 
 ### Confirm enqueues the upload
 - GIVEN an upload whose object is in R2 and is 25 MB or less

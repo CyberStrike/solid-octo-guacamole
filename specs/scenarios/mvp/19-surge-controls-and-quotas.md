@@ -3,7 +3,7 @@
 Relates to: docs/ARCHITECTURE.md § Decisions so far (Load target), § Surge controls, § Ingestion pipeline, § Auth (magic link)
 
 ## Setup
-- Turnstile is configured on signup, login and upload requests
+- Turnstile is configured on signup, login, upload and `/remove` requests
 - The Workers rate-limiting binding covers login, upload requests and search, keyed per IP and per user, over 10- or 60-second windows
 - Upload quotas are counted in Postgres (`users.upload_quota_used`)
 - Users: an established user E, a brand-new user N, a trusted user T

@@ -1,6 +1,6 @@
 # Scenario: Remove-my-work and opt-out requests
 
-Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data model (requests, optouts), § Author requests & takedowns; docs/FRONTEND-DISCOVERY.md § Key journeys (4. Remove a work or opt out), § Page inventory (Remove my work / opt out, Hidden work)
+Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data model (requests, optouts), § Author requests & takedowns; docs/FRONTEND-DISCOVERY.md § Key journeys (4. Remove a work or opt out), § Page inventory (Remove my work / opt out, Hidden work), § Where the frontend changes the architecture (1. Forms with Turnstile need JS)
 
 ## Setup
 - Live work W at `/works/:id` with AO3 URL `archiveofourown.org/works/12345`, by pseud P
@@ -11,9 +11,16 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data 
 ## Cases
 
 ### Form needs no sign-in
-- GIVEN a signed-out visitor
+- GIVEN a signed-out visitor with JavaScript on
 - WHEN they open `/remove`
 - THEN the request form is shown without asking them to sign in
+
+### Removal form without JavaScript explains it is needed and gives the moderators' contact address
+- GIVEN a signed-out visitor with JavaScript off
+- WHEN they open `/remove`
+- THEN the page shows a `<noscript>` message saying the request form needs JavaScript
+- AND the message gives the moderators' contact address
+- AND no request can be submitted from the page
 
 ### Footer link reaches the form
 - GIVEN any page
@@ -55,7 +62,7 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data 
 ### Opt-out by pseud hides every existing work
 - GIVEN works W, W2 and W3 by pseud P and work X by another pseud
 - WHEN a visitor submits `/remove` with pseud P instead of a work, a contact email, a statement and a passing Turnstile token
-- THEN an `opt_out` request and an active `optouts` row for P's normalized pseud are stored
+- THEN an `opt_out` request and an active `optouts` row for P's `pseud_norm` are stored
 - AND W, W2 and W3 are hidden at once
 - AND X is unaffected
 
@@ -70,8 +77,9 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data 
 - THEN it is rejected at ingest with `opted_out`
 
 ### Opt-out matches the normalized pseud
-- GIVEN an active opt-out for pseud "Salt Water"
-- WHEN an epub by "salt water" is ingested
+- GIVEN an active opt-out for pseud P
+- AND an upload whose byline pseud has the same `pseud_norm` as P (normalization rule to be decided)
+- WHEN the upload is ingested
 - THEN it is rejected with `opted_out`
 
 ### Moderator confirms an opt-out

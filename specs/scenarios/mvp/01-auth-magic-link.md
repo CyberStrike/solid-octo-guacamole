@@ -1,6 +1,6 @@
 # Scenario: Magic-link sign-in and sessions
 
-Relates to: docs/ARCHITECTURE.md § Auth (magic link); docs/FRONTEND-DISCOVERY.md § Key journeys (2. Sign in), § Page inventory
+Relates to: docs/ARCHITECTURE.md § Auth (magic link), § Surge controls; docs/FRONTEND-DISCOVERY.md § Decisions so far (JavaScript), § Key journeys (2. Sign in), § Page inventory (Sign in), § Where the frontend changes the architecture (1. Forms with Turnstile need JS)
 
 ## Setup
 - The web Worker serves `app.<domain>` with `/login` and `/login/verify`
@@ -12,10 +12,15 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link); docs/FRONTEND-DISCOVERY.m
 ## Cases
 
 ### Sign-in page shows an email form
-- GIVEN a signed-out visitor
+- GIVEN a signed-out visitor with JavaScript on
 - WHEN they open `/login`
 - THEN the page shows an email address form with Turnstile alongside
-- AND the form works with JavaScript off
+
+### Sign-in page without JavaScript explains it is needed
+- GIVEN a signed-out visitor with JavaScript off
+- WHEN they open `/login`
+- THEN the page shows a `<noscript>` message saying signing in needs JavaScript
+- AND no sign-in request can be submitted from the page
 
 ### Requesting a magic link sends a single-use token
 - GIVEN a signed-out visitor with a valid email address and a passing Turnstile token

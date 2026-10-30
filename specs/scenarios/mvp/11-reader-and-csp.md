@@ -6,6 +6,7 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Chapter rendering), § Rea
 - A live work W with 5 chapters, chapter notes on chapter 2 and end notes on chapter 2, rated General Audiences with no archive warnings
 - Chapter fragments are stored in R2 under the version's prefix
 - A chapter fixture containing an injected `<script>` that survived the sanitizer (test-only)
+- The pages with a Turnstile check are `/login`, `/upload` and `/remove`
 
 ## Cases
 
@@ -16,9 +17,20 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Chapter rendering), § Rea
 - AND the page contains no `<iframe>` and no client-side epub engine
 
 ### Every app page sends the strict CSP
-- GIVEN any page served by `app.<domain>`
+- GIVEN any page served by `app.<domain>` without a Turnstile check
 - WHEN the response is returned
 - THEN it has the header `default-src 'self'; script-src 'nonce-{n}' 'strict-dynamic'; style-src 'self'; img-src 'self' https://content.<domain>; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
+
+### Turnstile pages allow only the Turnstile challenge frame
+- GIVEN `/login`, `/upload` and `/remove`
+- WHEN each response is returned
+- THEN its CSP header is the strict policy plus exactly `frame-src https://challenges.cloudflare.com`, and nothing else is added
+- AND Turnstile's `api.js` loads through a `<script>` carrying the page nonce, covered by `'strict-dynamic'`
+
+### Reader and work pages never allow third-party frames
+- GIVEN a work page, a chapter page and an entire-work page of W
+- WHEN each response is returned
+- THEN its CSP header has no `frame-src https://challenges.cloudflare.com` and allows no third-party frame
 
 ### Nonce is fresh per response
 - GIVEN the same chapter page requested twice

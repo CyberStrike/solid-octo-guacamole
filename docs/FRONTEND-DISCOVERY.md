@@ -17,7 +17,7 @@ fandoms and pseuds in it are invented placeholders.
 | --- | --- |
 | Visual direction | Modern and minimal. The identity is plain HTML with a strong typographic hierarchy: type, spacing and rules do the work, not boxes, shadows or imagery |
 | Warnings | **Hard constraint:** rating and archive warnings show on every work card and work page. They are never collapsed, never behind a hover, and never hidden to save space. Minimalism applies to everything else |
-| JavaScript | Every page works fully with JavaScript off. Small scripts only enhance: upload progress, reader settings without a reload, saving reading position |
+| JavaScript | Reading, browsing, search and reader settings work fully with JavaScript off; small scripts only enhance them (settings without a reload, saving reading position). Forms with a Turnstile check (sign-in, upload, `/remove`) need JavaScript, because Turnstile can't produce a token without it; with JS off they say so in a `<noscript>` message |
 | Pagination | Server-side pages with real URLs. No infinite scroll |
 | Branding | No AO3 or OTW name, symbols or styling in the UI. Ratings and warnings are text badges, not symbol icons (ARCHITECTURE, opening) |
 | Author identity | No claims, no author accounts, no "my works". Removal and opt-out are a public request form that needs no sign-in (ARCHITECTURE, *Author requests & takedowns*) |
@@ -69,14 +69,16 @@ Reading never requires an account (ARCHITECTURE, *Auth*).
    "Entire work" shows every chapter on one page.
 
 **2. Sign in** (any role)
-1. They give an email address on the sign-in page. Turnstile runs alongside.
+1. They give an email address on the sign-in page. Turnstile runs alongside,
+   so this step needs JavaScript; with it off, the page says so.
 2. A "Check your email" page tells them the link lasts 15 minutes and may take
    a minute to arrive.
 3. The link signs them in and sends them back to the page they started from.
    It uses a stored `next` value, never an open redirect.
 
 **3. Upload works** (uploader)
-1. They pick one or more `.epub` files on the upload page and submit.
+1. They pick one or more `.epub` files on the upload page and submit. Each
+   file goes straight to R2 with a progress bar; uploading needs JavaScript.
 2. Each file appears on *My uploads* with a status: processing, live, held for
    review, or rejected with a plain reason.
 3. Once a file is live, they can open the work.
@@ -85,7 +87,9 @@ Reading never requires an account (ARCHITECTURE, *Auth*).
 1. They follow "Ask for this to be removed" on a work page, or "Remove my work"
    in the footer. No sign-in is needed.
 2. They choose one work (prefilled from the work page) or a whole pseud, then
-   give a contact email and a short statement. Turnstile runs alongside.
+   give a contact email and a short statement. Turnstile runs alongside, so
+   this needs JavaScript; with it off, the page says so and gives the
+   moderators' contact address.
 3. The confirmation page tells them the work, or every work by the pseud, is
    already hidden, and that a moderator will review the request and email
    them.
@@ -109,8 +113,10 @@ Reading never requires an account (ARCHITECTURE, *Auth*).
 
 ## Page inventory
 
-Every page works without JavaScript. The "JS adds" column is progressive
-enhancement only.
+Every page renders without JavaScript, and reading, browsing and search work
+fully. The three forms with a Turnstile check (sign-in, upload, `/remove`)
+need JavaScript and show a `<noscript>` message without it. Elsewhere the
+"JS adds" column is progressive enhancement only.
 
 | Page | URL | Who | Without JS | JS adds |
 | --- | --- | --- | --- | --- |
@@ -122,10 +128,10 @@ enhancement only.
 | Chapter reader | `/works/:id/chapters/:n` | all | Chapter, nav, settings link | Settings without reload, saves position |
 | Entire work | `/works/:id/full` | all | All chapters on one page | Saves position |
 | Reader settings | `/settings/reader` | all | POST form sets a cookie, then redirects back | Applied live from the reader |
-| Sign in | `/login` | all | Email form, "check your email", error states | — |
-| Upload | `/upload` | signed in | Multipart form POST, one or more files | Direct-to-R2 upload with progress |
+| Sign in | `/login` | all | `<noscript>` message: signing in needs JavaScript | Email form with Turnstile, "check your email", error states |
+| Upload | `/upload` | signed in | `<noscript>` message: uploading needs JavaScript | Turnstile, then direct-to-R2 upload with progress, one or more files |
 | My uploads | `/me/uploads` | signed in | Status list that refreshes itself with `<meta http-equiv="refresh">` while anything is processing | Updates in place |
-| Remove my work / opt out | `/remove` (`?work=:id` prefills) | all | Request form, then a confirmation page | — |
+| Remove my work / opt out | `/remove` (`?work=:id` prefills) | all | `<noscript>` message with the moderators' contact address | Request form with Turnstile, then a confirmation page |
 | Report | `/works/:id/report` | signed in (others are sent to sign in) | Form, then a confirmation page | — |
 | DMCA notice | `/dmca` | all | Statutory notice form | — |
 | Moderation queues | `/admin/{reports,takedowns,requests}` | moderator | Tables with detail pages | — |
@@ -136,16 +142,17 @@ enhancement only.
 
 ## Where the frontend changes the architecture
 
-Discovery turned up three places where "works without JS" or the CSP collide
+Discovery and review turned up three places where "works without JS" or the CSP collide
 with the architecture as written. These are the resolutions. ARCHITECTURE.md is
 updated to match.
 
-1. **Uploads without JS.** A presigned R2 URL needs `fetch` or XHR, and R2 doesn't
-   accept form POSTs. So the baseline is a normal `<form enctype="multipart/form-data">`
-   POST to the web Worker, which streams each file into R2 through its binding.
-   25 MB is far under the 100 MB request body limit. With JS, the page switches
-   to direct presigned PUTs so it can show progress and skip the Worker. Both
-   paths end at the same `/uploads/:id/complete` step.
+1. **Forms with Turnstile need JS.** Turnstile can't produce a token without
+   JavaScript, and sign-in, upload and `/remove` all require one. So those
+   three forms need JS and show a `<noscript>` message without it, while
+   reading, browsing and search stay fully usable with JS off. Uploads are
+   direct presigned PUTs to R2 with progress (R2 doesn't accept form POSTs);
+   the earlier no-JS multipart path through the Worker was dropped. Turnstile
+   pages add `frame-src https://challenges.cloudflare.com` to the CSP.
 2. **Reader settings under the CSP.** `style-src 'self'` blocks inline `style=`
    attributes. So settings are attributes on `<html>`
    (`data-theme="dark" data-size="l" data-leading="relaxed"`), set on the
@@ -231,8 +238,11 @@ decoration in a minimal design. They're bold text with labels spelled out.
 
 ## Accessibility and devices
 
-- WCAG 2.2 AA. Every page has a skip link, landmarks, and one `<h1>` per page
-  whose heading order matches the visual order.
+- WCAG 2.2 AA. Every page has a skip link, landmarks, and exactly one `<h1>`
+  in its own chrome (the page or work title), with a heading order that matches
+  the visual order. Headings inside a chapter come from the uploaded work and
+  are not counted; the sanitizer keeps `h1`–`h6` as written. Demoting them a
+  level under the chapter title is a possible later improvement.
 - At 360 px wide, nothing scrolls sideways. The gate checks this.
 - Every action can be reached by keyboard. Focus rings are always visible, in
   the accent colour.

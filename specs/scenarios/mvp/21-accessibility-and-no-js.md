@@ -1,6 +1,6 @@
 # Scenario: Accessibility, no-JS behaviour and device performance
 
-Relates to: docs/FRONTEND-DISCOVERY.md § Decisions so far (JavaScript, Pagination), § Principles, § Page inventory, § Typographic system, § Accessibility and devices; docs/ARCHITECTURE.md § Reading
+Relates to: docs/FRONTEND-DISCOVERY.md § Decisions so far (JavaScript, Pagination), § Principles, § Page inventory, § Where the frontend changes the architecture (1. Forms with Turnstile need JS), § Typographic system, § Accessibility and devices; docs/ARCHITECTURE.md § Reading, § Sanitizing (security requirement), § Surge controls
 
 ## Setup
 - Every page in the page inventory: home, search, tag listing, work, warnings, chapter, entire work, reader settings, sign in, upload, my uploads, remove, report, DMCA, admin queues, about/terms/privacy, hidden, removed, not found
@@ -9,26 +9,35 @@ Relates to: docs/FRONTEND-DISCOVERY.md § Decisions so far (JavaScript, Paginati
 
 ## Cases
 
-### Every page works with JavaScript off
-- GIVEN JavaScript is off
-- WHEN a user completes each journey: find and read, sign in, upload, check uploads, remove or opt out, report, moderate
-- THEN every journey can be completed
+### Pages render with JavaScript off and only the Turnstile forms need it
+- GIVEN JavaScript is off, and a session already exists where a journey needs one
+- WHEN a user opens every page in the inventory and completes each journey without a Turnstile check: find and read, change reader settings, check uploads, report, moderate
+- THEN every page renders and every one of those journeys can be completed
+- AND reading, browsing, search and reader settings work fully
+- AND sign in, upload and `/remove` show their `<noscript>` message instead of a working form
 
-### Scripts only enhance
+### Scripts only enhance pages without a Turnstile check
 - GIVEN JavaScript is on
 - WHEN pages load
-- THEN scripts only add upload progress, reader settings without reload, saving reading position and in-place upload status
+- THEN on sign in, upload and `/remove` scripts run Turnstile and the form, including upload progress
+- AND on every other page scripts only add reader settings without reload, saving reading position and in-place upload status
 
 ### WCAG 2.2 AA
 - GIVEN every page in the inventory
 - WHEN it is checked against WCAG 2.2 AA
 - THEN it passes
 
-### Skip link, landmarks and one h1
+### Skip link, landmarks and one h1 in the page chrome
 - GIVEN any page
 - WHEN it renders
-- THEN it has a skip link, landmarks and exactly one `<h1>`
+- THEN it has a skip link, landmarks and exactly one `<h1>` in its own chrome (the page or work title)
 - AND heading order matches the visual order
+
+### Headings inside chapter content are not counted
+- GIVEN a chapter whose sanitized HTML contains two `<h1>` elements
+- WHEN the reader page renders
+- THEN the page chrome still has exactly one `<h1>`
+- AND the chapter's own headings appear inside `<article class="chapter">` as written
 
 ### No sideways scrolling at 360 px
 - GIVEN a 360 px wide viewport

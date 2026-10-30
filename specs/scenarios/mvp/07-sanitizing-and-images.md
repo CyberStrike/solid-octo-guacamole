@@ -111,6 +111,19 @@ Relates to: docs/ARCHITECTURE.md § Sanitizing (security requirement), § EPUB p
 - WHEN the work is ingested
 - THEN they share one SHA-256 key under `works/<ao3_work_id>/img/`
 
+### Unreferenced images are removed by the periodic sweep
+- GIVEN an image under `works/<ao3_work_id>/img/` that no version references
+- AND other images under the same prefix that a version does reference
+- WHEN the periodic sweep runs
+- THEN the unreferenced image is deleted
+- AND the referenced images are not
+
+### A retried job rewrites the same image keys
+- GIVEN an ingest job that wrote image I under `works/<ao3_work_id>/img/` and then failed before its transaction
+- WHEN the retry processes the same upload
+- THEN I is written to the same SHA-256 key
+- AND no second copy of I exists
+
 ### Lookalike interface markup is neutralized
 - GIVEN chapter markup crafted to look like a "log in again" box using `<form>`, `<style>` and inline `style`
 - WHEN it is sanitized
