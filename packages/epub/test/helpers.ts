@@ -51,6 +51,8 @@ export interface Ao3Spec {
   /** Extra `<dt>/<dd>` markup appended to the tag list. */
   extraDl?: string;
   summary?: string;
+  notes?: string;
+  endNotes?: string;
   /** Chapter files, in spine order, after the preface file. */
   files?: SpineFile[];
   /** NCX entries for chapters, `src` relative to the OPF (URL-encoded). */
@@ -93,13 +95,13 @@ export function ao3Epub(spec: Ao3Spec = {}): Uint8Array {
     <p class="calibre7">Summary</p>
     <blockquote class="userstuff">${spec.summary ?? '<p class="calibre7">A synthetic summary.</p>'}</blockquote>
     <p class="calibre7">Notes</p>
-    <blockquote class="userstuff"><p class="calibre7">Synthetic notes.</p></blockquote>
+    <blockquote class="userstuff">${spec.notes ?? '<p class="calibre7">Synthetic notes.</p>'}</blockquote>
     <div class="endnote-link">See the end of the work for more <a href="Synthetic_afterword.xhtml#endnotes">notes</a></div>
   </div>
 </div>`);
 
   const afterword = xhtml(`<div id="afterword" class="calibre1"><h2 class="toc-heading">Afterword</h2>
-  <div id="endnotes"><p class="calibre7">End Notes</p><blockquote class="userstuff"><p>Synthetic end notes.</p></blockquote></div>
+  <div id="endnotes"><p class="calibre7">End Notes</p><blockquote class="userstuff">${spec.endNotes ?? '<p>Synthetic end notes.</p>'}</blockquote></div>
   <p class="message">Please <a href="http://archiveofourown.org/works/${workId}/comments/new">drop by the archive and comment</a> to let the author know if you enjoyed their work!</p>
 </div>`);
 

@@ -61,6 +61,16 @@ describe("XSS corpus", () => {
     expectBalanced(work.summaryHtml!);
   });
 
+  it("strips payloads from the notes and end notes", async () => {
+    const work = await processEpub(ao3Epub({ notes: CORPUS, endNotes: CORPUS }));
+    for (const html of [work.notesHtml, work.endNotesHtml]) {
+      expect(html).not.toBeNull();
+      for (const bad of FORBIDDEN) expect(html).not.toMatch(bad);
+      expect(html).toContain("alpha-1");
+      expectBalanced(html!);
+    }
+  });
+
   it("allows only http(s) hrefs, after decoding entities and stripping control characters", () => {
     expect(safeHref("https://example.org/a b")).toBe("https://example.org/a%20b");
     expect(safeHref(" HTTP://example.org/")).toBe("http://example.org/");
