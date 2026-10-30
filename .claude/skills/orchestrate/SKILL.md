@@ -63,7 +63,7 @@ The scratchpad lasts for this session.
 ## 2. Propose the wave
 
 1. `git fetch`. Explorers read code as it is on `origin/main`, which is what each engineer's worktree starts from.
-2. Find the frontier: open items in `docs/project-tracking.md` whose `Depends on:` issues are all closed (`gh issue view <n>`). Narrow it to what the arguments name.
+2. Find the frontier: open items in `docs/project-tracking.md` whose `Depends on:` items have all merged, not merely closed. A blocker counts when its ledger status is `merged` or `done` (the board's own Ready test) and a PR that closed its issue merged (`gh issue view <n> --json closedByPullRequestsReferences`). An issue closed without a merged PR still blocks. Narrow it to what the arguments name.
 3. Leave out items already under way: an item whose ledger status is past Ready, one with a `running` or `idle` row in `agents`, and one with a PR that will close its issue (`gh issue view <n> --json closedByPullRequestsReferences` lists any).
 4. Show the operator the proposed wave: each item, its issue, its predicted gate tier, and the model line from *Models*. Flag any two items likely to touch the same files (the root `package.json`, a shared type), since their worktrees will conflict at merge.
 
@@ -129,7 +129,11 @@ When an item touched files that another open PR in the wave also touched, the se
 The ledger, its row ids and its statuses are in `docs/process.md`, *The ledger*. Write it through ArtifactData, with times from `date -u`, and put the writes of one moment in one `batch`.
 
 - **At each launch:** an `agents` row with `item`, `model`, `lane`, `status: "running"` and `startedAt`. Its kind follows the agent type: `explorer`, `builder` for an engineer, or `consultant`. Name it `<ITEM> explorer`, `<ITEM> engineer` or `<ITEM> consult <n>`; a consultant's `note` holds its question in a line. At an engineer's launch, also set the item's `status` to `building` and its `model`.
-- **At each report:** an explorer's or consultant's row becomes `finished`, with `finishedAt`; a consultant's `note` gets its confidence and the answer's file. An engineer at `pr-open` becomes `idle` with its `pr`; one that `failed` becomes `failed`. When its PR later merges, `scripts/ledger-check.mjs` reports the `idle` row, and you set it `finished`.
+- **At each report:** an explorer's or consultant's row becomes `finished`, with `finishedAt`; a consultant's `note` gets its confidence and the answer's file. An engineer that `failed` becomes `failed`. One that ends waiting becomes `idle`:
+  - at `pr-open`, with its `pr`. Also append the PR number to the item's `pr` array, keeping any already there: the board and `scripts/ledger-check.mjs` read the item's PRs, not the agent's.
+  - at `needs-consult` or `stopped`, with the question or stop event in a line as its `note`.
+
+  It goes back to `running` when you send it work with `SendMessage`. When its PR merges, `scripts/ledger-check.mjs` reports the `idle` row, and you set it `finished`.
 - **Consults an engineer runs itself** don't reach you until its report. Add their rows then, from the report's *Consults* line, with the times from the files under `consults/`.
 - **At the end of the wave:** a `log` entry listing each item and its outcome. Then run `scripts/ledger-check.mjs` as `docs/process.md` says.
 
