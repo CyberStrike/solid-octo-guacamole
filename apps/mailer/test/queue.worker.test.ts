@@ -56,3 +56,33 @@ describe("01-auth-magic-link", () => {
     expect(result.retryMessages).toEqual([]);
   });
 });
+
+describe("mailer failures", () => {
+  it("a batch every provider refuses is retried by the queue, not acked", async () => {
+    stubResend(() => new Response("{}", { status: 503 }));
+
+    const result = await consume([signIn(1), signIn(2)]);
+
+    expect(result.explicitAcks).toEqual([]);
+    expect(result.retryMessages.map((m) => m.msgId).sort()).toEqual(["msg-0", "msg-1"]);
+    expect(result.retryBatch.retry).toBe(false);
+    expect(result.ackAll).toBe(false);
+  });
+
+  it("a message that breaks the contract is not sent and does not hold up the batch", async () => {
+    const calls = stubResend(accepted);
+
+    const result = await consume([
+      signIn(1),
+      { kind: "sign-in", to: "reader2@example.test" },
+      { kind: "newsletter", to: "reader3@example.test", url: "https://rarepair.fans/" },
+      { kind: "sign-in", to: "reader4@example.test", url: "javascript:alert(1)" },
+      "not an object",
+    ]);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.emails).toHaveLength(1);
+    expect(result.explicitAcks.sort()).toEqual(["msg-0", "msg-1", "msg-2", "msg-3", "msg-4"]);
+    expect(result.retryMessages).toEqual([]);
+  });
+});
