@@ -263,11 +263,13 @@ export function readPackage(files: Map<string, Uint8Array>): EpubPackage {
     [...manifest.values()].find((i) => i.mediaType === "application/x-dtbncx+xml");
   const ncxBytes = tocItem ? files.get(tocItem.path) : undefined;
   if (tocItem && ncxBytes) navPoints = readNavPoints(parseXml(ncxBytes, "NCX"), dirOf(tocItem.path));
-  const navItem = [...manifest.values()].find((i) => i.properties.includes("nav"));
-  const navBytes = navItem ? files.get(navItem.path) : undefined;
-  if (navPoints.length === 0 && navItem && navBytes) {
-    const nav = parseXml(navBytes, "nav document", orderedParser) as unknown as OrderedNode[];
-    navPoints = readNavDocument(nav, dirOf(navItem.path));
+  if (navPoints.length === 0) {
+    const navItem = [...manifest.values()].find((i) => i.properties.includes("nav"));
+    const navBytes = navItem ? files.get(navItem.path) : undefined;
+    if (navItem && navBytes) {
+      const nav = parseXml(navBytes, "nav document", orderedParser) as unknown as OrderedNode[];
+      navPoints = readNavDocument(nav, dirOf(navItem.path));
+    }
   }
 
   return {
