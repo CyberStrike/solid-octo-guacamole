@@ -54,7 +54,7 @@ You can't test everything. Agreeing the seams up front puts the effort on the cr
 
 ## Rules of the loop
 
-- **Red before green.** Write the failing test first, and run it: `npx vitest run <file> -t "<case title>"` in the workspace. It must fail on its assertion, for the reason the case predicts. A test that fails on an import error or a typo hasn't been red yet. Then write only enough code to pass it. Don't anticipate later cases or add speculative features.
+- **Red before green.** Write the failing test first, and run it: `npx vitest run <file> -t "<case title>"` in the workspace. `-t` takes a pattern, so escape any of `( ) [ ] . * + ? ^ $ |` in the title with a backslash. It must fail on its assertion, for the reason the case predicts. A run that reports no tests, or fails on an import error or a typo, hasn't been red yet. Then write only enough code to pass it. Don't anticipate later cases or add speculative features.
 - **One slice at a time.** One seam, one case, one minimal implementation per cycle. Run the workspace's whole suite before you commit a slice.
 - **Tests run in Node, unless a dependency needs workerd.** workerd is necessary only for code that reaches a Workers-only API: `HTMLRewriter` (so anything through `processEpub` and the sanitizer), a `cloudflare:*` module, or a Worker's `fetch` or `queue` entry with its bindings. Everything else, from pure logic to parsers, `packages/db` queries and `scripts/`, runs in Node, with no polyfills standing in for a Workers API. The reason is cost: workerd adds start-up time to every run and to every test file, which Node doesn't pay, while the tests themselves run no faster.
   - A workspace with both kinds splits them into two Vitest projects, so the Node tests don't pay for the runtime.
