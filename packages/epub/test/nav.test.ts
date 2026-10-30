@@ -52,13 +52,20 @@ interface Epub3Options {
   keepNcx?: boolean;
   /** NCX entries for chapters, as `ao3Epub`'s `navPoints`. */
   ncx?: { label: string; src: string }[];
+  /** The preface's Stats line. */
+  stats?: string;
 }
 
 /** Turns an `ao3Epub()` into an EPUB3 file whose table of contents is `nav`. */
 function epub3(nav: string, opts: Epub3Options = {}): Uint8Array {
   const navPath = opts.navPath ?? "nav.xhtml";
   const { mimetype: _, ...entries } = unzipSync(
-    ao3Epub({ title: "Nav Parts", stats: "Published: 2020-01-01 Chapters: 3/3 Words: 4", files, navPoints: opts.ncx }),
+    ao3Epub({
+      title: "Nav Parts",
+      stats: opts.stats ?? "Published: 2020-01-01 Chapters: 3/3 Words: 4",
+      files,
+      navPoints: opts.ncx,
+    }),
   );
   const navItem = `<item id="nav" href="${encodeURI(navPath)}" properties="nav" media-type="application/xhtml+xml"/>`;
   let opf = strFromU8(entries["content.opf"]!).replace('version="2.0"', 'version="3.0"');
@@ -189,5 +196,49 @@ describe("06 AO3 preface and chapters", () => {
       ]);
       expect(work.reviewReasons).toEqual([]);
     });
+
+    it("reads same-document nav links when the nav is in the spine and holds a chapter", async () => {
+      const nav = navDoc(`${tocNav(`<li><a href="#n0">Nav zero</a></li>\n${flatItems()}`)}
+<div id="chapters"><div class="meta"><h2 class="toc-heading" id="n0">Zero</h2></div>
+<div class="userstuff2"><p>marker-c0-a</p></div></div>`);
+      const entries = unzipSync(epub3(nav, { stats: "Published: 2020-01-01 Chapters: 4/4 Words: 5" }));
+      const opf = strFromU8(entries["content.opf"]!).replace("<spine>", '<spine>\n    <itemref idref="nav"/>');
+      const { mimetype: _, ...rest } = entries;
+      const work = await processEpub(zipEntries({ ...rest, "content.opf": opf }));
+      expect(work.chapters.map((c) => [c.n, c.title])).toEqual([
+        [1, "Nav zero"],
+        [2, "Nav first"],
+        [3, "Nav second"],
+        [4, "Nav third"],
+      ]);
+      expect(work.chapters.map((c) => markers(c.html))).toEqual([["c0-a"], ["c1-a"], ["c2-a", "c2-b"], ["c3-a"]]);
+      expect(work.reviewReasons).toEqual([]);
+    });
+  });
+});
+
+// A nav outside the spine is parsed by the package reader, not the XHTML
+// parser, so it must meet the same node budget and depth cap on its own.
+describe("hostile nav documents", () => {
+  const bareNav = (inner: string) =>
+    `<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><head><title>t</title></head><body>${inner}</body></html>`;
+
+  it("rejects a nav outside the spine that takes the documents past the node budget as too_large", async () => {
+    // 7 nodes of frame plus 3 per entry: 299,977 nodes, under the 300,000
+    // budget alone, over it with the spine documents.
+    const entry = `<li><a href="Nav%20Parts_split_000.xhtml">x</a></li>`;
+    const nav = bareNav(`<nav epub:type="toc"><ol>${entry.repeat(99_990)}</ol></nav>`);
+    await expectEpubError(processEpub(epub3(nav)), "too_large");
+  });
+
+  it("rejects a nav outside the spine nested past the depth cap as parse_failed", async () => {
+    const nav = bareNav(`${"<div>".repeat(300)}${tocNav(flatItems())}${"</div>".repeat(300)}`);
+    await expectEpubError(processEpub(epub3(nav)), "parse_failed");
+  });
+
+  it("reads a nav nested deep but within the depth cap", async () => {
+    const nav = bareNav(`${"<div>".repeat(240)}${tocNav(flatItems())}${"</div>".repeat(240)}`);
+    const work = await processEpub(epub3(nav));
+    expect(work.chapters.map((c) => c.title)).toEqual(["Nav first", "Nav second", "Nav third"]);
   });
 });

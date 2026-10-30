@@ -1,5 +1,7 @@
 import { XMLParser } from "fast-xml-parser";
+import { MAX_DEPTH, nodeBudget, type NodeBudget } from "./dom";
 import { EpubError } from "./errors";
+import { LIMITS } from "./unzip";
 
 // container.xml -> OPF (metadata, manifest, spine) -> EPUB3 nav or NCX table of contents.
 
@@ -55,7 +57,8 @@ const parser = new XMLParser({
 
 // The nav document is XHTML with mixed content (`<a><span>1.</span> One</a>`),
 // so its parser keeps document order and the whitespace between inline elements.
-const orderedParser = new XMLParser({
+// It holds the XHTML parser's depth cap (dom.ts counts its root as one level).
+const navParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "",
   removeNSPrefix: true,
@@ -64,18 +67,67 @@ const orderedParser = new XMLParser({
   trimValues: false,
   processEntities: true,
   preserveOrder: true,
+  maxNestedTags: MAX_DEPTH - 1,
 });
 
 type XmlNode = Record<string, unknown>;
 
-function parseXml(bytes: Uint8Array, what: string, xml: XMLParser = parser): XmlNode {
+function decodeXml(bytes: Uint8Array, what: string): string {
   const text = new TextDecoder().decode(bytes);
   // Refuse custom entities outright rather than rely on expansion limits.
   if (/<!ENTITY/i.test(text)) throw new EpubError("not_epub", `${what} declares XML entities`);
+  return text;
+}
+
+function parseXml(bytes: Uint8Array, what: string): XmlNode {
+  const text = decodeXml(bytes, what);
   try {
-    return xml.parse(text) as XmlNode;
+    return parser.parse(text) as XmlNode;
   } catch (e) {
     throw new EpubError("not_epub", `${what} is not valid XML`, { cause: e });
+  }
+}
+
+/**
+ * At least as many nodes as `text` parses into: one per start tag or
+ * processing instruction, one per run of text between tags. Quoted `>` in
+ * attributes and `<` inside comments or CDATA only over-count.
+ */
+function countXmlNodes(text: string): number {
+  let nodes = 0;
+  let inTag = false;
+  let pendingText = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    if (inTag) {
+      if (c === 0x3e /* > */) inTag = false;
+    } else if (c === 0x3c /* < */) {
+      if (pendingText) nodes++;
+      pendingText = false;
+      inTag = true;
+      const next = text.charCodeAt(i + 1);
+      if (next === 0x3f /* ? */ || (next | 0x20) >= 0x61 && (next | 0x20) <= 0x7a) nodes++;
+    } else {
+      pendingText = true;
+    }
+  }
+  return pendingText ? nodes + 1 : nodes;
+}
+
+/** Parses the nav document within the epub's node budget and depth cap. */
+function parseNav(bytes: Uint8Array, budget: NodeBudget): OrderedNode[] {
+  const text = decodeXml(bytes, "nav document");
+  // fast-xml-parser has no node limit, so charge the budget before it builds the tree.
+  budget.remaining -= countXmlNodes(text);
+  if (budget.remaining < 0) throw new EpubError("too_large", `More than ${LIMITS.maxNodes} elements and text nodes`);
+  try {
+    return navParser.parse(text) as OrderedNode[];
+  } catch (e) {
+    // fast-xml-parser's message for maxNestedTags; nav.test.ts holds it to parse_failed.
+    if (e instanceof Error && e.message === "Maximum nested tags exceeded") {
+      throw new EpubError("parse_failed", `Elements nested more than ${MAX_DEPTH} deep in the nav document`, { cause: e });
+    }
+    throw new EpubError("not_epub", "nav document is not valid XML", { cause: e });
   }
 }
 
@@ -195,7 +247,8 @@ function findOrdered(nodes: OrderedNode[], match: (n: OrderedNode) => boolean): 
 }
 
 /** The entries of the nav document's `<nav epub:type="toc">`, in document order. */
-function readNavDocument(nav: OrderedNode[], navDir: string): NavPoint[] {
+function readNavDocument(nav: OrderedNode[], navPath: string): NavPoint[] {
+  const navDir = dirOf(navPath);
   // removeNSPrefix turns `epub:type` into `type`.
   const toc = findOrdered(nav, (n) => tagOf(n) === "nav" && tokens(orderedAttr(n, "type")).includes("toc"));
   const found: NavPoint[] = [];
@@ -206,6 +259,8 @@ function readNavDocument(nav: OrderedNode[], navDir: string): NavPoint[] {
       const a = kids(li).find((n) => tagOf(n) === "a");
       const href = a && orderedAttr(a, "href");
       const target = href === undefined ? null : resolveHref(navDir, href);
+      // `#id` alone targets the nav document itself, which may be in the spine.
+      if (target && !target.path && target.anchor) target.path = navPath;
       if (a && target && target.path) found.push({ label: orderedText(a).replace(/\s+/g, " ").trim(), ...target });
       visit(kids(li).find((n) => tagOf(n) === "ol"));
     }
@@ -214,7 +269,8 @@ function readNavDocument(nav: OrderedNode[], navDir: string): NavPoint[] {
   return found;
 }
 
-export function readPackage(files: Map<string, Uint8Array>): EpubPackage {
+/** `budget` is the epub's shared node budget, charged for a nav document read here. */
+export function readPackage(files: Map<string, Uint8Array>, budget: NodeBudget = nodeBudget()): EpubPackage {
   const containerBytes = files.get("META-INF/container.xml");
   if (!containerBytes) throw new EpubError("not_epub", "Missing META-INF/container.xml");
   const container = parseXml(containerBytes, "container.xml");
@@ -266,10 +322,7 @@ export function readPackage(files: Map<string, Uint8Array>): EpubPackage {
   if (navPoints.length === 0) {
     const navItem = [...manifest.values()].find((i) => i.properties.includes("nav"));
     const navBytes = navItem ? files.get(navItem.path) : undefined;
-    if (navItem && navBytes) {
-      const nav = parseXml(navBytes, "nav document", orderedParser) as unknown as OrderedNode[];
-      navPoints = readNavDocument(nav, dirOf(navItem.path));
-    }
+    if (navItem && navBytes) navPoints = readNavDocument(parseNav(navBytes, budget), navItem.path);
   }
 
   return {
