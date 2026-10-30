@@ -1,0 +1,10 @@
+# Output of `npm run build` (wrangler deploy --dry-run) and wrangler's local state,
+# which holds local R2 objects from `wrangler dev`.
+dist/
+.wrangler/
+
+# Local secrets for wrangler dev and tests: never commit them. Examples are kept.
+.dev.vars*
+.env*
+!.dev.vars.example
+!.env.example
