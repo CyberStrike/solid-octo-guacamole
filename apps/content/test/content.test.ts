@@ -68,4 +68,63 @@ describe("09-content-origin", () => {
     expect(res.headers.get("content-type")).toBe("application/epub+zip");
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(EPUB);
   });
+
+  it("Original epub is never displayed inline", async () => {
+    // Stored metadata is not trusted: an object written with an HTML type and an
+    // inline disposition still downloads as an epub attachment.
+    await E.BUCKET.put(ORIGINAL_KEY, EPUB, {
+      httpMetadata: { contentType: "text/html", contentDisposition: "inline" },
+    });
+    for (const method of ["GET", "HEAD"]) {
+      const res = await get(ORIGINAL_KEY, { method });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-disposition")).toBe("attachment");
+      expect(res.headers.get("content-type")).toBe("application/epub+zip");
+      await res.arrayBuffer();
+    }
+  });
+
+  it("Content origin only serves images and original downloads", async () => {
+    await seed();
+    // Things that exist in the bucket but are not images or originals.
+    const html = new TextEncoder().encode("<p>x</p>");
+    const fragment = "works/123456/01J9ZQ4K7M3XYV8T2W5R6N0B1C/1.html";
+    await E.BUCKET.put(fragment, html, { httpMetadata: { contentType: "text/html" } });
+    await E.BUCKET.put("uploads/01J9ZQ4K7M3XYV8T2W5R6N0B1C", EPUB);
+    await E.BUCKET.put("index.html", html, { httpMetadata: { contentType: "text/html" } });
+    const refused = [
+      fragment,
+      "uploads/01J9ZQ4K7M3XYV8T2W5R6N0B1C",
+      "index.html",
+      "",
+      "works/123456/work",
+      "works/abc/img/x",
+      "works/123456/img/a/b",
+      "works/123456/img/",
+      "works/123456/img/..%2f01J9ZQ4K7M3XYV8T2W5R6N0B1C%2f1.html",
+      "works/123456/img/%2e%2e",
+      "originals/",
+      "originals/a/b",
+      `/${ORIGINAL_KEY}`,
+    ];
+    for (const key of refused) {
+      const res = await get(key);
+      expect(res.status, key).toBe(404);
+      expect(res.headers.get("content-type") ?? "", key).not.toMatch(/html/);
+      expect(await res.text(), key).toBe("");
+    }
+
+    // An image whose stored type is HTML is not served as HTML.
+    await E.BUCKET.put(IMAGE_KEY, html, { httpMetadata: { contentType: "text/html" } });
+    const image = await get(IMAGE_KEY);
+    expect(image.status).toBe(200);
+    expect(image.headers.get("content-type")).toBe("application/octet-stream");
+    await image.arrayBuffer();
+
+    // A stored image type is kept for real images.
+    await E.BUCKET.put(IMAGE_KEY, PNG, { httpMetadata: { contentType: "image/png" } });
+    const png = await get(IMAGE_KEY);
+    expect(png.headers.get("content-type")).toBe("image/png");
+    await png.arrayBuffer();
+  });
 });
