@@ -34,6 +34,7 @@ while IFS= read -r f; do
     apps/ingest/*) need[ingest]=1 ;;
     apps/web/*) need[web]=1 ;;
     apps/content/*) need[content]=1 ;;
+    apps/mailer/*) need[mailer]=1 ;;
     # No Worker and no CI job reads Markdown or issue templates under .github.
     .github/*.md | .github/ISSUE_TEMPLATE/*) need[docs]=1 ;;
     .github/* | scripts/*) need[integration]=1 ;;
@@ -52,7 +53,7 @@ done <<< "$files"
 # when docs is the sole protocol.
 
 echo "changed: $(echo "$files" | cut -d/ -f1-2 | sort -u | tr '\n' ' ')" >&2
-for p in epub db ingest web content integration docs; do
+for p in epub db ingest web content mailer integration docs; do
   [ -n "${need[$p]:-}" ] && echo "$p"
 done
 exit 0

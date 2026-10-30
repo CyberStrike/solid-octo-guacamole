@@ -37,6 +37,7 @@ AO3 URL and says plainly that this is an unofficial stopgap.
    │               users, auth)    rate counters      • sanitize chapter XHTML
    │                    ▲                             • write chapters to R2, rows to PG
    │                    └─────────────────────────────┘
+   │  web Worker ── Queue: email ──▶ mailer Worker ──▶ Resend (Postmark or SES failover)
    │  upload: presigned PUT from the browser (needs JS, like every Turnstile form)
    ├────────────────────────────────────────────────▶ R2: uploads/  (raw epubs)
    │
@@ -361,9 +362,21 @@ can be snapshotted.
   `auth.handler`. Its default memory store is per isolate on Workers, so set
   `rateLimit.storage: "database"` (or a Durable Object through
   `customStorage`), with `ipAddressHeaders: ["cf-connecting-ip"]`.
-- **Email: Resend primary.** Emails go through a queue to a sender behind a
-  small interface. Volume isn't the risk; sending limits are.
-  - The queue consumer sends with Resend's batch API, to stay under its
+- **Email: Resend primary.** The web Worker puts each email on an `email`
+  queue. A dedicated **mailer Worker** (`apps/mailer`) consumes it and sends
+  through a small sender interface. Volume isn't the risk; sending limits are.
+  - **Why it's its own Worker:** sign-in mail must keep flowing during an
+    upload surge, so it shares no deploy, concurrency limit or failure with
+    `apps/ingest`. It also keeps the email-provider keys out of the web
+    Worker. The mailer only sends: it has no database or R2 access.
+  - **Reader privacy:** the mailer never logs email addresses or links; it
+    logs provider message IDs and outcomes only.
+  - **Failures:** a message that fails on both providers is retried by the
+    queue, then moved to a dead-letter queue, never dropped silently. Queued
+    messages hold an address and a sign-in link (which expires after 15
+    minutes), so the dead-letter queue keeps them for one day at most, and
+    nothing prints its contents to logs.
+  - The mailer sends with Resend's batch API, to stay under its
     per-second API limit (by default about 2 requests a second; ask for more
     before launch).
   - Mail goes from a dedicated subdomain with SPF, DKIM and DMARC, warmed up
@@ -477,7 +490,8 @@ epub, under the normal versioning rules.
 ```
 apps/web/          Hono Worker: pages, auth, upload handshake, search, admin
 apps/content/      Worker serving epub images and original downloads from R2
-apps/ingest/       Queue consumer
+apps/ingest/       Queue consumer: epub processing
+apps/mailer/       Queue consumer: sends email (Resend, with failover)
 packages/epub/     unzip + OPF + AO3 preface parser + sanitizer (tested in workerd)
 packages/db/       SQL migrations + typed queries
 fixtures/epubs/    real AO3 epub samples for parser and sanitizer tests

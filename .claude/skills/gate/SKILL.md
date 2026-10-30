@@ -1,6 +1,6 @@
 ---
 name: gate
-description: Gate a work item on this repository against its issue's definition of done, before opening its PR or before merging it. Runs the standing checks, picks the protocols the diff needs (epub, db, ingest, web, content, integration, docs), runs live checks where the app can be launched, and writes the "What was run" block for the PR. Use for a work item, branch or PR here; for "does my change work in the running app" alone, use /verify or /run.
+description: Gate a work item on this repository against its issue's definition of done, before opening its PR or before merging it. Runs the standing checks, picks the protocols the diff needs (epub, db, ingest, web, content, mailer, integration, docs), runs live checks where the app can be launched, and writes the "What was run" block for the PR. Use for a work item, branch or PR here; for "does my change work in the running app" alone, use /verify or /run.
 argument-hint: "[pr|merge] [issue number or branch]"
 ---
 
@@ -97,6 +97,14 @@ The parser and sanitizer are the security boundary (ARCHITECTURE, *Sanitizing*).
 - It serves images and original downloads only. It never serves `text/html`.
 - No response sets a cookie. Every response sends `X-Content-Type-Options: nosniff`. Downloads send `Content-Disposition: attachment`.
 - `Cache-Control: immutable` appears only on versioned paths. A removed work's paths return 404 after removal.
+
+### mailer — `apps/mailer` changed
+
+The mailer is the only Worker holding email-provider keys (ARCHITECTURE, *Auth*, Email).
+- It only sends. It has no Hyperdrive, KV or R2 binding in its `wrangler` config.
+- It sends through Resend's batch API, and a Resend refusal (rate limit, quota, outage) goes to the failover provider. A test reaches each path with stub senders, and no test calls a real provider.
+- A message that fails on both providers is retried by the queue, then dead-lettered. It's never dropped silently. The dead-letter queue's retention is one day at most, and nothing prints its messages (address plus link) to logs.
+- No log line contains an email address or a link. It logs provider message IDs and outcomes only.
 
 ### integration — anything else changed
 
