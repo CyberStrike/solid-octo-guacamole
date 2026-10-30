@@ -360,6 +360,11 @@ can be snapshotted.
 
 ## Reading
 
+- **Work URLs use the AO3 work ID:** `:id` in `/works/:id` (and every path under
+  it) is `ao3_work_id`, not the internal `works.id`. It's stable, it mirrors
+  AO3's own URLs, and it's already known when ingest writes chapter fragments
+  (before the Postgres transaction), so internal chapter links can be rewritten
+  in the same pass. It also makes the wind-down redirect a one-line rule.
 - The reader page is server-rendered on the app: `/works/:id/chapters/:n`. The
   web Worker reads the sanitized chapter fragment from R2 through its binding
   and renders it inline in the page, inside `<article class="chapter">`. There
