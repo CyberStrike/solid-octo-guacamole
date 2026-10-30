@@ -42,7 +42,10 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
     throw new EpubError("not_epub", "Missing or wrong mimetype entry");
   }
 
-  const pkg = readPackage(files);
+  // One node budget for the spine documents and the nav document of this epub.
+  // (container.xml, the OPF and the NCX aren't charged to it.)
+  const budget = nodeBudget();
+  const pkg = readPackage(files, budget);
   const reviewReasons: string[] = [];
   // A missing spine item is held for review like a missing spine file: the
   // chapter count check alone would not notice if the rest still match Stats.
@@ -55,8 +58,6 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
     if (wanted && !READABLE.test(item.path)) reviewReasons.push(`unread_manifest_item: ${item.path}`);
   }
 
-  // One node budget for every document parsed from this epub.
-  const budget = nodeBudget();
   const docs: SpineDoc[] = [];
   const parsed = new Set<string>();
   let next = 0;
