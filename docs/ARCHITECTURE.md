@@ -233,22 +233,29 @@ can be snapshotted.
 - Allowlist only: `p, br, hr, em, strong, i, b, u, s, sub, sup, blockquote, h1–h6,
   ul, ol, li, dl, dt, dd, table, thead, tbody, tr, th, td, span, div, a, img, abbr,
   small, center` and a short list of attributes (`href`, `src`, `alt`, `title`,
-  `class`, `colspan`, `rowspan`, `dir`, `lang`, `align`).
-- Drop `script`, `style`, `iframe`, `object`, `embed`, `form`, `svg`, `math`,
-  every `on*` attribute, and inline `style`. AO3 work skins are lost, which is
-  an acceptable trade-off.
+  `colspan`, `rowspan`, `dir`, `lang`, `align`). `class` and `id` are dropped:
+  Calibre's class names mean nothing to our styles, and ids could clash with
+  the page's own.
+- Drop `script`, `style`, `iframe`, `object`, `embed`, `form`, `svg`, `math`
+  (also under a namespace prefix such as `svg:script`), together with
+  everything inside them, plus every `on*` attribute and inline `style`. AO3
+  work skins are lost, which is an acceptable trade-off.
 - `href` may only be `http(s)://` or a link to another chapter of the same work,
   rewritten to our own reader URL. External links get
-  `rel="nofollow noopener ugc"`.
+  `rel="nofollow noopener noreferrer ugc"`, so following one doesn't tell the
+  target which work a reader was on.
 - `img src` must point to an image inside the epub, rewritten to its R2 key on
   `content.<domain>`. Remote images are dropped, which also stops them being
   used to track readers.
-- Implementation: use Workers' native `HTMLRewriter` with an `on("*")`
-  handler. Allowed elements have their attributes filtered. Dropped elements
-  are removed, while unknown wrapper elements are unwrapped with
-  `removeAndKeepContent()` so their text survives. That should be enough on
-  its own. Confirm it against the fixtures, and fuzz it with a known XSS corpus
-  before launch.
+- Implementation (`packages/epub`): `HTMLRewriter` is used only as a
+  tokenizer, to build a small tree with a depth cap and a node budget. The
+  output is then written from scratch by a serializer that emits only
+  allowlisted elements and attributes, escaping all text and attribute values.
+  Nothing from the input reaches the output except through that serializer, so
+  the serializer is the security boundary. Dropped elements are left out with
+  their contents; unknown wrapper elements are unwrapped so their text
+  survives. It is tested against an XSS corpus in chapters, the summary and the
+  notes; fuzz it further before launch.
 
 ## Reading
 

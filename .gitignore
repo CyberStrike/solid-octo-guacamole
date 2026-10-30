@@ -1,0 +1,4 @@
+node_modules/
+
+# Real AO3 epubs are fanworks: keep them local, never commit them.
+fixtures/epubs/*.epub
