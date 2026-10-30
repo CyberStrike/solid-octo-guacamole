@@ -1,0 +1,121 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`output snapshots > synthetic baseline 1`] = `
+{
+  "ao3WorkId": "1000001",
+  "authors": [
+    {
+      "pseud": "someone",
+      "user": "someone",
+    },
+  ],
+  "categories": [],
+  "chapters": [
+    {
+      "html": "<div><p>marker-only-chapter text.</p></div>",
+      "n": 1,
+      "title": "Synthetic Work",
+      "words": 2,
+    },
+  ],
+  "characters": [],
+  "endNotesHtml": "<p>Synthetic end notes.</p>",
+  "fandoms": [
+    "Test Fandom",
+  ],
+  "freeforms": [
+    "Tag A",
+    "Tag & B",
+  ],
+  "images": [],
+  "language": "English",
+  "notesHtml": "<p>Synthetic notes.</p>",
+  "rating": "General Audiences",
+  "rawMeta": {},
+  "relationships": [],
+  "reviewReasons": [],
+  "series": [],
+  "stats": {
+    "chapters": {
+      "posted": 1,
+      "total": 1,
+    },
+    "completed": null,
+    "published": "2020-01-02",
+    "updated": null,
+    "words": 12,
+  },
+  "summaryHtml": "<p>A synthetic summary.</p>",
+  "title": "Synthetic Work",
+  "warnings": [
+    "No Archive Warnings Apply",
+  ],
+}
+`;
+
+exports[`output snapshots > two chapters over two files, with notes, series and markup 1`] = `
+{
+  "ao3WorkId": "1000001",
+  "authors": [
+    {
+      "pseud": "someone",
+      "user": "someone",
+    },
+  ],
+  "categories": [],
+  "chapters": [
+    {
+      "html": "<div><p>One <strong>two</strong><br>three.</p><hr>
+<blockquote><p>Quoted.</p></blockquote></div>",
+      "n": 1,
+      "title": "1. First",
+      "words": 4,
+    },
+    {
+      "html": "<div><p>Second starts here.</p></div><div><ul><li>a</li><li>b</li></ul>
+<table><tr><td colspan="2">cell</td></tr></table><p dir="rtl" lang="ar">نص</p></div>",
+      "n": 2,
+      "title": "2. Second",
+      "words": 7,
+    },
+  ],
+  "characters": [],
+  "endNotesHtml": "<p>Thanks &amp; goodbye&hellip;</p>",
+  "fandoms": [
+    "Test Fandom",
+  ],
+  "freeforms": [
+    "Tag A",
+    "Tag & B",
+  ],
+  "images": [],
+  "language": "English",
+  "notesHtml": "<p>Opening <em>notes</em> with <a href="https://example.org/a?b=1&amp;c=2" rel="nofollow noopener noreferrer ugc">a link</a>.</p>",
+  "rating": "General Audiences",
+  "rawMeta": {},
+  "relationships": [],
+  "reviewReasons": [],
+  "series": [
+    {
+      "ao3SeriesId": "7",
+      "name": "Some Series",
+      "part": 1,
+    },
+  ],
+  "stats": {
+    "chapters": {
+      "posted": 2,
+      "total": null,
+    },
+    "completed": null,
+    "published": "2021-05-06",
+    "updated": "2021-06-07",
+    "words": 20,
+  },
+  "summaryHtml": "<p>A synthetic summary.</p>",
+  "title": "Two Parts",
+  "warnings": [
+    "No Archive Warnings Apply",
+  ],
+}
+`;
