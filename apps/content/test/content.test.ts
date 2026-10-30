@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
-import type { Env } from "../src/index";
+import handler, { type Env } from "../src/index";
 
 const E = env as unknown as Env;
 const worker = (exports as any).default as Fetcher;
@@ -166,6 +166,23 @@ describe("content Worker", () => {
     }
     // The bucket is untouched.
     expect(await E.BUCKET.head(IMAGE_KEY)).not.toBeNull();
+  });
+
+  it("A failed R2 read is an empty 503 with the common headers", async () => {
+    // Miniflare's bucket can't be made to fail, so this one case hands the Worker's
+    // fetch entry a bucket whose read rejects.
+    const failing = {
+      BUCKET: { get: () => Promise.reject(new Error("R2 unavailable")) } as unknown as R2Bucket,
+    };
+    for (const method of ["GET", "HEAD"]) {
+      const res = await handler.fetch(new Request(`${ORIGIN}/${IMAGE_KEY}`, { method }), failing);
+      expect(res.status, method).toBe(503);
+      expect(res.headers.get("cache-control"), method).toBe("no-store");
+      expect(res.headers.get("x-content-type-options"), method).toBe("nosniff");
+      expect(res.headers.has("set-cookie"), method).toBe(false);
+      expect(res.headers.get("content-type") ?? "", method).not.toMatch(/html/);
+      expect(await res.text(), method).toBe("");
+    }
   });
 
   it("A key deleted from R2 is no longer served", async () => {

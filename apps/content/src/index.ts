@@ -33,7 +33,13 @@ export default {
     const isOriginal = ORIGINAL.test(path);
     if (!isImage && !isOriginal) return notFound();
 
-    const object = await env.BUCKET.get(path.slice(1));
+    // A failed read still goes out through respond(), empty and uncached.
+    let object: R2ObjectBody | null;
+    try {
+      object = await env.BUCKET.get(path.slice(1));
+    } catch {
+      return respond(null, 503, { "Cache-Control": "no-store" });
+    }
     if (!object) return notFound();
 
     // Stored HTTP metadata is never echoed: type and disposition are set here.
