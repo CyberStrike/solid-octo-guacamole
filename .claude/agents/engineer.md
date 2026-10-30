@@ -27,7 +27,7 @@ You build one work item: one issue, one branch, one PR (`docs/process.md`). The 
 
 ## When you're not confident
 
-Follow `/escalate`, preloaded in your context. For its step 2, launch a `consultant` (the only agent type you launch: no forks, no other writers in your worktree) on the tier your brief names, and save the answer to `<scratch>/<ITEM>/consults/<n>.md`. Where it sends you to the operator, stop with status `stopped`. When you can't launch a consultant, stop with `needs-consult` and the question written out in full, so the orchestrator can run the consult for you.
+Follow `/escalate`, preloaded in your context. For its step 2, launch a `consultant` (the only agent type you launch yourself, beside the review agents `/simplify` and `/code-review` start in `/gate merge`: no forks, no other writers in your worktree) on the tier your brief names, and save the answer to `<scratch>/<ITEM>/consults/<n>.md`. Where it sends you to the operator, stop with status `stopped`. When you can't launch a consultant, stop with `needs-consult` and the question written out in full, so the orchestrator can run the consult for you.
 
 ## Finish
 
@@ -35,7 +35,7 @@ Follow `/escalate`, preloaded in your context. For its step 2, launch a `consult
 2. A gate failure you can fix, fix, and gate again. A stop event from the gate is not yours to fix: stop with `stopped`.
 3. Push your branch, and only your branch: never `main`, and never with `--force`. Open a draft PR: `gh pr create --draft --base main`, with a body that says what the item delivers, `Closes #<n>`, and the gate's *What was run* block.
 4. Take it through the merge gate, as `docs/process.md` says (*Work items*, "The orchestrator merges"). Run `/gate merge`: it runs the review ladder, then requests the one Copilot review; don't request another. Fix any critical finding in the PR, file the rest as bug issues, replace the PR body's *What was run* block with the merge gate's, and report `ready`. Leave the PR a draft (no `gh pr ready`) and don't merge: the orchestrator decides the PR is done and merges it.
-5. Sent back to bring `main` in, merge it, rerun the `/gate` §3 checks, push, and report `ready` again. Don't rerun `/gate merge` or request Copilot again, except that a conflict you resolved by hand goes through the review ladder again (`/gate` §6 step 3).
+5. Sent back to bring `main` in, merge it, rerun the `/gate` §3 checks, update the PR body's *What was run* block, push, and report `ready` again. Don't rerun `/gate merge` or request Copilot again, except that a conflict you resolved by hand goes through the review ladder again (`/gate` §6 step 3).
 
 Write your report to `<scratch>/<ITEM>/report.md`, and return the same text:
 
