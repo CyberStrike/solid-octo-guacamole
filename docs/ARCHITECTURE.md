@@ -82,7 +82,7 @@ user         (id, email, name, email_verified, image, created_at, updated_at,  -
               terms_accepted_at NULL,  -- NULL until a new account accepts the terms
               warnings_off)            -- signed-in reader turned the warnings screen off
 session, account, verification  -- Better Auth's tables; verification holds hashed magic-link tokens
-works        (id, ao3_work_id UNIQUE NULL, title, summary_html, rating, language,
+works        (id, ao3_work_id UNIQUE NOT NULL, title, summary_html, rating, language,  -- ao3_work_id is the URL key
               words, chapters_count, complete, published_at, updated_at,
               status,            -- processing | live | hidden | removed
               hidden_cause NULL, -- removal_request | reports | moderator, while hidden
