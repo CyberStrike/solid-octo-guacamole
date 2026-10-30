@@ -88,7 +88,7 @@ header { display: grid; gap: 10px; border-bottom: 2px solid var(--ink); padding-
 section { display: grid; gap: 12px; }
 .sec-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
 
-/* Agents: one card per builder or reviewer; finished ones fold into a short list. */
+/* Agents: one card per explorer, builder, consultant, reviewer or gate; finished ones fold into a short list. */
 .agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 10px; }
 .agent { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; min-width: 0; }
 .agent .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -176,7 +176,7 @@ ul.list li:first-child { border-top: 0; }
   <section aria-labelledby="h-agents">
     <div class="sec-head">
       <h2 id="h-agents">Agents</h2>
-      <span class="muted" id="agents-count">Builders, reviewers and merge gates working now</span>
+      <span class="muted" id="agents-count">Explorers, builders, consultants, reviewers and merge gates working now</span>
     </div>
     <div id="agents"></div>
   </section>
@@ -281,7 +281,7 @@ function renderHeader() {
   document.getElementById("tally").innerHTML = order.filter((s) => counts[s]).map((s) => pill(s, `${counts[s]} ${LABELS[s].toLowerCase()}`)).join("");
 }
 
-const KINDS = { builder: "Builder", gate: "Merge gate", reviewer: "Reviewer" };
+const KINDS = { explorer: "Explorer", builder: "Builder", consultant: "Consultant", gate: "Merge gate", reviewer: "Reviewer" };
 
 function renderAgents() {
   const idx = byId();
