@@ -19,9 +19,9 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Chapter rendering), § Rea
 - AND the page contains no `<iframe>` and no client-side epub engine
 
 ### Every app page sends the strict CSP
-- GIVEN any page served by `app.<domain>` without a Turnstile check
+- GIVEN any page served by `rarepair.fans` without a Turnstile check
 - WHEN the response is returned
-- THEN it has the header `default-src 'self'; script-src 'nonce-{n}' 'strict-dynamic'; style-src 'self'; img-src 'self' https://content.<domain>; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
+- THEN it has the header `default-src 'self'; script-src 'nonce-{n}' 'strict-dynamic'; style-src 'self'; img-src 'self' https://content.rarepair.fans; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
 
 ### Turnstile pages allow only the Turnstile challenge frame
 - GIVEN `/login`, `/upload` and `/remove`

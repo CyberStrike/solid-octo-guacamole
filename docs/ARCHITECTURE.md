@@ -4,14 +4,16 @@ A temporary, community-run reading archive for fanworks while AO3 is offline.
 People upload the `.epub` files they downloaded from AO3, and anyone can browse,
 search and read them in the browser.
 
-**Working name:** TBD. We must not use the AO3 or OTW names, logos or site styling,
-and must not imply any affiliation. Every work page links back to its original
-AO3 URL and says plainly that this is an unofficial stopgap.
+**Name:** rarepair (lowercase, one word), at `rarepair.fans`. We must not use
+the AO3 or OTW names, logos or site styling, and must not imply any affiliation.
+Every work page links back to its original AO3 URL and says plainly that this is
+an unofficial stopgap.
 
 ## Decisions so far
 
 | Question | Decision |
 | --- | --- |
+| Name and domain | rarepair, always written lowercase as one word. The site is served at `rarepair.fans`, and `www.rarepair.fans` redirects there. Epub images and original downloads are served from `content.rarepair.fans` |
 | Who can read uploads | Shared public archive. Every upload is readable by everyone, with takedowns and author removal requests from day one |
 | Hosting | Cloudflare: Workers, R2, Queues, KV, plus Neon Postgres through Hyperdrive |
 | Load target | Surge-ready: assume tens of thousands of signups in the first days |
@@ -25,7 +27,7 @@ AO3 URL and says plainly that this is an unofficial stopgap.
 ## System overview
 
 ```
-                 ┌───────────────────────── app.<domain> ─────────────────────────┐
+                 ┌──────────────────────── rarepair.fans ─────────────────────────┐
  Browser ──────▶ │  web Worker (Hono, server-rendered HTML)                         │
    │             │   • browse / search / work + chapter reader / auth / uploads    │
    │             │   • Turnstile + rate limits on signup, login, upload            │
@@ -41,7 +43,7 @@ AO3 URL and says plainly that this is an unofficial stopgap.
    │  upload: presigned PUT from the browser (needs JS, like every Turnstile form)
    ├────────────────────────────────────────────────▶ R2: uploads/  (raw epubs)
    │
-   │             ┌──────────────────────── content.<domain> ──────────────────────┐
+   │             ┌───────────────────── content.rarepair.fans ──────────────────────┐
    └──────────▶  │  content Worker: epub images + original-file downloads from R2   │
                  │  separate origin, no cookies, nosniff, edge-cached forever      │
                  └──────────────────────────────────────────────────────────────────┘
@@ -71,7 +73,7 @@ AO3 URL and says plainly that this is an unofficial stopgap.
   HTML. The sanitized chapter HTML is rendered straight into app pages. The
   second layer is a strict, nonce-based CSP on every app page, so a script that
   gets past the sanitizer still can't run (see Reading). The separate
-  `content.<domain>` origin, which sets no cookies, is kept only for the bytes
+  `content.rarepair.fans` origin, which sets no cookies, is kept only for the bytes
   we serve as they are: images from inside epubs and original-file downloads.
 
 ## Data model (first cut)
@@ -141,7 +143,7 @@ request and to every byline at ingest.
    controls); the upload page shows the message. Otherwise it inserts an
    `uploads` row and returns a presigned R2 `PUT` URL, valid for 10 minutes
    and locked to `Content-Type: application/epub+zip`. R2 presigned URLs support PUT but not
-   form POST, and the bucket needs a CORS rule for `app.<domain>`.
+   form POST, and the bucket needs a CORS rule for `rarepair.fans`.
 2. **Upload.** The browser PUTs the file straight to R2 and shows progress.
    Uploading needs JavaScript, as every form with a Turnstile check does
    (Turnstile can't produce a token without it); without JS the upload page
@@ -346,7 +348,7 @@ can be snapshotted.
   `rel="nofollow noopener noreferrer ugc"`, so following one doesn't tell the
   target which work a reader was on.
 - `img src` must point to an image inside the epub, rewritten to its R2 key on
-  `content.<domain>`. Remote images are dropped, which also stops them being
+  `content.rarepair.fans`. Remote images are dropped, which also stops them being
   used to track readers.
 - Implementation (`packages/epub`): `HTMLRewriter` is used only as a
   tokenizer, to build a small tree with a depth cap and a node budget. The
@@ -373,7 +375,7 @@ can be snapshotted.
   normally. Pages also stay fast on cheap phones.
 - **Strict CSP on every app page** (a fresh nonce per response):
   `default-src 'self'; script-src 'nonce-{n}' 'strict-dynamic'; style-src 'self';
-  img-src 'self' https://content.<domain>; object-src 'none'; base-uri 'none';
+  img-src 'self' https://content.rarepair.fans; object-src 'none'; base-uri 'none';
   form-action 'self'; frame-ancestors 'none'`. Injected markup can't guess the
   nonce, so any script that gets past the sanitizer won't run. Session cookies
   are `HttpOnly`, so scripts can't read them anyway.
@@ -421,7 +423,7 @@ can be snapshotted.
 - Signed-in users get their reading position saved to KV, keyed by
   `user:work`, with a short debounce.
 - "Download original epub" serves the file from `originals/` with
-  `Content-Disposition: attachment` from `content.<domain>`. It's never
+  `Content-Disposition: attachment` from `content.rarepair.fans`. It's never
   displayed inline.
 
 ## Auth (magic link: Better Auth + Resend)
@@ -478,7 +480,7 @@ can be snapshotted.
   `__Secure-better-auth.session_token; HttpOnly; Secure; SameSite=Lax; Path=/`,
   set with `useSecureCookies: true`. There is no `Domain`
   (`crossSubDomainCookies` stays off), so the cookie never reaches
-  `content.<domain>`.
+  `content.rarepair.fans`.
 - **Better Auth's own rate limiter** only covers requests through
   `auth.handler`. Its default memory store is per isolate on Workers, so set
   `rateLimit.storage: "database"` (or a Durable Object through
@@ -633,7 +635,7 @@ epub, under the normal versioning rules.
   Raw files the archive keeps are copied to `originals/` during ingest.
 - Queue backpressure: set a maximum consumer concurrency so Neon connections
   stay bounded. Hyperdrive pools connections, and Neon autoscales compute.
-- Edge cache: images and original downloads on `content.<domain>` never change
+- Edge cache: images and original downloads on `content.rarepair.fans` never change
   once written, since each version has its own prefix, so they're cached with
   `Cache-Control: public, max-age=31536000, immutable`. Chapter fragments are
   cached inside the web Worker (see Reading). Work and tag listings
@@ -693,7 +695,5 @@ little client JS for upload progress and the reader settings.
 - **Deleted or orphaned works.** Someone may upload a work the author deleted
   from AO3. While AO3 is down we can't check, so we rely on the opt-out list and
   remove-my-work requests.
-- **Domain and name.** These depend on the working name, and have to stay clear
-  of anything that suggests a link to AO3 or OTW.
 - **Legal review.** Get a review of the DMCA setup and terms before public
   launch.

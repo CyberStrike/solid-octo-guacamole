@@ -80,7 +80,7 @@ Relates to: docs/ARCHITECTURE.md § Opening, § MVP vs later (3. Work page; Late
 ### Download original link is offered
 - GIVEN live work W
 - WHEN its work page renders
-- THEN a "Download original epub" link points to `content.<domain>`
+- THEN a "Download original epub" link points to `content.rarepair.fans`
 
 ### Continue where you left off for signed-in readers
 - GIVEN a signed-in reader with a saved position in chapter 3 of W

@@ -3,7 +3,7 @@
 Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § Data model, § Surge controls; docs/FRONTEND-DISCOVERY.md § Decisions so far (JavaScript), § Key journeys (2. Sign in), § Page inventory (Sign in, Accept terms, Too many requests), § Where the frontend changes the architecture (1. Forms with Turnstile need JS)
 
 ## Setup
-- The web Worker serves `app.<domain>` with `/login` and `/login/confirm`, and builds a Better Auth instance (magic-link plugin) per request from its bindings
+- The web Worker serves `rarepair.fans` with `/login` and `/login/confirm`, and builds a Better Auth instance (magic-link plugin) per request from its bindings
 - Better Auth's `user`, `session`, `account` and `verification` tables exist in Postgres; magic-link tokens are stored hashed in `verification`; `user` has a `terms_accepted_at` field
 - Turnstile is configured on the sign-in form; a test Turnstile token that passes and one that fails are available
 - The Workers rate-limiting binding is configured per IP and per email for `POST /login`
@@ -73,7 +73,7 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § 
 - THEN the token's `verification` row is deleted
 - AND a session row is created in Postgres
 - AND the cookie `__Secure-better-auth.session_token` is set with `HttpOnly`, `Secure`, `SameSite=Lax` and `Path=/`
-- AND the cookie has no `Domain` attribute, so it covers `app.<domain>` only and never `content.<domain>`
+- AND the cookie has no `Domain` attribute, so it covers `rarepair.fans` only and never `content.rarepair.fans`
 
 ### Confirming works without JavaScript
 - GIVEN an unused token and a browser with JavaScript off
@@ -111,7 +111,7 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § 
 ### Sign-in never acts as an open redirect
 - GIVEN a sign-in request whose `next` is an external or protocol-relative URL (`https://evil.example`, `//evil.example`, `/\evil.example`)
 - WHEN the user completes sign-in through the emailed link
-- THEN they are redirected within `app.<domain>` (the home page), never to the external URL
+- THEN they are redirected within `rarepair.fans` (the home page), never to the external URL
 
 ### Sign-in emails go through Resend in batches
 - GIVEN several sign-in emails waiting on the email queue
