@@ -1,0 +1,176 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`06-ao3-preface-and-chapters > Parser output is deterministic 1`] = `
+{
+  "ao3WorkId": "1000001",
+  "authors": [
+    {
+      "pseud": "someone",
+      "user": "someone",
+    },
+  ],
+  "categories": [],
+  "chapters": [
+    {
+      "html": "<div><p>marker-only-chapter text.</p></div>",
+      "n": 1,
+      "title": "Synthetic Work",
+      "words": 2,
+    },
+  ],
+  "characters": [],
+  "endNotesHtml": "<p>Synthetic end notes.</p>",
+  "fandoms": [
+    "Test Fandom",
+  ],
+  "freeforms": [
+    "Tag A",
+    "Tag & B",
+  ],
+  "images": [],
+  "language": "English",
+  "notesHtml": "<p>Synthetic notes.</p>",
+  "rating": "General Audiences",
+  "rawMeta": {
+    "Odd": "x",
+  },
+  "relationships": [],
+  "reviewReasons": [],
+  "series": [
+    {
+      "ao3SeriesId": "9",
+      "name": "S",
+      "part": 1,
+    },
+  ],
+  "stats": {
+    "chapters": {
+      "posted": 1,
+      "total": 1,
+    },
+    "completed": null,
+    "published": "2020-01-02",
+    "updated": null,
+    "words": 12,
+  },
+  "summaryHtml": "<p>A synthetic summary.</p>",
+  "title": "Synthetic Work",
+  "warnings": [
+    "No Archive Warnings Apply",
+  ],
+}
+`;
+
+exports[`06-ao3-preface-and-chapters > Parser output is deterministic 2`] = `
+{
+  "ao3WorkId": "1000001",
+  "authors": [
+    {
+      "pseud": "someone",
+      "user": "someone",
+    },
+  ],
+  "categories": [],
+  "chapters": [
+    {
+      "html": "<div><p>marker-only-chapter text.</p></div>",
+      "n": 1,
+      "title": "Synthetic Work",
+      "words": 2,
+    },
+  ],
+  "characters": [],
+  "endNotesHtml": "<p>Synthetic end notes.</p>",
+  "fandoms": [
+    "Test Fandom",
+  ],
+  "freeforms": [
+    "Tag A",
+    "Tag & B",
+  ],
+  "images": [],
+  "language": "English",
+  "notesHtml": "<p>Synthetic notes.</p>",
+  "rating": "General Audiences",
+  "rawMeta": {},
+  "relationships": [],
+  "reviewReasons": [],
+  "series": [],
+  "stats": {
+    "chapters": {
+      "posted": 1,
+      "total": 1,
+    },
+    "completed": null,
+    "published": null,
+    "updated": null,
+    "words": null,
+  },
+  "summaryHtml": "<p>A synthetic summary.</p>",
+  "title": "Synthetic Work",
+  "warnings": [
+    "No Archive Warnings Apply",
+  ],
+}
+`;
+
+exports[`06-ao3-preface-and-chapters > Parser output is deterministic 3`] = `
+{
+  "ao3WorkId": "1000001",
+  "authors": [
+    {
+      "pseud": "someone",
+      "user": "someone",
+    },
+  ],
+  "categories": [],
+  "chapters": [
+    {
+      "html": "<p>marker-a</p>",
+      "n": 1,
+      "title": "Chapter 1",
+      "words": 1,
+    },
+    {
+      "html": "<p>marker-b</p>",
+      "n": 2,
+      "title": "Chapter 2",
+      "words": 1,
+    },
+  ],
+  "characters": [],
+  "endNotesHtml": "<p>Synthetic end notes.</p>",
+  "fandoms": [
+    "Test Fandom",
+  ],
+  "freeforms": [
+    "Tag A",
+    "Tag & B",
+  ],
+  "images": [],
+  "language": "English",
+  "notesHtml": "<p>Synthetic notes.</p>",
+  "rating": "General Audiences",
+  "rawMeta": {},
+  "relationships": [],
+  "reviewReasons": [
+    "chapters_one_per_file: no usable table of contents or chapter headings",
+  ],
+  "series": [],
+  "stats": {
+    "chapters": {
+      "posted": 2,
+      "total": 2,
+    },
+    "completed": null,
+    "published": null,
+    "updated": null,
+    "words": null,
+  },
+  "summaryHtml": "<p>A synthetic summary.</p>",
+  "title": "Synthetic Work",
+  "warnings": [
+    "No Archive Warnings Apply",
+  ],
+}
+`;
