@@ -4,7 +4,7 @@ import type { OutgoingEmail, SendResult, Sender } from "./sender";
 const MAX_PER_CALL = 100;
 
 export interface Delivery {
-  sender: string | null;
+  sender: string;
   result: SendResult;
   // Indexes into the emails passed to deliver().
   indexes: number[];
@@ -16,8 +16,17 @@ export async function deliver(emails: OutgoingEmail[], senders: Sender[]): Promi
   for (let start = 0; start < emails.length; start += MAX_PER_CALL) {
     const chunk = emails.slice(start, start + MAX_PER_CALL);
     const indexes = chunk.map((_, i) => start + i);
-    const sender = senders[0]!;
-    deliveries.push({ sender: sender.name, result: await sender.sendBatch(chunk), indexes });
+    deliveries.push({ ...(await sendWithFailover(chunk, senders)), indexes });
   }
   return deliveries;
+}
+
+// Tries each provider in order. Only a refusal moves on to the next one.
+async function sendWithFailover(emails: OutgoingEmail[], senders: Sender[]) {
+  let last: { sender: string; result: SendResult } | null = null;
+  for (const sender of senders) {
+    last = { sender: sender.name, result: await sender.sendBatch(emails) };
+    if (last.result.outcome !== "refused") break;
+  }
+  return last!;
 }
