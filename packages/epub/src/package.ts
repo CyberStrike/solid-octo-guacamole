@@ -198,15 +198,19 @@ function findOrdered(nodes: OrderedNode[], match: (n: OrderedNode) => boolean): 
 function readNavDocument(nav: OrderedNode[], navDir: string): NavPoint[] {
   // removeNSPrefix turns `epub:type` into `type`.
   const toc = findOrdered(nav, (n) => tagOf(n) === "nav" && tokens(orderedAttr(n, "type")).includes("toc"));
-  const list = toc && kids(toc).find((n) => tagOf(n) === "ol");
   const found: NavPoint[] = [];
-  for (const li of list ? kids(list) : []) {
-    if (tagOf(li) !== "li") continue;
-    const a = kids(li).find((n) => tagOf(n) === "a");
-    const href = a && orderedAttr(a, "href");
-    const target = href === undefined ? null : resolveHref(navDir, href);
-    if (a && target && target.path) found.push({ label: orderedText(a).replace(/\s+/g, " ").trim(), ...target });
-  }
+  // Each `li` holds an `a` (or a `span` heading with no target) and maybe a nested `ol`.
+  const visit = (list: OrderedNode | undefined) => {
+    for (const li of list ? kids(list) : []) {
+      if (tagOf(li) !== "li") continue;
+      const a = kids(li).find((n) => tagOf(n) === "a");
+      const href = a && orderedAttr(a, "href");
+      const target = href === undefined ? null : resolveHref(navDir, href);
+      if (a && target && target.path) found.push({ label: orderedText(a).replace(/\s+/g, " ").trim(), ...target });
+      visit(kids(li).find((n) => tagOf(n) === "ol"));
+    }
+  };
+  visit(toc && kids(toc).find((n) => tagOf(n) === "ol"));
   return found;
 }
 
