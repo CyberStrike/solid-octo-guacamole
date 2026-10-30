@@ -22,6 +22,14 @@ Adapted from the folio project's ledger.
 - **Tickets are cut by `/to-tickets`.** Each issue's *Definition of done* cites scenario cases, and its `Depends on:` line names the issues that must merge first. The gate checks that each dependency is closed.
 - **Order follows blockers.** Work the frontier: items whose blockers have all merged. Otherwise landing order doesn't matter, unless the operator marks an item critical.
 - **Start an item only on the operator's word**, even when its blockers have cleared.
+- **The orchestrator merges.** The operator ruled this on 2026-10-30, toward a dark factory, and it is their standing word to merge for `/gate` §6. The builder takes its PR to ready, and the orchestrator decides it is done and merges it:
+  1. The builder opens the PR as a draft.
+  2. The builder runs `/gate merge` on it, with the full review ladder for its tier, and pushes the fixes.
+  3. The builder requests one Copilot review on the settled head with `gh pr edit <n> --add-reviewer "@copilot"`. This works on a draft. Never request a second. A request doesn't show in `requested_reviewers`, so wait on `.../pulls/<n>/reviews`. If no review arrives within 30 minutes, record it as not run and go on.
+  4. A critical finding goes back into the PR: fix it, and verify the fix without re-requesting Copilot. A finding is critical when Copilot marks it high severity, when it is a real defect on the security boundary (the tier 3 list in `/gate` §6), or when it means a *Definition of done* bullet doesn't hold.
+  5. The builder files every other finding as a bug issue, linked to its PR and comment, replies on the comment's thread with the issue, and reports `ready`.
+  6. The orchestrator checks the PR: its *What was run* block, the Copilot review, no critical finding left open, and the bug issues filed. If `main` has moved, the orchestrator has the builder bring it in and rerun the tests. Then the orchestrator marks the PR ready and merges it with `gh pr merge <n> --squash`, one PR at a time.
+  Never use auto-merge or `--force`, and never push to `main`.
 - **Waves of items run under `/orchestrate`**, and every item is built test-first with `/tdd`.
 
 ## Working rules
