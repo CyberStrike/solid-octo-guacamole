@@ -77,4 +77,17 @@ describe("packages/db migrations", () => {
       expect(actual, `columns of ${table}`).toEqual(columns);
     }
   });
+
+  it("Applying the migrations again changes nothing", async () => {
+    await migrate(t.db);
+    await t.db
+      .insertInto("user")
+      .values({ id: "kept", name: "kept", email: "kept@example.test", email_verified: true })
+      .execute();
+
+    expect(await migrate(t.db)).toEqual([]);
+
+    const users = await t.db.selectFrom("user").select("id").execute();
+    expect(users).toEqual([{ id: "kept" }]);
+  });
 });
