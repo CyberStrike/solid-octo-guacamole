@@ -315,7 +315,7 @@ covers the opt-out list and the takedown list of moderator-removed works.
 and `duplicate` are statuses, not rejections, and review reasons are neither.)
 
 **Testing.** `HTMLRewriter` exists only in the Workers runtime, so the
-`packages/epub` tests run under `@cloudflare/vitest-pool-workers`. Fixtures are
+`packages/epub` tests run under `@cloudflare/vitest-plugin`. Fixtures are
 about 50 real AO3 epubs covering:
 - older and current AO3 export formats
 - one-shots and works with many chapters
