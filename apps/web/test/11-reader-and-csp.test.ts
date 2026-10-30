@@ -67,6 +67,20 @@ describe("11-reader-and-csp", () => {
     }
   });
 
+  it("Every response requires HTTPS", async () => {
+    const responses = [
+      await fetchW("/login"), // a Turnstile page
+      await fetchW("/no-such-page"), // an error page
+      await fetchW("/", { method: "DELETE" }), // a method nothing routes
+      await fetchW("https://www.rarepair.fans/login"), // a redirect
+    ];
+    for (const res of responses) {
+      expect(res.headers.get("strict-transport-security")).toBe(
+        "max-age=31536000; includeSubDomains",
+      );
+    }
+  });
+
   it("Page cannot be framed", async () => {
     for (const path of ["/", "/login", "/upload", "/remove"]) {
       const directives = (await fetchW(path)).headers
