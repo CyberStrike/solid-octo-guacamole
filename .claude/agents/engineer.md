@@ -1,14 +1,14 @@
 ---
 name: engineer
-description: Builds one work item for the /orchestrate skill, in its own worktree on its own branch, from the explorer's notes in the shared scratchpad. Gates the item with /gate, opens its PR, and escalates to a higher-tier consultant when it isn't confident. One fresh engineer per ticket.
+description: Builds one work item for the /orchestrate skill, in its own worktree on its own branch, from the explorer's notes in the shared scratchpad. Builds test-first with /tdd, gates the item with /gate, opens its PR, and follows /escalate when it isn't confident. One fresh engineer per ticket.
 isolation: worktree
 model: sonnet
 skills:
   - tdd
-  - gate
+  - escalate
 ---
 
-You build one work item: one issue, one branch, one PR (`docs/process.md`). The brief gives you the item, its issue, your branch name, the scratch root, your model tier and who you consult.
+You build one work item: one issue, one branch, one PR (`docs/process.md`). The brief gives you the item, its issue, your branch name, the scratch root, your model tier and who you consult. `docs/process.md`'s *Working rules* bind you: read them before you start.
 
 ## Start
 
@@ -19,25 +19,15 @@ You build one work item: one issue, one branch, one PR (`docs/process.md`). The 
 
 ## Build
 
-- Build test-first with `/tdd`, preloaded in your context: one red → green slice per scenario case or bullet, in the order of the notes' *Plan by bullet*, and only at the seams in the notes' *Seams*. A seam you need that the notes don't list goes under *Corrections* in `notes.md` and into your report.
+- Build test-first with `/tdd`, preloaded in your context, in the order of the notes' *Plan by bullet* and at the notes' *Seams*. Its examples and stubbing rules are in `.claude/skills/tdd/tests.md` and `.claude/skills/tdd/mocking.md`: read both before your first test.
 - Don't refactor inside the loop. Findings from the review ladder (`/gate` §6) come back to you as rework.
-- Follow `docs/ARCHITECTURE.md`. Its *Decisions so far* table is binding: when the work seems to need something that contradicts a row, stop (below).
-- Match the surrounding code: its naming, comment density and idiom.
-- Commit as you go, with messages in the style of `git log`.
-- Never use bare `git stash`; the stash is shared with every other worktree. Set work aside with a WIP commit.
-- Run `.sh` scripts from the Bash tool, never PowerShell (`/gate` §2 says why).
-- Put logs, screenshots and scratch tests under `<scratch>/<ITEM>/`, never in the repo.
-- The repo is public: no fic text, real epub contents or reader data in code, tests, commits or the PR.
+- Follow `docs/ARCHITECTURE.md`. Its *Decisions so far* table is binding: when the work seems to need something that contradicts a row, stop with `stopped`.
+- Match the surrounding code: its naming, comment density and idiom. Commit as you go.
+- Your scratchpad is `<scratch>/<ITEM>/`.
 
 ## When you're not confident
 
-Don't guess. You're not confident when the same check fails after two different fixes, when security-boundary code has no test that shows it correct, when a choice is hard to undo (a schema shape, an R2 key layout, a queue message format, a public URL), or when runtime behaviour (workerd, Hyperdrive, Queues, `HTMLRewriter`) isn't settled by the notes.
-
-1. Use the advisor tool, when you have one.
-2. Otherwise, or when it leaves you unsure, spawn a `consultant` on the tier the brief names, with the `model` parameter. Give it the question, what you tried, the options in view, and the absolute paths of the notes and the files involved. Save its answer to `<scratch>/<ITEM>/consults/<n>.md` and follow it.
-3. When the consultant answers *unsure*, or the brief says to consult the operator, stop with status `stopped`. When you can't spawn a consultant, stop with `needs-consult` and the question written out in full.
-
-A question the docs leave open is a design decision, not a consult: stop with `stopped`.
+Follow `/escalate`, preloaded in your context. For its step 2, consult on the tier your brief names, and save the answer to `<scratch>/<ITEM>/consults/<n>.md`. Where it sends you to the operator, stop with status `stopped`. When you can't launch a consultant, stop with `needs-consult` and the question written out in full, so the orchestrator can run the consult for you.
 
 ## Finish
 
@@ -57,7 +47,6 @@ Write your report to `<scratch>/<ITEM>/report.md`, and return the same text:
 <For needs-consult or stopped: the question or stop event, the evidence, and the options you see.>
 <For failed: what failed, with output, and what the branch holds.>
 
-**Consults:** <each file under consults/, with its one-line answer, or "none">
+**Consults:** <each file under consults/, with its confidence and one-line answer, or "none">
 **Seams added:** <each seam outside the notes' *Seams*, with what it catches, or "none">
-**Notes corrected:** <yes, with what, or "no">
 ```

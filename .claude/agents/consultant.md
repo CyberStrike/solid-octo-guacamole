@@ -1,6 +1,6 @@
 ---
 name: consultant
-description: Answers one hard technical question for an engineer or the orchestrator at a higher model tier than the asker, when the asker isn't confident. Read only. Used by the /orchestrate escalation ladder; the caller picks the tier with the model parameter.
+description: Answers one hard technical question for an engineer or the orchestrator at a higher model tier than the asker, when the asker isn't confident. Read only. Step 2 of the /escalate ladder; the caller picks the tier with the model parameter.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 disallowedTools: Edit, Write, NotebookEdit, Agent
 model: opus
@@ -28,4 +28,4 @@ The brief gives you the question, what was tried, the options in view, and absol
 **Check:** the test or observation that will show the answer was right.
 ```
 
-`leaning` means you'd do it this way, but the *Check* must pass before the asker relies on it. `unsure` sends the question to the operator.
+`leaning` means you'd do it this way, but the *Check* must pass before the asker relies on it. `unsure` and `operator` both send the question to the operator; `operator` says it's a design decision rather than a gap in what you could find. The asker routes your answer by `/escalate` (`.claude/skills/escalate/SKILL.md`).
