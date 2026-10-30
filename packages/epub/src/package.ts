@@ -1,12 +1,14 @@
 import { XMLParser } from "fast-xml-parser";
 import { EpubError } from "./errors";
 
-// container.xml -> OPF (metadata, manifest, spine) -> NCX table of contents.
+// container.xml -> OPF (metadata, manifest, spine) -> EPUB3 nav or NCX table of contents.
 
 export interface ManifestItem {
   id: string;
   path: string;
   mediaType: string;
+  /** The manifest `properties` tokens, such as `nav`. */
+  properties: string[];
 }
 
 export interface OpfMetadata {
@@ -51,14 +53,27 @@ const parser = new XMLParser({
   isArray: (name) => ARRAY_TAGS.has(name),
 });
 
+// The nav document is XHTML with mixed content (`<a><span>1.</span> One</a>`),
+// so its parser keeps document order and the whitespace between inline elements.
+const orderedParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "",
+  removeNSPrefix: true,
+  parseTagValue: false,
+  parseAttributeValue: false,
+  trimValues: false,
+  processEntities: true,
+  preserveOrder: true,
+});
+
 type XmlNode = Record<string, unknown>;
 
-function parseXml(bytes: Uint8Array, what: string): XmlNode {
+function parseXml(bytes: Uint8Array, what: string, xml: XMLParser = parser): XmlNode {
   const text = new TextDecoder().decode(bytes);
   // Refuse custom entities outright rather than rely on expansion limits.
   if (/<!ENTITY/i.test(text)) throw new EpubError("not_epub", `${what} declares XML entities`);
   try {
-    return parser.parse(text) as XmlNode;
+    return xml.parse(text) as XmlNode;
   } catch (e) {
     throw new EpubError("not_epub", `${what} is not valid XML`, { cause: e });
   }
@@ -142,6 +157,59 @@ function readNavPoints(ncx: XmlNode, ncxDir: string): NavPoint[] {
   return found.map((f) => f.point);
 }
 
+// preserveOrder nodes: `{ tag: children[], ":@": attributes }` or `{ "#text": string }`.
+type OrderedNode = Record<string, unknown>;
+
+function tagOf(node: OrderedNode): string | undefined {
+  return Object.keys(node).find((k) => k !== ":@");
+}
+
+function kids(node: OrderedNode): OrderedNode[] {
+  const tag = tagOf(node);
+  const v = tag === undefined ? undefined : node[tag];
+  return Array.isArray(v) ? (v as OrderedNode[]) : [];
+}
+
+function orderedAttr(node: OrderedNode, name: string): string | undefined {
+  const v = (node[":@"] as Record<string, unknown> | undefined)?.[name];
+  return typeof v === "string" ? v : undefined;
+}
+
+function tokens(v: string | undefined): string[] {
+  return (v ?? "").split(/\s+/).filter((t) => t !== "");
+}
+
+function orderedText(node: OrderedNode): string {
+  const t = node["#text"];
+  if (typeof t === "string") return t;
+  return kids(node).map(orderedText).join("");
+}
+
+function findOrdered(nodes: OrderedNode[], match: (n: OrderedNode) => boolean): OrderedNode | undefined {
+  for (const n of nodes) {
+    if (match(n)) return n;
+    const found = findOrdered(kids(n), match);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** The entries of the nav document's `<nav epub:type="toc">`, in document order. */
+function readNavDocument(nav: OrderedNode[], navDir: string): NavPoint[] {
+  // removeNSPrefix turns `epub:type` into `type`.
+  const toc = findOrdered(nav, (n) => tagOf(n) === "nav" && tokens(orderedAttr(n, "type")).includes("toc"));
+  const list = toc && kids(toc).find((n) => tagOf(n) === "ol");
+  const found: NavPoint[] = [];
+  for (const li of list ? kids(list) : []) {
+    if (tagOf(li) !== "li") continue;
+    const a = kids(li).find((n) => tagOf(n) === "a");
+    const href = a && orderedAttr(a, "href");
+    const target = href === undefined ? null : resolveHref(navDir, href);
+    if (a && target && target.path) found.push({ label: orderedText(a).replace(/\s+/g, " ").trim(), ...target });
+  }
+  return found;
+}
+
 export function readPackage(files: Map<string, Uint8Array>): EpubPackage {
   const containerBytes = files.get("META-INF/container.xml");
   if (!containerBytes) throw new EpubError("not_epub", "Missing META-INF/container.xml");
@@ -165,7 +233,12 @@ export function readPackage(files: Map<string, Uint8Array>): EpubPackage {
     const href = attr(item, "href");
     const target = href === undefined ? null : resolveHref(opfDir, href);
     if (id === undefined || !target || !target.path) continue;
-    const entry: ManifestItem = { id, path: target.path, mediaType: (attr(item, "media-type") ?? "").toLowerCase() };
+    const entry: ManifestItem = {
+      id,
+      path: target.path,
+      mediaType: (attr(item, "media-type") ?? "").toLowerCase(),
+      properties: tokens(attr(item, "properties")),
+    };
     manifest.set(entry.path, entry);
     byId.set(id, entry);
   }
@@ -180,11 +253,18 @@ export function readPackage(files: Map<string, Uint8Array>): EpubPackage {
     else if (item.mediaType === "application/xhtml+xml" || item.mediaType === "text/html") spine.push(item);
   }
 
+  // The EPUB3 nav first; the NCX when there is no nav, or it lists nothing usable.
   let navPoints: NavPoint[] = [];
+  const navItem = [...manifest.values()].find((i) => i.properties.includes("nav"));
+  const navBytes = navItem ? files.get(navItem.path) : undefined;
+  if (navItem && navBytes) {
+    const nav = parseXml(navBytes, "nav document", orderedParser) as unknown as OrderedNode[];
+    navPoints = readNavDocument(nav, dirOf(navItem.path));
+  }
   const tocItem = byId.get(attr(spineNode, "toc") ?? "") ??
     [...manifest.values()].find((i) => i.mediaType === "application/x-dtbncx+xml");
   const ncxBytes = tocItem ? files.get(tocItem.path) : undefined;
-  if (tocItem && ncxBytes) navPoints = readNavPoints(parseXml(ncxBytes, "NCX"), dirOf(tocItem.path));
+  if (navPoints.length === 0 && tocItem && ncxBytes) navPoints = readNavPoints(parseXml(ncxBytes, "NCX"), dirOf(tocItem.path));
 
   return {
     opfPath,
