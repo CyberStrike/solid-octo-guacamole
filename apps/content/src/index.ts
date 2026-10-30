@@ -25,6 +25,9 @@ const notFound = () => respond(null, 404, { "Cache-Control": "no-store" });
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return respond(null, 405, { Allow: "GET, HEAD", "Cache-Control": "no-store" });
+    }
     const path = new URL(request.url).pathname;
     const isImage = IMAGE.test(path);
     const isOriginal = ORIGINAL.test(path);

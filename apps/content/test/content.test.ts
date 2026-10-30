@@ -128,3 +128,57 @@ describe("09-content-origin", () => {
     await png.arrayBuffer();
   });
 });
+
+describe("19-surge-controls-and-quotas", () => {
+  it("Content origin is edge-cached", async () => {
+    await seed();
+    for (const key of [IMAGE_KEY, ORIGINAL_KEY]) {
+      const res = await get(key);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+      await res.arrayBuffer();
+    }
+  });
+});
+
+// Behaviour no scenario case names, but the content protocol and the notes' defaults do.
+describe("content Worker", () => {
+  it("HEAD answers with the headers and no body", async () => {
+    await seed();
+    const res = await get(IMAGE_KEY, { method: "HEAD" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/png");
+    expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await res.text()).toBe("");
+  });
+
+  it("Methods other than GET and HEAD are refused", async () => {
+    await seed();
+    for (const method of ["POST", "PUT", "DELETE", "PATCH"]) {
+      const res = await get(IMAGE_KEY, { method, body: method === "DELETE" ? undefined : "x" });
+      expect(res.status, method).toBe(405);
+      expect(res.headers.get("allow"), method).toBe("GET, HEAD");
+      expect(res.headers.get("cache-control"), method).toBe("no-store");
+      expect(res.headers.get("x-content-type-options"), method).toBe("nosniff");
+      expect(res.headers.has("set-cookie"), method).toBe(false);
+      await res.arrayBuffer();
+    }
+    // The bucket is untouched.
+    expect(await E.BUCKET.head(IMAGE_KEY)).not.toBeNull();
+  });
+
+  it("A key deleted from R2 is no longer served", async () => {
+    await seed();
+    const before = await get(IMAGE_KEY);
+    expect(before.status).toBe(200);
+    await before.arrayBuffer();
+    await E.BUCKET.delete([IMAGE_KEY, ORIGINAL_KEY]);
+    for (const key of [IMAGE_KEY, ORIGINAL_KEY]) {
+      const res = await get(key);
+      expect(res.status).toBe(404);
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      expect(await res.text()).toBe("");
+    }
+  });
+});
