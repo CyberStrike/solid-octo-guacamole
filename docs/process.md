@@ -1,6 +1,6 @@
 # Process
 
-Where planning lives and how work is tracked, so none of it depends on one session's memory. The design is `docs/ARCHITECTURE.md` and `docs/FRONTEND-DISCOVERY.md`. The acceptance criteria are `specs/scenarios/`. The gate is `.claude/skills/gate/SKILL.md`, tickets come from `.claude/skills/to-tickets/SKILL.md`, waves of items are run by `.claude/skills/orchestrate/SKILL.md`, and items are built test-first by `.claude/skills/tdd/SKILL.md`. Where this file and one of those disagree, that file wins and this one is fixed.
+Where planning lives and how work is tracked, so none of it depends on one session's memory. The design is `docs/ARCHITECTURE.md` and `docs/FRONTEND-DISCOVERY.md`. The acceptance criteria are `specs/scenarios/`. The gate is `.claude/skills/gate/SKILL.md`, tickets come from `.claude/skills/to-tickets/SKILL.md`, waves of items are run by `.claude/skills/orchestrate/SKILL.md`, items are built test-first by `.claude/skills/tdd/SKILL.md`, and `.claude/skills/escalate/SKILL.md` says what to do when unsure. Where this file and one of those disagree, that file wins and this one is fixed.
 
 Adapted from the folio project's ledger.
 
@@ -22,7 +22,18 @@ Adapted from the folio project's ledger.
 - **Tickets are cut by `/to-tickets`.** Each issue's *Definition of done* cites scenario cases, and its `Depends on:` line names the issues that must merge first. The gate checks that each dependency is closed.
 - **Order follows blockers.** Work the frontier: items whose blockers have all merged. Otherwise landing order doesn't matter, unless the operator marks an item critical.
 - **Start an item only on the operator's word**, even when its blockers have cleared.
-- **A wave runs under `/orchestrate`.** An explorer writes notes on each item into a shared scratchpad. Then a fresh engineer per item, on a model picked for that item, builds it test-first with `/tdd` in its own worktree and branch, and opens its PR after `/gate pr`. The merge ladder stays with the operator.
+- **Waves of items run under `/orchestrate`**, and every item is built test-first with `/tdd`.
+
+## Working rules
+
+For every agent and session working here, whatever skill it runs:
+
+- **The repo is public.** No fic text, real epub contents or reader data in code, tests, fixtures, snapshots, commits, PRs, issues, notes or logs. Fixtures are named, never quoted.
+- **Work outside the repo goes in a scratchpad.** Logs, screenshots, notes and scratch tests go in your session's scratchpad directory, or the scratch root a brief names. Never in the repo.
+- **Worktrees share one git stash.** Never use bare `git stash`: set work aside with a WIP commit.
+- **On Windows, run `.sh` scripts from Git Bash** (the Bash tool), never PowerShell, where `bash` may resolve to WSL (`/gate` §2).
+- **Commit messages follow the style of `git log`.**
+- **Stuck or unsure?** Follow `/escalate`. Open design questions go to the operator.
 
 ## The ledger
 
@@ -46,7 +57,8 @@ Collections, with the fields `docs/ledger/page.html` reads:
   - `gates` names the items that must merge first: the issue's `Depends on:` line.
 - **`agents`**: one doc per explorer, builder, consultant, gate or reviewer. Fields:
   - kind (`explorer`, `builder`, `consultant`, `gate` or `reviewer`), name, item (or task, for work with no item), model, lane, step, pr[], startedAt, finishedAt, note
-  - status is `running`, `idle`, `finished` or `failed`
+  - the doc id is `<item or task>-<kind>`, with `-<n>` added for the second and later of the same kind: `E1-explorer`, `E1-builder`, `E1-consultant-2`. A relaunched agent gets a new id, so the first one's row stays.
+  - status is `running`, `idle`, `finished` or `failed`. An agent that may still be sent more work, such as a builder whose PR is open, is `idle`; it's `finished` once that can't happen (its PR merged, or the item closed).
 - **`questions`**: one per open design question, with id `Q<n>`, title, state (`open` or `closed`), proceeding and note.
 - **`reviews`**: the operator's task list, with title, detail, ref, url, order and state (`open` or `done`).
 - **`followups`**: one per follow-up issue (adjacent problems and audit findings, not work items), with issue, title, note, status (`open`, `review`, `running` or `closed`), workspace, waitsOn[] and pr[].

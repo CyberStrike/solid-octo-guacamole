@@ -25,7 +25,7 @@ Name the test after the case, so the gate can match each bullet to its test: `it
 
 Tests verify behaviour through public interfaces, not implementation details. Code can change entirely; tests shouldn't. A good test reads like the scenario case it comes from, and it survives refactors because it doesn't care about internal structure.
 
-See [tests.md](tests.md) for examples from this repo and [mocking.md](mocking.md) for what to stub.
+See [tests.md](tests.md) for examples from this repo and [mocking.md](mocking.md) for what to stub: `.claude/skills/tdd/tests.md` and `.claude/skills/tdd/mocking.md` from the repo root, when this skill was preloaded and the links don't resolve.
 
 ## Seams: where tests go
 
@@ -44,7 +44,7 @@ A consumer's contract is what it stores. The ingest job promises R2 objects unde
 - **Under `/orchestrate`,** the explorer proposes them in the notes' *Seams* section and the orchestrator checks them before the engineer starts. That's the agreement. A seam the engineer needs that the notes don't list goes under *Corrections* in `notes.md`, with its note, and into the report, so the orchestrator sees it.
 - **Working with a person,** ask: "What's the public interface, and which seams should we test?" No test is written at an unconfirmed seam.
 
-You can't test everything. Agreeing the seams up front puts the effort on the critical paths and the security boundary instead of on every edge case. When the shape of the interface is itself in question (how deep a module is, where the seam belongs, what it should expose) and the choice is hard to undo, that's a consult, not a guess (`/orchestrate`, *Escalation*).
+You can't test everything. Agreeing the seams up front puts the effort on the critical paths and the security boundary instead of on every edge case. When the shape of the interface is itself in question (how deep a module is, where the seam belongs, what it should expose) and the choice is hard to undo, that's a consult, not a guess (`/escalate`).
 
 ## Anti-patterns
 
@@ -56,9 +56,9 @@ You can't test everything. Agreeing the seams up front puts the effort on the cr
 
 - **Red before green.** Write the failing test first, and run it: `npx vitest run <file> -t "<case title>"` in the workspace. It must fail on its assertion, for the reason the case predicts. A test that fails on an import error or a typo hasn't been red yet. Then write only enough code to pass it. Don't anticipate later cases or add speculative features.
 - **One slice at a time.** One seam, one case, one minimal implementation per cycle. Run the workspace's whole suite before you commit a slice.
-- **Tests run in Node, unless a dependency needs workerd.** workerd is necessary only for code that reaches a Workers-only API: `HTMLRewriter` (so anything through `processEpub` and the sanitizer), a `cloudflare:*` module, or a Worker's `fetch` or `queue` entry with its bindings. Everything else, from pure logic to parsers, `packages/db` queries and `scripts/`, runs in Node, with no polyfills standing in for a Workers API. The reason is cost: workerd adds about 1.5 s per run and 0.3 s per test file, while the tests themselves run at the same speed (measured on `packages/epub`, 2026-10-30).
+- **Tests run in Node, unless a dependency needs workerd.** workerd is necessary only for code that reaches a Workers-only API: `HTMLRewriter` (so anything through `processEpub` and the sanitizer), a `cloudflare:*` module, or a Worker's `fetch` or `queue` entry with its bindings. Everything else, from pure logic to parsers, `packages/db` queries and `scripts/`, runs in Node, with no polyfills standing in for a Workers API. The reason is cost: workerd adds start-up time to every run and to every test file, which Node doesn't pay, while the tests themselves run no faster.
   - A workspace with both kinds splits them into two Vitest projects, so the Node tests don't pay for the runtime.
   - Keep logic out of the Worker shell, so it can be tested in Node, and leave the shell thin enough that a few workerd tests cover it.
   - A Node `globalSetup` reads files the runtime can't (see `packages/epub/test/global-setup.ts`).
-- **The repo is public.** No fic text in tests, fixtures or snapshots. Build structure with the synthetic helpers (`ao3Epub`, `zipEntries` in `packages/epub/test/helpers.ts`). Real epubs under `fixtures/epubs/` are git-ignored and absent in CI, so their tests skip there: no bullet may depend on one alone.
-- **Refactoring is not part of the loop.** It belongs to the review ladder (`/gate` §6): `/code-review` on every tier, and `/simplify` on tier 3. Their findings come back to the engineer as review rework.
+- **No fic text in tests, fixtures or snapshots** (`docs/process.md`, *Working rules*). Build structure with the synthetic helpers (`ao3Epub`, `zipEntries` in `packages/epub/test/helpers.ts`). Real epubs under `fixtures/epubs/` are git-ignored and absent in CI, so their tests skip there: no bullet may depend on one alone.
+- **Refactoring is not part of the loop.** It belongs to the review ladder (`/gate` §6), whose findings come back as review rework.

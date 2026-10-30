@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 You direct; the agents build. You read tickets, notes and reports, choose models, launch and answer agents, and keep the ledger. You don't write the item's code yourself, and you don't explore the codebase beyond what choosing a model needs: that is the explorer's job, and its notes are what every later agent reads.
 
-The process this runs inside is `docs/process.md`. The gate is `/gate` (`.claude/skills/gate/SKILL.md`), and tickets come from `/to-tickets`. Where this skill and one of those disagree, that file wins and this one is fixed.
+The process this runs inside is `docs/process.md`, and its *Working rules* bind you and every agent you launch. The gate is `/gate`, tickets come from `/to-tickets`, and tests follow `/tdd`. Where this skill and one of those disagree, that file wins and this one is fixed.
 
 The agent types live in `.claude/agents/`:
 
@@ -21,35 +21,25 @@ The agent types live in `.claude/agents/`:
 
 ## Models
 
-Edit this table to retune. The tiers, lowest first: `haiku` < `sonnet` < `opus` < `fable`. Fable is the most capable and the most expensive, and needs Fable access on the account. Without it, the top tier is `opus`, and a consult that would go to `fable` goes to the operator instead.
+Edit this table to retune. The tiers and the Fable caveat are in `/escalate`, *The ladder*.
 
 | Pick | When the ticket is |
 |------|--------------------|
 | `haiku` | Tier 0 prose, or a mechanical batch (an expand-migrate-contract step) whose notes name every file and the exact change |
 | `sonnet` | Test-only (expected gate tier 2), or a code change of one workspace that follows a pattern the notes point to |
-| `opus` | Expected tier 3: crosses layers (migration, ingest, route, page), touches the security boundary, or is the first ticket in a new workspace (W1, D1, M1, C1, I1) |
+| `opus` | Expected tier 3: crosses layers (migration, ingest, route, page), touches the security boundary, or is the first ticket in a workspace that doesn't exist yet |
 | `fable` | Consults only, by default. Build on it only when the operator says so for an item |
 
-Explorers run on `sonnet`, or on `opus` when the ticket touches the security boundary or leans on external docs the repo doesn't hold (Better Auth, Cloudflare bindings, Resend, R2 presigning). A consult runs one tier above the agent asking.
+Explorers run on `sonnet`: their job is finding and summarizing, and the engineer reads the files the notes name anyway. An explorer that can't settle something says so in *Risk*, and the engineer escalates.
 
 Assess before you pick. Read the ticket's *Definition of done*, the gate tier and protocols it predicts, and the notes' *Risk* section. When two rows fit, take the higher. Write one line per ticket, "<item>: <model> because <reason>", into the wave plan you show the operator.
 
 ## Escalation
 
-When you or any agent meets a problem it can't solve with confidence, it doesn't guess. The ladder, the same for everyone:
+You follow `/escalate` like every agent. Your part in it for the others:
 
-1. **The advisor tool,** when the session has one. It sees the whole transcript, so it needs no brief. Subagents inherit it when their model is below the advisor's.
-2. **A consult.** Spawn a `consultant` one tier up, with the question, what was tried, the two or three options in view, and the absolute paths of the notes and the files in question. Save its answer to `<scratch>/<ITEM>/consults/<n>.md`, and cite that file in the report.
-3. **The operator.** When the consultant answers *unsure*, when the top tier was the one asking, or when the question is a design decision. Report it as a stop event, in the shape of the gate's *Deviations*.
-
-What counts as not confident:
-
-- The same check fails after two different attempts at a fix.
-- Code on the security boundary (the gate's tier 3 list) that no test shows correct.
-- A choice that is hard to undo: a schema shape, a key layout in R2, a queue message format, a public URL.
-- Behaviour the runtime decides and the notes don't settle: workerd, Hyperdrive, Queues, `HTMLRewriter`.
-
-A question the docs leave open is never a consult. Models don't decide open design questions (`/to-tickets`, *Rules for every ticket*); it goes to the operator.
+- An engineer that stops with `needs-consult` couldn't launch its own consult: run step 2 for it, one tier above the engineer, and send the answer back with `SendMessage`.
+- A question that reaches the operator, from anyone, goes to them with its evidence. Send their ruling back to the agent that asked, quoting their words.
 
 ## 1. Set up the scratchpad
 
@@ -57,57 +47,66 @@ Every agent reads and writes notes under one root, `<scratch>`: `orchestrate/` i
 
 ```
 <scratch>/
-  wave.md                plan, models, and each agent's id and branch
+  wave.md                the plan, models, and each agent's id and branch
   shared/
-    conventions.md       repo-wide: workspaces, test setup, commands, patterns
+    conventions.md       repo-wide facts every agent needs once
   <ITEM>/
     notes.md             the explorer's notes for one ticket
     consults/<n>.md      consult answers
     report.md            the engineer's final report
 ```
 
-The scratchpad lasts for this session. Notes hold no fic text and no reader data: they are about code and docs only.
+`wave.md` is how you find an agent again: `SendMessage` needs its id, and your context may be compacted before the wave ends. Read it, and `report.md`, when you no longer have an agent's id or report in context.
+
+The scratchpad lasts for this session.
 
 ## 2. Propose the wave
 
 1. `git fetch`. Explorers read code as it is on `origin/main`, which is what each engineer's worktree starts from.
-2. Find the frontier: open items in `docs/project-tracking.md` whose `Depends on:` issues are all closed (`gh issue list --state closed`, or `gh issue view <n>`). Narrow it to what the arguments name.
-3. Query the ledger's `agents` for `running` and `idle` rows. Don't propose an item someone is already building.
+2. Find the frontier: open items in `docs/project-tracking.md` whose `Depends on:` issues are all closed (`gh issue view <n>`). Narrow it to what the arguments name.
+3. Leave out items already under way: an item whose ledger status is past Ready, one with a `running` or `idle` row in `agents`, and one with a PR that will close its issue (`gh issue view <n> --json closedByPullRequestsReferences` lists any).
 4. Show the operator the proposed wave: each item, its issue, its predicted gate tier, and the model line from *Models*. Flag any two items likely to touch the same files (the root `package.json`, a shared type), since their worktrees will conflict at merge.
 
 **Stop here until the operator names the items to start.** `docs/process.md`: start an item only on the operator's word, even when its blockers have cleared.
 
 ## 3. Explore
 
-Launch one `explorer` per item, all in one message so they run at once. When `shared/conventions.md` doesn't exist yet, the first explorer's brief also asks for it, and the others are told to read it once it appears and not to duplicate it.
+**Conventions first.** When `<scratch>/shared/conventions.md` doesn't exist, launch one `explorer` to write it alone, and wait for it. It holds what every ticket needs and nobody should look up twice: the workspaces and what each holds, the test setup and its runtime, the root scripts, the gate's protocols in a line each, the seam kinds from `/tdd`, and the commit and PR conventions from recent history. Its brief: "Write `<scratch>/shared/conventions.md` (`.claude/agents/explorer.md`, *Writing `shared/conventions.md`*). Scratch root: … Code: …", with the `Code:` line below.
 
-The brief:
+**Then one explorer per item,** all in one message so they run at once. The brief:
 
 ```
 Item <ITEM>, issue #<n>: <title>.
 Scratch root: <absolute path to scratch>.
-Write your notes to <scratch>/<ITEM>/notes.md.
-<Also write <scratch>/shared/conventions.md. | Read <scratch>/shared/conventions.md; don't repeat it.>
-Read code at origin/main: in this checkout, use `git show origin/main:<path>` for any file that differs.
+Write your notes to <scratch>/<ITEM>/notes.md. Read <scratch>/shared/conventions.md first; don't repeat it.
+Code: <"this checkout is at origin/main" | "this checkout is not at origin/main: read every file with `git show origin/main:<path>` and list folders with `git ls-tree origin/main <path>`">.
 External docs to check: <the libraries or services the ticket names, or "none">.
 ```
 
-When the explorers report, read each `notes.md`. Every *Definition of done* bullet needs a line under *Plan by bullet*, and *Risk* needs to say why. Check *Seams* against `/tdd`: each is a public boundary, not an internal function, and together they reach every bullet. Your check is the agreement `/tdd` asks for before any test is written; a seam you're unsure of goes to the operator. Send a gap back to the same explorer with `SendMessage`. Then settle each item's model.
+Tell which `Code:` line applies with `git status --porcelain` and `git rev-parse HEAD origin/main`: the checkout is at `origin/main` only when the two hashes match and the status is empty.
+
+As each explorer reports, read its `notes.md` and settle that item, without waiting for the rest:
+
+- Every *Definition of done* bullet has a line under *Plan by bullet*, and *Risk* says why.
+- Every seam in *Seams* is a public boundary in the sense of `/tdd`, *Seams*, and together they reach every bullet. Your check is the agreement `/tdd` asks for before any test is written; a seam you're unsure of goes to the operator.
+- A gap goes back to the same explorer with `SendMessage`.
+
+Then settle the item's model and launch its engineer.
 
 ## 4. Build
 
-Launch one `engineer` per item: a fresh agent, never a fork and never one reused from another ticket. Its definition puts it in its own worktree. Pass `model` from *Models* on each call, and launch the wave's engineers in one message so they run at once. The brief:
+Launch one `engineer` per item, as soon as its notes are settled: a fresh agent, never a fork and never one reused from another ticket. Its definition puts it in its own worktree. Pass `model` from *Models* on each call. The brief:
 
 ```
 Item <ITEM>, issue #<n>: <title>.
 Branch: claude/<item id, lowercase>-<short slug>.
 Scratch root: <absolute path to scratch>.
 Read first: <scratch>/shared/conventions.md, <scratch>/<ITEM>/notes.md.
-Your model tier: <model>. Consult at: <next tier up, or "the operator">.
+Your model tier: <model>. Consult at: <next tier up, or "the operator" on the top tier>.
 Write your final report to <scratch>/<ITEM>/report.md as well as returning it.
 ```
 
-Write each agent's id, model, branch and start time into `wave.md` and onto the ledger.
+Write each agent's id, model, branch and start time into `wave.md`, and its row onto the ledger (§6).
 
 An engineer writes under `<scratch>` from outside its worktree, so it may raise a permission prompt in your session. That's expected: approve writes under `<scratch>`, and nothing else from outside its worktree. Its report also comes back as text, so a declined write loses nothing.
 
@@ -115,9 +114,9 @@ An engineer writes under `<scratch>` from outside its worktree, so it may raise 
 
 Each engineer ends with one status:
 
-- **`pr-open`**: the PR exists and its body has `/gate`'s *What was run* block. Read `report.md`, check the PR (`gh pr view <n>`), and set the item to `gating` on the ledger. Read its *Seams added*: one that tests an internal goes back to the engineer. The wave stops here for that item: the merge ladder (`/gate merge`) and the merge itself are the operator's call.
-- **`needs-consult`**: the engineer couldn't run its own consult. Run the consult (*Escalation*, step 2), then send the answer to the same engineer with `SendMessage`.
-- **`stopped`**: a stop event or an open question. Put it to the operator with the engineer's evidence. When they rule, send the ruling to the same engineer, quoting their words.
+- **`pr-open`**: the PR exists and its body has `/gate`'s *What was run* block. Check the PR (`gh pr view <n>`), and set the item to `gating` on the ledger. Read the report's *Seams added*: one that tests an internal goes back to the engineer. The wave stops here for that item: the merge ladder (`/gate merge`) and the merge itself are the operator's call.
+- **`needs-consult`**: see *Escalation*.
+- **`stopped`**: a stop event, or a question for the operator. Put it to them with the engineer's evidence, and send their ruling back to the same engineer, quoting their words.
 - **`failed`**: say what failed and what the branch holds. Ask the operator whether to relaunch, on the same model or one tier up.
 
 Review rework on an open PR goes to the same engineer with `SendMessage`, so it keeps its context. "One fresh agent per ticket" means per ticket, not per round.
@@ -126,10 +125,10 @@ When an item touched files that another open PR in the wave also touched, the se
 
 ## 6. Keep the ledger
 
-The ledger is described in `docs/process.md`, *The ledger*. Write it through ArtifactData, with times from `date -u`:
+The ledger, its row ids and its statuses are in `docs/process.md`, *The ledger*. Write it through ArtifactData, with times from `date -u`, and put the writes of one moment in one `batch`.
 
-- **At each launch:** an `agents` row with `item`, `model`, `lane`, `status: "running"` and `startedAt`. The kind follows the agent type: `explorer` (name `<ITEM> explorer`), `builder` for an engineer (name `<ITEM> engineer`), or `consultant` (name `<ITEM> consult <n>`, with the question in a line as its `note`). At an engineer's launch, set the item's `status` to `building` and its `model`.
-- **At each report:** an explorer's or consultant's row becomes `finished`, with `finishedAt`; a consultant's `note` gets its confidence and the answer's file. An engineer at `pr-open` becomes `idle` with its `pr`, since review rework may come back to it; it becomes `finished` when its PR merges or the operator closes the item. An engineer that `failed` becomes `failed`.
+- **At each launch:** an `agents` row with `item`, `model`, `lane`, `status: "running"` and `startedAt`. Its kind follows the agent type: `explorer`, `builder` for an engineer, or `consultant`. Name it `<ITEM> explorer`, `<ITEM> engineer` or `<ITEM> consult <n>`; a consultant's `note` holds its question in a line. At an engineer's launch, also set the item's `status` to `building` and its `model`.
+- **At each report:** an explorer's or consultant's row becomes `finished`, with `finishedAt`; a consultant's `note` gets its confidence and the answer's file. An engineer at `pr-open` becomes `idle` with its `pr`; one that `failed` becomes `failed`. When its PR later merges, `scripts/ledger-check.mjs` reports the `idle` row, and you set it `finished`.
 - **Consults an engineer runs itself** don't reach you until its report. Add their rows then, from the report's *Consults* line, with the times from the files under `consults/`.
 - **At the end of the wave:** a `log` entry listing each item and its outcome. Then run `scripts/ledger-check.mjs` as `docs/process.md` says.
 
