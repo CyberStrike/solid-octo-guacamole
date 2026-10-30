@@ -257,18 +257,18 @@ export function readPackage(files: Map<string, Uint8Array>): EpubPackage {
     else if (item.mediaType === "application/xhtml+xml" || item.mediaType === "text/html") spine.push(item);
   }
 
-  // The EPUB3 nav first; the NCX when there is no nav, or it lists nothing usable.
+  // The NCX wins; the EPUB3 nav is read only when there is no NCX, or it lists nothing usable.
   let navPoints: NavPoint[] = [];
-  const navItem = [...manifest.values()].find((i) => i.properties.includes("nav"));
-  const navBytes = navItem ? files.get(navItem.path) : undefined;
-  if (navItem && navBytes) {
-    const nav = parseXml(navBytes, "nav document", orderedParser) as unknown as OrderedNode[];
-    navPoints = readNavDocument(nav, dirOf(navItem.path));
-  }
   const tocItem = byId.get(attr(spineNode, "toc") ?? "") ??
     [...manifest.values()].find((i) => i.mediaType === "application/x-dtbncx+xml");
   const ncxBytes = tocItem ? files.get(tocItem.path) : undefined;
-  if (navPoints.length === 0 && tocItem && ncxBytes) navPoints = readNavPoints(parseXml(ncxBytes, "NCX"), dirOf(tocItem.path));
+  if (tocItem && ncxBytes) navPoints = readNavPoints(parseXml(ncxBytes, "NCX"), dirOf(tocItem.path));
+  const navItem = [...manifest.values()].find((i) => i.properties.includes("nav"));
+  const navBytes = navItem ? files.get(navItem.path) : undefined;
+  if (navPoints.length === 0 && navItem && navBytes) {
+    const nav = parseXml(navBytes, "nav document", orderedParser) as unknown as OrderedNode[];
+    navPoints = readNavDocument(nav, dirOf(navItem.path));
+  }
 
   return {
     opfPath,
