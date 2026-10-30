@@ -48,13 +48,20 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
   // One node budget for every document parsed from this epub.
   const budget = nodeBudget();
   const docs: SpineDoc[] = [];
+  const parsed = new Set<string>();
   let next = 0;
   for (const item of pkg.spine) {
+    if (parsed.has(item.path)) {
+      reviewReasons.push(`duplicate_spine_item: ${item.path}`);
+      continue;
+    }
+    parsed.add(item.path);
     const data = files.get(item.path);
     if (!data) {
       reviewReasons.push(`missing_spine_file: ${item.path}`);
       continue;
     }
+    files.delete(item.path); // free the bytes once decoded: memory is the tight limit here
     const root = await parseHtml(new TextDecoder().decode(data), item.path, budget);
     next = numberTree(root, next);
     docs.push({ path: item.path, root });
@@ -79,6 +86,7 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
 
   // Images: only manifest images that pass the checks, and only those the output uses.
   const candidates = await collectImages(files, pkg.manifest);
+  files.clear(); // everything still needed is now parsed or held by `candidates`
   const used = new Map<string, ImageCandidate>();
   const imageBase = options.imageBase ?? "";
   const ctx: SanitizeContext = {
@@ -108,6 +116,7 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
   reviewReasons.push(...split.reviewReasons);
   const chapters: Chapter[] = split.chapters.map((c, i) => {
     const body = serializeChildren(c.nodes, ctx).trim();
+    c.nodes = []; // drop each chapter's copy of the tree as soon as it is serialized
     return { n: i + 1, title: c.title, html: body, words: countWords(body) };
   });
   const endNotesHtml = html(preface.endNotes);

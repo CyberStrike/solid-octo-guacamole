@@ -3,6 +3,32 @@ import { describe, expect, it } from "vitest";
 import { processEpub } from "../src";
 import { ao3Epub, expectEpubError, MiB, zipEntries } from "./helpers";
 
+/**
+ * Calls `patch` on the local header and the central directory entry for
+ * `name` (with the offsets of their uncompressed size and name); returns how
+ * many headers it found.
+ */
+function patchHeaders(
+  zip: Uint8Array,
+  name: string,
+  patch: (view: DataView, local: boolean, sizeAt: number, nameAt: number) => unknown,
+): number {
+  const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+  const want = strToU8(name);
+  let found = 0;
+  for (let at = 0; at + 46 <= zip.length; at++) {
+    const sig = view.getUint32(at, true);
+    const local = sig === 0x04034b50;
+    if (!local && sig !== 0x02014b50) continue;
+    const nameAt = at + (local ? 30 : 46);
+    if (view.getUint16(at + (local ? 26 : 28), true) !== want.length) continue;
+    if (!want.every((b, i) => zip[nameAt + i] === b)) continue;
+    patch(view, local, at + (local ? 22 : 24), nameAt);
+    found++;
+  }
+  return found;
+}
+
 describe("hostile containers", () => {
   it("accepts the synthetic baseline", async () => {
     const work = await processEpub(ao3Epub());
@@ -34,20 +60,17 @@ describe("hostile containers", () => {
   });
 
   it("rejects an entry that inflates past 20 MB while declaring a small size", async () => {
-    // Patch the local header's uncompressed size, so only the streaming check can catch it.
-    const zip = zipEntries({ "big.bin": new Uint8Array(30 * MiB) });
-    const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
-    const name = new TextEncoder().encode("big.bin");
-    let patched = false;
-    for (let at = 0; at + 30 + name.length <= zip.length; at++) {
-      if (view.getUint32(at, true) !== 0x04034b50 || view.getUint16(at + 26, true) !== name.length) continue;
-      if (!name.every((b, i) => zip[at + 30 + i] === b)) continue;
-      view.setUint32(at + 22, 1024, true);
-      patched = true;
-      break;
-    }
-    expect(patched).toBe(true);
+    // Both headers declare 1 KiB, so only the streaming byte count can catch it.
+    const zip = zipEntries({ "big.xhtml": new Uint8Array(30 * MiB) });
+    expect(patchHeaders(zip, "big.xhtml", (view, local, size) => view.setUint32(size, 1024, true))).toBe(2);
     await expectEpubError(processEpub(zip), "zip_bomb");
+  });
+
+  it("rejects a central directory that names a different entry than the local header", async () => {
+    const zip = ao3Epub();
+    // Central directory only: "toc.ncx" becomes "tox.ncx".
+    expect(patchHeaders(zip, "toc.ncx", (view, local, _size, nameAt) => local || view.setUint8(nameAt + 2, 0x78))).toBe(2);
+    await expectEpubError(processEpub(zip), "not_epub");
   });
 
   it("rejects an archive that inflates past 100 MB in total", async () => {

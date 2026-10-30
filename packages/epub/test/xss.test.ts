@@ -50,8 +50,18 @@ describe("XSS corpus", () => {
     for (let i = 1; i <= 19; i++) expect(html).toContain(`alpha-${i}`);
     expect(html).toContain("beta-2");
     expect(html).toContain("beta-17");
-    expect(html).toContain(`<a href="https://ok.example/page?a=1&amp;b=2" rel="nofollow noopener ugc">alpha-16</a>`);
+    expect(html).toContain(`<a href="https://ok.example/page?a=1&amp;b=2" rel="nofollow noopener noreferrer ugc">alpha-16</a>`);
     expectBalanced(html);
+  });
+
+  it("drops namespaced script, style and svg by their local name", async () => {
+    const body = `<div id="chapters"><p>alpha-ns</p><svg:svg xmlns:svg="http://www.w3.org/2000/svg"><svg:script>alert('ns1')</svg:script></svg:svg>
+<html:style>body{display:none}</html:style><m:math><m:mi>hidden-ns</m:mi></m:math><x:p>kept-ns</x:p></div>`;
+    const work = await processEpub(ao3Epub({ files: [{ name: "ns_split_001.xhtml", body }] }));
+    const html = work.chapters[0]!.html;
+    expect(html).not.toMatch(/alert|display:none|hidden-ns|<svg|<x:p/);
+    expect(html).toContain("alpha-ns");
+    expect(html).toContain("kept-ns");
   });
 
   it("strips payloads from the summary too", async () => {

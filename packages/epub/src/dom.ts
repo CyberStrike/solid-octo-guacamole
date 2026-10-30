@@ -143,7 +143,8 @@ export async function parseHtml(html: string, file = "", budget: NodeBudget = no
       },
     });
 
-  await rewriter.transform(new Response(expandSelfClosing(html))).arrayBuffer();
+  // Drain and discard the rewriter's output instead of buffering a copy of it.
+  await rewriter.transform(new Response(expandSelfClosing(html))).body?.pipeTo(new WritableStream());
   if (failure) throw failure;
   return root;
 }
@@ -213,10 +214,20 @@ export function isAncestor(ancestor: ElementNode, node: Node): boolean {
   return false;
 }
 
+/** A tag name without its namespace prefix: `svg:script` -> `script`. */
+export function localName(tag: string): string {
+  return tag.slice(tag.lastIndexOf(":") + 1);
+}
+
+const isScriptOrStyle = (el: ElementNode): boolean => {
+  const name = localName(el.tag);
+  return name === "script" || name === "style";
+};
+
 /** Decoded text content. Content of script/style is not text for our purposes. */
 export function textContent(node: Node): string {
   if (node.type === "text") return decodeEntities(node.raw);
-  if (node.tag === "script" || node.tag === "style") return "";
+  if (isScriptOrStyle(node)) return "";
   let s = "";
   for (const child of node.children) s += textContent(child);
   return s;
@@ -240,7 +251,7 @@ export function boundedText(node: Node, maxChars: number, maxNodes = 4 * maxChar
       s += n.raw;
       return s.length <= maxChars;
     }
-    if (n.tag === "script" || n.tag === "style") return true;
+    if (isScriptOrStyle(n)) return true;
     for (const child of n.children) if (!visit(child)) return false;
     return true;
   };

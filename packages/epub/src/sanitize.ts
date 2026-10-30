@@ -1,4 +1,4 @@
-import type { ElementNode, Node } from "./dom";
+import { localName, type ElementNode, type Node } from "./dom";
 import { decodeEntities, escapeAttr, escapeText, hasNamedEntity } from "./entities";
 
 // The serializer builds output from scratch, so only what is listed here can
@@ -21,9 +21,10 @@ const DROP = new Set([
 ]);
 
 /** Obsolete spellings of allowed elements. */
-const RENAME: Record<string, string> = { strike: "s" };
+const RENAME = new Map([["strike", "s"]]);
 
-const EXTERNAL_REL = "nofollow noopener ugc";
+// noreferrer: following a link must not tell the target which work a reader is on.
+const EXTERNAL_REL = "nofollow noopener noreferrer ugc";
 
 export interface SanitizeContext {
   /** Returns the rewritten URL for an epub-internal image, or null to drop the img. */
@@ -80,10 +81,13 @@ function allowedAttrs(tag: string, el: ElementNode): string {
 function serializeNode(node: Node, ctx: SanitizeContext): string {
   if (node.type === "text") return escapeText(node.raw);
 
-  const tag = RENAME[node.tag] ?? node.tag;
-  if (DROP.has(tag) || ctx.skip?.(node)) return "";
+  // A prefixed name (`svg:script`) is dropped by its local name, and never
+  // emitted as an allowed element: the prefix may bind any namespace.
+  const local = localName(node.tag);
+  if (DROP.has(local) || ctx.skip?.(node)) return "";
 
   const inner = () => serializeChildren(node.children, ctx);
+  const tag = RENAME.get(node.tag) ?? node.tag;
   if (!ALLOWED.has(tag)) return inner(); // unknown wrapper: keep its content
 
   if (tag === "img") {
