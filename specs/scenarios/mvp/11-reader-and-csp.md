@@ -1,6 +1,6 @@
 # Scenario: Chapter reader and strict CSP
 
-Relates to: docs/ARCHITECTURE.md § Decisions so far (Chapter rendering), § Reading, § Author requests & takedowns (What hidden, held and removed works show); docs/FRONTEND-DISCOVERY.md § Key journeys (1. Find and read a work), § Page inventory (Chapter reader, Entire work, Hidden work, Removed work), § Components (Chapter nav, Review notice), § Reading experience
+Relates to: docs/ARCHITECTURE.md § Decisions so far (Chapter rendering, Name and domain), § Why these pieces (Hosts), § Reading, § Author requests & takedowns (What hidden, held and removed works show); docs/FRONTEND-DISCOVERY.md § Key journeys (1. Find and read a work), § Page inventory (Chapter reader, Entire work, Hidden work, Removed work), § Components (Chapter nav, Review notice), § Reading experience
 
 ## Setup
 - A live work W with 5 chapters, chapter notes on chapter 2 and end notes on chapter 2, rated General Audiences with no archive warnings
@@ -22,6 +22,17 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Chapter rendering), § Rea
 - GIVEN any page served by `rarepair.fans` without a Turnstile check
 - WHEN the response is returned
 - THEN it has the header `default-src 'self'; script-src 'nonce-{n}' 'strict-dynamic'; style-src 'self'; img-src 'self' https://content.rarepair.fans; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
+
+### Every response requires HTTPS
+- GIVEN any response from the web Worker, a Turnstile page, an error page or a redirect included
+- WHEN it is returned
+- THEN it has the header `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+
+### Requests to www go to the bare domain
+- GIVEN any request to `www.rarepair.fans`, of any method, with any path and query
+- WHEN the web Worker receives it
+- THEN the response is 308 with `Location` set to the same path and query on `https://rarepair.fans`
+- AND the request is not otherwise handled, so no page, cookie or form action is served on `www.rarepair.fans`
 
 ### Turnstile pages allow only the Turnstile challenge frame
 - GIVEN `/login`, `/upload` and `/remove`

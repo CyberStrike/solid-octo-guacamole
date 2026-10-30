@@ -28,9 +28,9 @@ an unofficial stopgap.
 
 ```
                  ┌──────────────────────── rarepair.fans ─────────────────────────┐
- Browser ──────▶ │  web Worker (Hono, server-rendered HTML)                         │
-   │             │   • browse / search / work + chapter reader / auth / uploads    │
-   │             │   • Turnstile + rate limits on signup, login, upload            │
+ Browser ──────▶ │  web Worker (Hono, server-rendered HTML)                       │
+   │             │   • browse / search / work + chapter reader / auth / uploads   │
+   │             │   • Turnstile + rate limits on signup, login, upload           │
    │             └──────┬──────────────┬──────────────────┬───────────────────────┘
    │                    │ Hyperdrive   │ KV               │ Queue: ingest
    │                    ▼              ▼                  ▼
@@ -45,7 +45,7 @@ an unofficial stopgap.
    │
    │             ┌───────────────────── content.rarepair.fans ──────────────────────┐
    └──────────▶  │  content Worker: epub images + original-file downloads from R2   │
-                 │  separate origin, no cookies, nosniff, edge-cached forever      │
+                 │  separate origin, no cookies, nosniff, edge-cached forever       │
                  └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -75,6 +75,25 @@ an unofficial stopgap.
   gets past the sanitizer still can't run (see Reading). The separate
   `content.rarepair.fans` origin, which sets no cookies, is kept only for the bytes
   we serve as they are: images from inside epubs and original-file downloads.
+- **Hosts.** The web Worker answers only on `rarepair.fans` and the content
+  Worker only on `content.rarepair.fans`. Every Worker sets `workers_dev = false`
+  and `preview_urls = false`, so no second copy of the app is reachable on a
+  `workers.dev` or preview URL.
+  - `www.rarepair.fans` is routed to the web Worker. It answers every request
+    there, whatever the method, with a **308** to the same path and query on
+    `rarepair.fans`. A 308, unlike a 301, keeps a POST a POST.
+  - Better Auth's `baseURL` is `https://rarepair.fans` and its `trustedOrigins`
+    holds only that origin, so a magic link always points at the bare domain,
+    whatever host the request came in on.
+  - Every web Worker response sends
+    `Strict-Transport-Security: max-age=31536000; includeSubDomains`, which also
+    covers `content.rarepair.fans`, and the zone has Always Use HTTPS on. The
+    domain isn't submitted to the HSTS preload list: the archive is temporary,
+    and leaving the list takes months.
+  - Zone-level Cloudflare features that set cookies, such as Bot Fight Mode and
+    challenge pages, must not apply to `content.rarepair.fans`: turn them off,
+    or skip that host with a rule. Turnstile and the web Worker's rate limits do
+    that job instead.
 
 ## Data model (first cut)
 
@@ -442,7 +461,11 @@ can be snapshotted.
   `auth.api.signInMagicLink` on the server. Calls made that way skip Better
   Auth's CSRF check, its redirect check and its rate limiter, so our route does
   all three:
-  - it checks `Origin` / `Sec-Fetch-Site`; a cross-site POST gets 403
+  - it checks `Origin` / `Sec-Fetch-Site`: a POST whose `Origin` is present
+    and isn't exactly `https://rarepair.fans`, or whose `Sec-Fetch-Site` is
+    present and isn't `same-origin`, gets 403. Same-site isn't enough, because
+    every `*.rarepair.fans` host, `content.rarepair.fans` included, is
+    same-site with the bare domain
   - it rate limits per IP and per email with the Workers rate-limiting binding
     (429 with `Retry-After`; a failed or missing Turnstile token gets 400 and
     the form again with an error, as in Surge controls)
@@ -616,9 +639,9 @@ epub, under the normal versioning rules.
   `Retry-After` and a plain page saying when to try again. A failed or missing
   Turnstile token returns **400** and shows the form again with an error, and
   so does a form missing required fields (such as `/remove` without a contact
-  email, or without a work or pseud). A cross-site sign-in POST (a bad
-  `Origin` / `Sec-Fetch-Site`) gets **403**. An upload request declaring more
-  than 25 MB gets **413**. A used, expired or unknown magic link is
+  email, or without a work or pseud). A sign-in POST from any other origin (a
+  bad `Origin` / `Sec-Fetch-Site`, as in Auth) gets **403**. An upload request
+  declaring more than 25 MB gets **413**. A used, expired or unknown magic link is
   **redirected to `/login`** with a plain message. A signed-out request to a
   signed-in page, or a signed-out report POST, is **redirected to sign in**,
   carrying `next` (Auth); a signed-out request a script makes, such as
