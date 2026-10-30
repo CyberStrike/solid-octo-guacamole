@@ -241,4 +241,13 @@ describe("hostile nav documents", () => {
     const work = await processEpub(epub3(nav));
     expect(work.chapters.map((c) => c.title)).toEqual(["Nav first", "Nav second", "Nav third"]);
   });
+
+  it("ignores nav links that leave the epub", async () => {
+    const hostile = ["../../../etc/x.xhtml", "/abs.xhtml", "http://evil.example/x.xhtml", "javascript:alert(1)"]
+      .map((href) => `<li><a href="${href}">Hostile</a></li>`)
+      .join("\n");
+    const work = await processEpub(epub3(navDoc(tocNav(`${hostile}\n${flatItems()}`))));
+    expect(work.chapters.map((c) => c.title)).toEqual(["Nav first", "Nav second", "Nav third"]);
+    expect(work.reviewReasons).toEqual([]);
+  });
 });
