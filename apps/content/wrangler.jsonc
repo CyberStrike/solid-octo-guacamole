@@ -1,0 +1,13 @@
+{
+  // Content Worker: epub images and original downloads, served as they are from R2.
+  // It answers only on content.rarepair.fans (ARCHITECTURE, Why these pieces, Hosts).
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "rarepair-content",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "content.rarepair.fans", "custom_domain": true }],
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "rarepair" }],
+  "observability": { "enabled": true, "traces": { "enabled": true } }
+}

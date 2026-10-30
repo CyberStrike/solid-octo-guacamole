@@ -75,7 +75,7 @@ function element(tag: string, file: string, parent: ElementNode | null): Element
 // Deeper documents are rejected. Flattening them instead would move the
 // contents of a dropped element (a <form>, say) into an allowed ancestor. Also
 // bounds recursion in every tree walk.
-const MAX_DEPTH = 256;
+export const MAX_DEPTH = 256;
 
 /** Nodes left to allocate; share one across every document of an epub. */
 export interface NodeBudget {
