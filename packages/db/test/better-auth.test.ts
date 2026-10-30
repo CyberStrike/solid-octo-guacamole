@@ -53,7 +53,10 @@ describe("packages/db with Better Auth", () => {
     // Stored hashed: neither column holds the token that was mailed.
     expect(pending[0]!.identifier).not.toContain(token);
     expect(pending[0]!.value).not.toContain(token);
-    expect(pending[0]!.expires_at).toBeInstanceOf(Date);
+    // 15 minutes from now (ARCHITECTURE, Auth), within a minute's slack.
+    const lifetime = pending[0]!.expires_at.getTime() - Date.now();
+    expect(lifetime).toBeGreaterThan(14 * 60_000);
+    expect(lifetime).toBeLessThanOrEqual(15 * 60_000);
 
     await auth.api.magicLinkVerify({ query: { token }, headers });
 

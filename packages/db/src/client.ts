@@ -5,7 +5,7 @@ import type { Database } from "./schema";
 export interface DbConfig {
   /** In a Worker, `env.HYPERDRIVE.connectionString`. */
   connectionString: string;
-  /** Pool size. Defaults to pg's own default. */
+  /** Pool size. Left out (or 0), pg's default of 10 applies. */
   max?: number;
 }
 
