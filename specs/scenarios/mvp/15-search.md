@@ -1,6 +1,6 @@
 # Scenario: Metadata search
 
-Relates to: docs/ARCHITECTURE.md § Decisions so far (Search scope), § Why these pieces (Neon Postgres), § EPUB processor (Scope for v1), § Surge controls, § MVP vs later (6. Search); docs/FRONTEND-DISCOVERY.md § Page inventory (Search results)
+Relates to: docs/ARCHITECTURE.md § Decisions so far (Search scope), § Why these pieces (Neon Postgres), § EPUB processor (Scope for v1), § Surge controls (Status codes), § Author requests & takedowns (What hidden, held and removed works show), § MVP vs later (6. Search); docs/FRONTEND-DISCOVERY.md § Page inventory (Search results, Too many requests)
 
 ## Setup
 - Live works indexed in Postgres with a `search` tsvector over title, author, tags and summary, plus `pg_trgm` for fuzzy matching
@@ -8,6 +8,7 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Search scope), § Why thes
 - Work W2 whose chapter text, but no metadata, contains the word "zeppelin"
 - Enough matching works to fill more than one results page
 - The rate-limiting binding is configured for search per IP and per user
+- Work W3 titled "Lighthouse Nights", hidden after reader reports
 
 ## Cases
 
@@ -64,7 +65,13 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Search scope), § Why thes
 ### Search is rate-limited
 - GIVEN one IP or user that has reached the search rate limit in the current window
 - WHEN they search again
-- THEN the request is throttled
+- THEN the response is 429 with a `Retry-After` header
+- AND a plain page says when to try again
+
+### Hidden works are left out of results
+- GIVEN hidden work W3 and live work W1
+- WHEN a reader searches for "lighthouse"
+- THEN W1 is in the results and W3 is not
 
 ### Search needs no account
 - GIVEN a signed-out visitor

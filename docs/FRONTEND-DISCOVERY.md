@@ -48,7 +48,7 @@ fandoms and pseuds in it are invented placeholders.
 | Signed-in reader | Yes | The same, plus saved reading position and remembered settings |
 | Uploader | Yes | Rescue works from their epub collection, then check they processed |
 | Author | No | Get a work taken down, or opt out a pseud entirely. Updating a work is just an upload |
-| Moderator | Yes, with the role | Work through reports, takedowns and removal or opt-out requests |
+| Moderator | Yes, with the role | Work through reports, takedowns, removal or opt-out requests, and works to check |
 
 Reading never requires an account (ARCHITECTURE, *Auth*).
 
@@ -62,9 +62,15 @@ Reading never requires an account (ARCHITECTURE, *Auth*).
 3. The results are a list of work cards, each with rating and warnings visible.
 4. They open the work page: summary, tags, stats, chapter list, original AO3
    link.
-5. For works rated Mature or Explicit, or carrying warnings, a warnings screen
-   comes before chapter 1. "Continue" goes to the chapter. Signed-in readers can
-   turn the screen off in settings.
+5. For works rated Mature or Explicit, carrying warnings, or with no rating
+   (shown as "Not Rated"), a warnings screen comes first, whichever reading
+   page they enter by: chapter 1, a shared link
+   to a later chapter, or the entire work. "Continue" goes to the page they
+   asked for, and the screen isn't shown again for that work until the browser
+   session ends. Signed-in readers can turn the screen off; the choice is saved
+   to their account. Signed-out readers can't turn it off.
+   If the work's chapters were split uncertainly, the work and reader pages
+   carry one line: "Chapters may be imperfect; a moderator will check."
 6. They read. Next and previous chapter links sit at both ends of the chapter.
    "Entire work" shows every chapter on one page.
 
@@ -77,13 +83,18 @@ Reading never requires an account (ARCHITECTURE, *Auth*).
    scanner opening the link in advance can't use it up). Pressing it signs them
    in, with or without JavaScript, and sends them back to the page they started
    from. It uses a stored same-site `next` value, never an open redirect.
+4. An email with no account gets one at this point. A new account first lands
+   on a one-time terms page (`/welcome/terms`) and must accept before going
+   anywhere else; then it continues to `next`. Returning users never see it.
 
 **3. Upload works** (uploader)
 1. They pick one or more `.epub` files on the upload page and submit. Each
    file goes straight to R2 with a progress bar; uploading needs JavaScript.
 2. Each file appears on *My uploads* with a status: processing, live, held for
-   review, or rejected with a plain reason.
-3. Once a file is live, they can open the work.
+   review, already in the archive, or rejected with a plain reason. A held
+   version isn't public; only they and the moderators see it.
+3. Once a file is live, they can open the work. "Already in the archive" links
+   to the work that's already there.
 
 **4. Remove a work or opt out** (author, or anyone acting for them)
 1. They follow "Ask for this to be removed" on a work page, or "Remove my work"
@@ -92,26 +103,37 @@ Reading never requires an account (ARCHITECTURE, *Auth*).
    give a contact email and a short statement. Turnstile runs alongside, so
    this needs JavaScript; with it off, the page says so and gives the
    moderators' contact address.
-3. The confirmation page tells them the work, or every work by the pseud, is
-   already hidden, and that a moderator will review the request and email
-   them.
+3. Every requester sees the same confirmation: "Your request was received; a
+   moderator will review it and email you." When the request isn't from a
+   blocked requester, the page also says the work, or every work by the
+   pseud, is hidden now. The page never reveals that a requester is blocked.
+   A form missing a contact email, or a work or pseud, comes back with a 400
+   and the errors marked. If they gave an AO3 URL for a work that isn't in
+   the archive, nothing is stored, and the page says so and suggests opting
+   out the pseud instead.
 4. There's no proof of identity, because there's nothing to check against
    while AO3 is down. That's stated plainly on the form.
 
 **5. Report a work** (signed-in user)
 1. "Report" on a work page opens a short form: a reason and optional details.
-   A signed-out reader is sent to sign in first and brought back to the form
-   (the same stored `next` value as sign-in). Authors who want a work removed
+   One reason is "This version is wrong", for a bad replacement.
+   A signed-out reader is redirected to sign in first and brought back to the
+   form (the same stored `next` value as sign-in). Authors who want a work removed
    use `/remove` instead, which needs no account.
 2. A confirmation page explains what happens next.
 
 **6. Moderate** (moderator)
-1. Three queues: reports, takedowns, and removal or opt-out requests. Each is a
-   plain table, oldest first.
+1. Four queues: reports, takedowns, removal or opt-out requests, and *Works to
+   check* (held versions, works live with the "may be imperfect" notice, and
+   "This version is wrong" reports). Each is a plain table, oldest first.
 2. Each item has a detail page with actions: hide, remove, restore, approve,
    reject, block requester, ban uploader. A request's page lists the other
    requests from the same email or IP, so a mass-hiding spree can be undone at
-   once.
+   once. A *Works to check* item has approve (clears the notice or publishes the
+   held version), make version current, hide and remove.
+3. A work's admin page lists every version (date, uploader, chapter count)
+   with "Make current". Only moderators can roll back.
+4. Anyone else gets a 404 for every `/admin` URL.
 
 ## Page inventory
 
@@ -125,23 +147,26 @@ need JavaScript and show a `<noscript>` message without it. Elsewhere the
 | Home / browse | `/` | all | Search box, popular fandoms, recently added | — |
 | Search results | `/search?q=…` | all | GET form, paged results, filter form | — |
 | Fandom / tag listing | `/tags/:slug` | all | Paged works, sort and filter as a GET form | — |
-| Work page | `/works/:id` | all | Full metadata, chapter list, links | — |
-| Warnings screen | `/works/:id/warnings` | all | Continue link, plus a turn-off checkbox when signed in | — |
-| Chapter reader | `/works/:id/chapters/:n` | all | Chapter, nav, settings link | Settings without reload, saves position |
-| Entire work | `/works/:id/full` | all | All chapters on one page | Saves position |
-| Reader settings | `/settings/reader` | all | POST form sets a cookie, then redirects back | Applied live from the reader |
+| Work page | `/works/:id` | all | Full metadata, chapter list, links; the "may be imperfect" notice when it applies | — |
+| Warnings screen | `/works/:id/warnings` | all | Shown on first entry to any reading page of a warned or Not Rated work, then remembered for the session; Continue link to the page asked for, plus a turn-off checkbox when signed in (saved to the account) | — |
+| Chapter reader | `/works/:id/chapters/:n` | all | Chapter, nav, settings link; the "may be imperfect" notice when it applies | Settings without reload, saves position |
+| Entire work | `/works/:id/full` | all | All chapters on one page; the "may be imperfect" notice when it applies | Saves position |
+| Reader settings | `/settings/reader` | all | POST form sets a cookie, then redirects back; signed-in readers also get the warnings on/off choice, saved to their account | Applied live from the reader |
 | Sign in | `/login` | all | `<noscript>` message: signing in needs JavaScript | Email form with Turnstile, "check your email", error states |
-| Confirm sign-in | `/login/confirm?token=…` | all | "Sign in" button (POST form); used or expired links go back to `/login` with a message | — |
+| Confirm sign-in | `/login/confirm?token=…` | all | "Sign in" button (POST form); used, expired or unknown links redirect to `/login` with a message | — |
+| Accept terms | `/welcome/terms` | new accounts, once | Terms summary, link to `/terms`, Accept button (POST form); every other signed-in page redirects here until accepted | — |
 | Upload | `/upload` | signed in | `<noscript>` message: uploading needs JavaScript | Turnstile, then direct-to-R2 upload with progress, one or more files |
 | My uploads | `/me/uploads` | signed in | Status list that refreshes itself with `<meta http-equiv="refresh">` while anything is processing | Updates in place |
-| Remove my work / opt out | `/remove` (`?work=:id` prefills) | all | `<noscript>` message with the moderators' contact address | Request form with Turnstile, then a confirmation page |
-| Report | `/works/:id/report` | signed in (others are sent to sign in) | Form, then a confirmation page | — |
+| Remove my work / opt out | `/remove` (`?work=:id` prefills) | all | `<noscript>` message with the moderators' contact address | Request form with Turnstile, then a confirmation page that is the same for every requester |
+| Report | `/works/:id/report` | signed in (others are redirected to sign in, carrying `next`) | Form, then a confirmation page | — |
 | DMCA notice | `/dmca` | all | Statutory notice form | — |
-| Moderation queues | `/admin/{reports,takedowns,requests}` | moderator | Tables with detail pages | — |
+| Moderation queues | `/admin/{reports,takedowns,requests,works}` | moderator (404 for anyone else) | Tables with detail pages; `/admin/works` is *Works to check* | — |
+| Work admin | `/admin/works/:id` | moderator (404 for anyone else) | Every version (date, uploader, chapter count) with "Make current"; approve, hide, remove | — |
 | About / terms / privacy | `/about`, `/terms`, `/privacy` | all | Static | — |
-| Hidden work | `/works/:id` (451) | all | "Temporarily hidden after a removal request", with no details | — |
-| Removed work | `/works/:id` (410) | all | "This work has been removed", with no details | — |
-| Not found | any | all | Search box and home link | — |
+| Hidden work | `/works/:id`, every chapter URL and `/full` (451) | all | One line naming the cause: "Temporarily hidden after a removal request", "Temporarily hidden after reader reports" or "Temporarily hidden by a moderator", with no details. Left out of search, listings and the home page | — |
+| Removed work | `/works/:id`, every chapter URL and `/full` (410) | all | "This work has been removed", with no details | — |
+| Too many requests | any rate-limited or quota-limited action (429) | all | Plain page saying when to try again, matching `Retry-After` | — |
+| Not found | any (404), including `/admin` for non-moderators and held versions | all | Search box and home link | — |
 
 ## Where the frontend changes the architecture
 
@@ -201,7 +226,7 @@ decoration in a minimal design. They're bold text with labels spelled out.
 - **Work card.** Lines in this order:
   1. title, then author or "Anonymous"
   2. **Rating · Warnings**, spelled out, e.g. "Mature · Graphic Depictions Of
-     Violence"
+     Violence". A work with no rating reads "Not Rated"
   3. fandoms
   4. a summary clamped to 3 lines with CSS `line-clamp`, followed by a
      "more" link to the work page. The full text stays in the HTML for screen
@@ -219,7 +244,11 @@ decoration in a minimal design. They're bold text with labels spelled out.
   next, at both the top and bottom of the chapter.
 - **Pagination.** Previous and next plus page numbers, all real links.
 - **Status badge.** Text only: "Processing", "Live", "Held for review",
+  "Already in the archive" (for `duplicate`, with a link to the work),
   "Rejected: not an AO3 export".
+- **Review notice.** One plain line on the work page and every reader page of
+  a work whose chapters the parser wasn't sure of: "Chapters may be imperfect;
+  a moderator will check." It goes once a moderator approves the work.
 - **Flash message.** A one-line notice at the top of the page after a POST,
   carried over the redirect in a short-lived cookie.
 - **Temporary banner.** One line at the very top of every page, linking to
@@ -231,8 +260,9 @@ decoration in a minimal design. They're bold text with labels spelled out.
   with the work title and a settings link, which scrolls away.
 - Chapter notes come before the text, end notes after, both in a smaller,
   muted style. The summary is not repeated on chapter pages.
-- Settings: theme, size, line spacing, serif or sans, and whether to show the
-  warnings screen.
+- Settings: theme, size, line spacing, and serif or sans, kept in a cookie.
+  Signed-in readers also choose whether to show the warnings screen; that
+  choice is saved to their account, not the cookie.
 - With JS on and the reader signed in, the reading position (chapter and scroll
   percentage) is saved every few seconds. On return, a "Continue where you left
   off" link appears on the work page. It doesn't jump the reader there without
@@ -259,6 +289,9 @@ decoration in a minimal design. They're bold text with labels spelled out.
 - Plain, calm and brief. This is a lifeboat, not a brand.
 - Rejections say what happened and what to do next, for example "This file
   isn't an AO3 download, so we can't accept it here."
+- Limits say when to try again, for example "Too many sign-in requests. Try
+  again in a minute." A failed Turnstile check shows the form again with a
+  one-line error.
 - Never imply the archive is AO3 or approved by AO3. Credit always goes to the
   original work URL.
 

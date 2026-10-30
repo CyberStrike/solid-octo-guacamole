@@ -1,6 +1,6 @@
 # Scenario: Upload request, transfer and confirm (presigned PUT)
 
-Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (steps 1-3), § Surge controls (Orphaned uploads); docs/FRONTEND-DISCOVERY.md § Key journeys (3. Upload works), § Where the frontend changes the architecture (1. Forms with Turnstile need JS), § Page inventory (Upload)
+Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (steps 1-3), § Dedupe, § Surge controls (Status codes, Orphaned uploads); docs/FRONTEND-DISCOVERY.md § Key journeys (3. Upload works), § Where the frontend changes the architecture (1. Forms with Turnstile need JS), § Page inventory (Upload)
 
 ## Setup
 - A signed-in user U with an active session and remaining daily upload quota
@@ -8,6 +8,7 @@ Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (steps 1-3), § Surge con
 - R2 bucket with an `uploads/` prefix, a CORS rule allowing `app.<domain>`, and a lifecycle rule expiring `uploads/` objects after 7 days
 - The ingest queue is observable so enqueued `{upload_id}` messages can be asserted
 - Fixture epubs: a valid AO3 export, one of exactly 25 MB, and one just over 25 MB
+- A live work W whose stored upload has SHA-256 H
 
 ## Cases
 
@@ -26,22 +27,26 @@ Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (steps 1-3), § Surge con
 ### Declared size over 25 MB is refused
 - GIVEN user U with a passing Turnstile token and remaining quota
 - WHEN U calls `POST /uploads` declaring a size over 25 MB
-- THEN no presigned URL is returned
+- THEN the response is 413, with no `uploads` row inserted and no presigned URL returned
+- AND the upload page says the file is over the 25 MB limit
 
 ### Upload request without a session is refused
 - GIVEN a visitor with no session
-- WHEN they call `POST /uploads`
-- THEN no `uploads` row is inserted and no presigned URL is returned
+- WHEN their browser's script calls `POST /uploads`
+- THEN the response is 401, not a redirect
+- AND no `uploads` row is inserted and no presigned URL is returned
 
 ### Upload request without Turnstile is refused
 - GIVEN user U
 - WHEN U calls `POST /uploads` with a missing or failing Turnstile token
-- THEN no `uploads` row is inserted and no presigned URL is returned
+- THEN the response is 400, with no `uploads` row inserted and no presigned URL returned
+- AND the upload page shows the error
 
 ### Upload request over the daily quota is refused
 - GIVEN user U who has used all of today's upload quota
 - WHEN U calls `POST /uploads`
-- THEN no `uploads` row is inserted and no presigned URL is returned
+- THEN the response is 429 with a `Retry-After` header, with no `uploads` row inserted and no presigned URL returned
+- AND the upload page says when U can upload again
 
 ### Presigned PUT with the wrong content type fails
 - GIVEN a presigned PUT URL issued to U
@@ -75,9 +80,18 @@ Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (steps 1-3), § Surge con
 
 ### Confirm enqueues the upload
 - GIVEN an upload whose object is in R2 and is 25 MB or less
+- AND no stored upload has the same SHA-256
 - WHEN `POST /uploads/:id/complete` is called
-- THEN the Worker HEADs the object and checks its size
+- THEN the Worker HEADs the object, checks its size and hashes it
 - AND a `{upload_id}` message is put on the ingest queue
+
+### Confirm marks a byte-identical re-upload as duplicate
+- GIVEN an upload whose object in R2 has SHA-256 H, the same as W's stored upload
+- WHEN `POST /uploads/:id/complete` is called
+- THEN the upload is marked `duplicate` straight away, with its `work_id` set to W
+- AND nothing is put on the ingest queue and no ingest run happens
+- AND the object is not copied to `originals/`, so no second copy is kept
+- AND the uploader sees the "Already in the archive" badge with a link to W
 
 ### Confirm deletes an oversized object
 - GIVEN an upload whose presigned PUT stored an object larger than 25 MB, despite a smaller declared size
@@ -92,4 +106,4 @@ Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (steps 1-3), § Surge con
 ### Upload requests are rate-limited
 - GIVEN user U, or U's IP address, has reached the upload-request rate limit in the current window
 - WHEN U calls `POST /uploads` again
-- THEN the request is throttled
+- THEN the response is 429 with a `Retry-After` header and no presigned URL is returned

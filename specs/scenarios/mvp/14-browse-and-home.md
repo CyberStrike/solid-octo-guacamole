@@ -1,12 +1,13 @@
 # Scenario: Home page, browsing and work cards
 
-Relates to: docs/ARCHITECTURE.md § Dedupe (Tags), § MVP vs later (5. Browse), § Surge controls (Edge cache); docs/FRONTEND-DISCOVERY.md § Decisions so far (Warnings, Pagination, Card summaries, Home page), § Page inventory (Home / browse, Fandom / tag listing), § Components (Work card, Tag list, Pagination)
+Relates to: docs/ARCHITECTURE.md § Dedupe (Tags), § MVP vs later (5. Browse), § Surge controls (Edge cache), § Author requests & takedowns (What hidden, held and removed works show); docs/FRONTEND-DISCOVERY.md § Decisions so far (Warnings, Pagination, Card summaries, Home page), § Page inventory (Home / browse, Fandom / tag listing), § Components (Work card, Tag list, Pagination)
 
 ## Setup
 - More than one page of live works in fandom F, with mixed ratings, completion states, updated dates and word counts
 - A work with 20+ tags and a summary longer than 3 lines
 - An anonymous work
 - Two fandom tags written "Harry Potter" and "harry  potter!" that share a `name_norm`
+- A work H in fandom F, recently added, that is now hidden after a removal request
 
 ## Cases
 
@@ -93,6 +94,11 @@ Relates to: docs/ARCHITECTURE.md § Dedupe (Tags), § MVP vs later (5. Browse), 
 - GIVEN an anonymous work
 - WHEN its card renders
 - THEN the author line shows "Anonymous"
+
+### Hidden works are left out of listings and the home page
+- GIVEN hidden work H in fandom F
+- WHEN a reader opens `/` and the listing for F
+- THEN H appears in neither the recently added works nor the listing
 
 ### Listings are briefly cached
 - GIVEN a work or tag listing

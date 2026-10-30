@@ -56,7 +56,7 @@ The parser and sanitizer are the security boundary (ARCHITECTURE, *Sanitizing*).
 
 - Every fixture's snapshot still matches, or each changed snapshot is listed in the PR with the reason. A snapshot updated without a reason is a failure.
 - The hostile fixtures are still rejected with their codes: zip bomb, path traversal, missing OPF.
-- A chapter count that disagrees with `Stats:` is not a rejection: parsing succeeds and the work is flagged for review with a `chapter_count_mismatch` reason (ARCHITECTURE, *EPUB processor* step 5).
+- A chapter count that disagrees with `Stats:` is not a rejection: parsing succeeds with a `chapter_count_mismatch` review reason, and the work goes live with the "may be imperfect" notice and lands in "Works to check" (ARCHITECTURE, *EPUB processor* step 5). Only a suspect replacement version is `held_for_review`.
 - The XSS corpus passes: no `script`, `on*` attribute, `style`, `javascript:` or remote `src` survives in any field, summary and notes included.
 - AO3 fields are matched by label text, never by CSS class. Search the diff's added lines in the preface parser for class selectors (`.`, `[class`) and account for each.
 - Running the parser twice on the same file gives the same output.
@@ -83,13 +83,13 @@ The parser and sanitizer are the security boundary (ARCHITECTURE, *Sanitizing*).
 - Chapter HTML reaches a page only from a sanitized fragment under `works/`, never from `uploads/` or `originals/`.
 - Session cookies are `HttpOnly; Secure; SameSite=Lax` with no `Domain`, so they cover the app host only.
 - Sign-in (ARCHITECTURE, *Auth*): our routes, not Better Auth, do these, because server-side `auth.api` calls skip its own checks:
-  - `POST /login` refuses a cross-site `Origin` / `Sec-Fetch-Site`.
+  - `POST /login` refuses a cross-site `Origin` / `Sec-Fetch-Site` with 403.
   - `next` is reduced to a same-site path, checked after URL normalization, so `/a/..//evil.example` can't become `//evil.example`.
   - Sign-in is rate limited per IP and per email.
   - `GET /login/confirm` uses nothing up.
   - Magic-link tokens stay in the Postgres `verification` table, never KV.
-- A work rated Mature or Explicit, or with archive warnings, shows the interstitial before its first chapter.
-- Login, upload and search are throttled when their rate limit is exceeded. ARCHITECTURE doesn't fix a status code yet; until it does, report the status used, and expect 429.
+- A work rated Mature or Explicit, or with archive warnings, or with no rating (shown as "Not Rated"), shows the interstitial on first entry to its reading pages from any entry point (any chapter or `/full`), remembered per work for the session. Only signed-in readers can turn it off, and that choice is stored on the account.
+- Login, upload and search are throttled when their rate limit is exceeded, and a spent upload quota is refused the same way: the response is 429 with `Retry-After` and a plain page saying when to try again (ARCHITECTURE, *Surge controls*, Status codes).
 - Live check (§5): walk each story the issue names. At 360 px wide the page does not scroll sideways (`document.documentElement.scrollWidth <= innerWidth`). Screenshot the changed page at 1280 px and 360 px into the scratchpad subfolder and list the paths.
 
 ### content — `apps/content` changed
