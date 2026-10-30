@@ -81,6 +81,34 @@ describe("11-reader-and-csp", () => {
     }
   });
 
+  it("Requests to www go to the bare domain", async () => {
+    const cases: [string, string][] = [
+      ["/works/1/chapters/2?x=1&y=2", "https://rarepair.fans/works/1/chapters/2?x=1&y=2"],
+      ["/", "https://rarepair.fans/"],
+      ["/login?next=%2Fmy%20uploads", "https://rarepair.fans/login?next=%2Fmy%20uploads"],
+      ["/caf%C3%A9", "https://rarepair.fans/caf%C3%A9"],
+    ];
+    for (const method of ["GET", "HEAD", "POST", "PUT", "DELETE"]) {
+      for (const [path, location] of cases) {
+        const res = await fetchW(`https://www.rarepair.fans${path}`, {
+          method,
+          ...(method === "POST" || method === "PUT"
+            ? {
+                headers: { "content-type": "application/x-www-form-urlencoded" },
+                body: "email=reader%40example.test",
+              }
+            : {}),
+        });
+        expect(res.status).toBe(308);
+        expect(res.headers.get("location")).toBe(location);
+        // Not otherwise handled: no page, cookie or form action on www.
+        expect(res.headers.get("set-cookie")).toBeNull();
+        expect(res.headers.get("content-security-policy")).toBeNull();
+        expect(await res.text()).toBe("");
+      }
+    }
+  });
+
   it("Page cannot be framed", async () => {
     for (const path of ["/", "/login", "/upload", "/remove"]) {
       const directives = (await fetchW(path)).headers
