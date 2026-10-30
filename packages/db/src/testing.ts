@@ -10,8 +10,6 @@ import type { Database } from "./schema";
 
 export interface TestDb {
   db: Kysely<Database>;
-  /** A local connection string to the same database, for other clients. */
-  connectionString: string;
   /** Closes the client, the socket and the database. Call it in `afterAll`. */
   close(): Promise<void>;
 }
@@ -22,12 +20,11 @@ export async function createTestDb(options: { migrate?: boolean } = {}): Promise
   const server = new PGLiteSocketServer({ db: lite, port: 0 });
   await server.start();
   const connectionString = `postgresql://postgres@${server.getServerConn()}/postgres`;
-  // PGlite is one session: one pooled connection keeps transactions whole.
+  // PGlite is one session, and the socket takes one client: `db` holds it.
   const db = createDb({ connectionString, max: 1 });
   if (options.migrate !== false) await migrate(db);
   return {
     db,
-    connectionString,
     async close() {
       await db.destroy();
       await server.stop();
