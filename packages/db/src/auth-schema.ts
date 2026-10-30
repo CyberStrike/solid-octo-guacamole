@@ -3,6 +3,8 @@ const timestamps = { createdAt: "created_at", updatedAt: "updated_at" } as const
 /**
  * Better Auth's model options mapping its camelCase fields onto our
  * snake_case columns. Spread into `betterAuth({ ...authSchema, ... })`.
+ * A config that sets its own `user` (say, `additionalFields`) must merge
+ * `authSchema.user` into it, or the `fields` mapping is lost.
  */
 export const authSchema = {
   user: {
