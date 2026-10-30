@@ -34,7 +34,7 @@ Each ticket is a **tracer bullet**:
 - It cuts a narrow but complete path through every layer the behaviour needs (migration in `packages/db`, ingest job, web route and page, content headers, tests), not one horizontal layer.
 - When it lands, it's verifiable on its own: its scenario cases pass in workerd tests, or in a live check once a run skill exists.
 - It fits one fresh context window and lands as **one PR**.
-- **Keep the security boundary separate.** Sanitizer, zip limits, CSP, cookies and sessions, rate limits and quotas, and the opt-out, takedown and removal paths make a PR tier 3 under `/gate` (the full review ladder). Keep those changes in their own small tickets, so ordinary tickets stay tier 1 or 2.
+- **Keep the security boundary separate.** Sanitizer, zip limits, CSP, cookies and sessions, rate limits and quotas, and the opt-out, takedown and removal paths make a PR tier 3 under `/gate` (the full review ladder). Keep each of those surfaces in its own small ticket, so a security review never has to wade through unrelated feature code. Expect most feature tickets to be tier 3 anyway: migrations, dependency or `wrangler` changes and code over 50 lines all are, and the operator ruled on 2026-10-30 that tier 3 stays the norm. Only test-only tickets usually come in at tier 2.
 
 Give each ticket its **blocking edges**: the tickets that must merge before it can start. A ticket with none can start now.
 

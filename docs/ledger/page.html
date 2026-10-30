@@ -1,0 +1,455 @@
+<title>Archive ledger</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a ledger sheet; agents, then a four-column board, then lanes, reviews, follow-ups and the log. */
+:root {
+  --paper: #f3f5f4;
+  --sheet: #fbfcfb;
+  --ink: #17201c;
+  --muted: #5a6660;
+  --rule: #d5dcd8;
+  --rule-strong: #b9c3be;
+  --link: #0f5e6b;
+  --merged: #2f7a3e;   --merged-bg: #e3f0e5;
+  --running: #2458c6;  --running-bg: #e3ebfb;
+  --review: #6b45b8;   --review-bg: #eee8f8;
+  --ready: #9a5b00;    --ready-bg: #fbeed8;
+  --waiting: #5a6660;  --waiting-bg: #e7ebe9;
+  --blocked: #b3261e;  --blocked-bg: #f9e3e1;
+  --display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #111614; --sheet: #171d1a; --ink: #e4ebe7; --muted: #97a39d;
+    --rule: #2a332f; --rule-strong: #3b4641; --link: #6cc3cf;
+    --merged: #7fcf8c;  --merged-bg: #1c2e21;
+    --running: #8fb1ff; --running-bg: #1c2640;
+    --review: #c3a6ff;  --review-bg: #2a2140;
+    --ready: #f0b75c;   --ready-bg: #33270f;
+    --waiting: #a3aea8; --waiting-bg: #232a27;
+    --blocked: #ff8f86; --blocked-bg: #3a1c1a;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #111614; --sheet: #171d1a; --ink: #e4ebe7; --muted: #97a39d;
+  --rule: #2a332f; --rule-strong: #3b4641; --link: #6cc3cf;
+  --merged: #7fcf8c;  --merged-bg: #1c2e21;
+  --running: #8fb1ff; --running-bg: #1c2640;
+  --review: #c3a6ff;  --review-bg: #2a2140;
+  --ready: #f0b75c;   --ready-bg: #33270f;
+  --waiting: #a3aea8; --waiting-bg: #232a27;
+  --blocked: #ff8f86; --blocked-bg: #3a1c1a;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink);
+  font: 400 14px/1.5 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 36px; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; border-radius: 2px; }
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+h1, h2 { font-family: var(--display); font-weight: 600; margin: 0; text-wrap: balance; }
+h1 { font-size: 34px; line-height: 1.1; letter-spacing: 0.01em; }
+h2 { font-size: 20px; letter-spacing: 0.02em; }
+.label { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+
+header { display: grid; gap: 10px; border-bottom: 2px solid var(--ink); padding-bottom: 16px; }
+.head-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 13px; }
+.facts b { font-weight: 500; }
+.now { font-size: 15px; max-width: 72ch; }
+.tally { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.s-merged { color: var(--merged); background: var(--merged-bg); }
+.s-running { color: var(--running); background: var(--running-bg); }
+.s-running::before { animation: pulse 1.6s ease-in-out infinite; }
+.s-review { color: var(--review); background: var(--review-bg); }
+.s-ready { color: var(--ready); background: var(--ready-bg); }
+.s-waiting { color: var(--waiting); background: var(--waiting-bg); }
+.s-blocked { color: var(--blocked); background: var(--blocked-bg); }
+@keyframes pulse { 50% { opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .s-running::before { animation: none; } }
+
+section { display: grid; gap: 12px; }
+.sec-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+
+/* Agents: one card per builder or reviewer; finished ones fold into a short list. */
+.agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 10px; }
+.agent { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.agent .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.agent .who { font-family: var(--display); font-weight: 600; font-size: 16px; letter-spacing: 0.02em; }
+.agent .t { font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.agent .note { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.agent dl, .card dl { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 4px 0 0; padding-top: 8px; border-top: 1px solid var(--rule); font-size: 12px; }
+.agent dl div, .card dl div { display: flex; gap: 6px; align-items: baseline; }
+.agent dt, .card dt { font-size: 10.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.agent dd, .card dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+details.finished { font-size: 13px; }
+details.finished summary { cursor: pointer; color: var(--muted); }
+details.finished ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; }
+details.finished li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+
+/* Board: four columns by stage; stacks on a phone. */
+.board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; align-items: start; }
+@media (max-width: 860px) { .board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .board { grid-template-columns: minmax(0, 1fr); } }
+.col { background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 10px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.col-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 2px 2px 6px; border-bottom: 2px solid var(--rule-strong); }
+.col-head strong { font-family: var(--display); font-weight: 600; font-size: 16px; letter-spacing: 0.02em; }
+.col[data-stage="ready"] .col-head { border-bottom-color: var(--ready); }
+.col[data-stage="progress"] .col-head { border-bottom-color: var(--running); }
+.col[data-stage="testing"] .col-head { border-bottom-color: var(--review); }
+.col[data-stage="done"] .col-head { border-bottom-color: var(--merged); }
+.tile { background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; padding: 8px 10px; display: grid; gap: 4px; min-width: 0; }
+.tile .top { display: flex; justify-content: space-between; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tile .id { font-family: var(--mono); font-weight: 500; font-size: 13px; }
+.tile .t { font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+.tile .g { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.tile.gated { opacity: 0.72; }
+.col .more { font-size: 12px; color: var(--muted); padding: 0 2px; }
+.col .none { font-size: 12px; color: var(--muted); padding: 6px 2px; }
+
+/* One card per open item; lanes with nothing open collapse to a single line. */
+.lanes { display: grid; gap: 24px; }
+.lane-group { display: grid; gap: 10px; }
+.lane-name { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; border-bottom: 1px solid var(--rule-strong); padding-bottom: 6px; }
+.lane-name strong { font-family: var(--display); font-weight: 600; font-size: 16px; letter-spacing: 0.02em; }
+.meter { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.meter span.bar { width: 80px; height: 5px; border-radius: 3px; background: var(--rule); overflow: hidden; }
+.meter span.bar i { display: block; height: 100%; background: var(--merged); }
+.done-lanes { font-size: 13px; color: var(--muted); }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 10px; }
+.card { background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.card .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.card .id { font-family: var(--mono); font-weight: 500; }
+.card .t { font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+.card .note { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; white-space: pre-line; }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 36px; align-items: start; }
+ul.list { list-style: none; margin: 0; padding: 0; background: var(--sheet); border: 1px solid var(--rule); border-radius: 6px; }
+ul.list li { padding: 10px 12px; border-top: 1px solid var(--rule); display: grid; gap: 2px; }
+ul.list li:first-child { border-top: 0; }
+.li-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.li-top .mono { font-weight: 500; }
+
+.log-day { display: grid; gap: 6px; min-width: 0; }
+.log-day ol { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--rule-strong); }
+.log-day li { display: grid; grid-template-columns: 5.5ch 1fr; gap: 12px; padding: 4px 0 4px 12px; }
+.log-day li span { min-width: 0; overflow-wrap: anywhere; }
+.log-day time { font-family: var(--mono); font-size: 12px; color: var(--muted); padding-top: 1px; }
+
+.empty { padding: 14px; color: var(--muted); font-size: 13px; }
+.notice { padding: 12px 14px; border: 1px solid var(--rule-strong); border-radius: 6px; background: var(--sheet); }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="head-row">
+      <h1>Archive ledger</h1>
+      <div class="facts muted">
+        <span>main <b class="mono" id="f-main">…</b></span>
+        <span>updated <b class="mono" id="f-updated">…</b></span>
+        <a href="https://github.com/CyberStrike/solid-octo-guacamole" target="_blank" rel="noopener">CyberStrike/solid-octo-guacamole</a>
+      </div>
+    </div>
+    <p class="now">The record of the archive's work in progress, for the operator. It shows which agents are building, gating or reviewing what; where each work item stands on the board; what is waiting on the operator; the open design questions and follow-up issues; and a dated log. The integrator updates it at every launch, report, merge, filed issue, question closure and operator ruling. What each item is lives in its issue and <span class="mono">docs/project-tracking.md</span>; this page says where it is.</p>
+    <p class="now muted" id="f-status" hidden></p>
+    <div class="tally" id="tally"></div>
+  </header>
+
+  <section aria-labelledby="h-agents">
+    <div class="sec-head">
+      <h2 id="h-agents">Agents</h2>
+      <span class="muted" id="agents-count">Builders, reviewers and merge gates working now</span>
+    </div>
+    <div id="agents"></div>
+  </section>
+
+  <section aria-labelledby="h-board">
+    <div class="sec-head">
+      <h2 id="h-board">Board</h2>
+      <span class="muted">Ready, in progress, testing, done. Dimmed cards wait on a gate.</span>
+    </div>
+    <div class="board" id="board"></div>
+  </section>
+
+  <section aria-labelledby="h-lanes">
+    <div class="sec-head">
+      <h2 id="h-lanes">Open work items</h2>
+      <span class="muted">By lane. Merged items are hidden; the meter still counts them.</span>
+    </div>
+    <div class="lanes" id="lanes"></div>
+  </section>
+
+  <div class="two">
+    <section aria-labelledby="h-reviews">
+      <div class="sec-head"><h2 id="h-reviews">Waiting on you</h2><span class="muted" id="reviews-count"></span></div>
+      <div id="reviews"></div>
+    </section>
+    <section aria-labelledby="h-questions">
+      <div class="sec-head"><h2 id="h-questions">Open questions</h2><span class="muted" id="questions-count"></span></div>
+      <div id="questions"></div>
+    </section>
+  </div>
+
+  <section aria-labelledby="h-follow">
+    <div class="sec-head">
+      <h2 id="h-follow">Open follow-up issues</h2>
+      <span class="muted" id="followups-count">Adjacent problems and audit findings</span>
+    </div>
+    <div id="followups"></div>
+  </section>
+
+  <section aria-labelledby="h-log">
+    <div class="sec-head"><h2 id="h-log">Log</h2><span class="muted">Newest first, times in UTC</span></div>
+    <div id="log" class="two"></div>
+  </section>
+</div>
+
+<script>
+const GH = "https://github.com/CyberStrike/solid-octo-guacamole";
+const state = { lanes: [], items: [], followups: [], questions: [], reviews: [], log: [], agents: [], meta: null };
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const issueLink = (n) => (n ? `<a class="mono" href="${GH}/issues/${n}" target="_blank" rel="noopener">#${n}</a>` : "");
+const prLinks = (prs) => (prs || []).map((n) => `<a class="mono" href="${GH}/pull/${n}" target="_blank" rel="noopener">#${n}</a>`).join(" ");
+const day = (iso) => (iso ? iso.slice(0, 10) : "");
+const hm = (iso) => (iso ? iso.slice(11, 16) : "");
+const when = (iso) => (iso ? `${iso.slice(5, 10)} ${hm(iso)}` : "");
+// A time in UTC's own ISO form, so a row written with an offset still reads as UTC.
+const utc = (iso) => (iso && Number.isFinite(Date.parse(iso)) ? new Date(iso).toISOString() : "");
+// How long from one time to another (or to now), as "45m", "1h 12m" or "2d 3h"; empty when either end is unknown.
+const span = (from, to) => {
+  const ms = (to ? Date.parse(to) : Date.now()) - Date.parse(from || "");
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  const m = Math.floor(ms / 60000);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
+};
+
+const LABELS = { merged: "Merged", running: "Building", building: "Building", gating: "In gate", review: "In review", ready: "Ready", waiting: "Waiting", blocked: "Blocked", open: "Open", closed: "Closed", done: "Done", queued: "Queued", idle: "Idle", finished: "Finished", failed: "Failed" };
+const TONE = { building: "running", running: "running", gating: "review", review: "review", idle: "waiting", finished: "merged", failed: "blocked", done: "merged", closed: "merged" };
+const pill = (s, text) => `<span class="pill s-${TONE[s] || s}">${esc(text || LABELS[s] || s)}</span>`;
+const isDone = (s) => s === "merged" || s === "closed" || s === "done";
+// An agent row written with an item's done word is finished too, so it never sticks on the board.
+const agentDone = (s) => s === "finished" || isDone(s);
+
+const fields = (pairs) => {
+  const shown = pairs.filter(([, v]) => v);
+  return shown.length ? `<dl>${shown.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`).join("")}</dl>` : "";
+};
+
+function byId() { return Object.fromEntries(state.items.map((i) => [i.id, i])); }
+
+// A queued item is Ready once every gate has merged, otherwise Waiting on the gates still open.
+// A gate counts as cleared only when it exists and merged (or is done); one that is missing,
+// or `closed` without merging, still blocks.
+function effective(item, idx) {
+  if (item.status !== "queued") return { s: item.status, open: [] };
+  const open = (item.gates || []).filter((g) => !idx[g] || !(idx[g].status === "merged" || idx[g].status === "done"));
+  return open.length ? { s: "waiting", open } : { s: "ready", open };
+}
+
+const STAGE = { ready: "ready", waiting: "ready", building: "progress", running: "progress", blocked: "progress", gating: "testing", review: "testing", merged: "done", done: "done", closed: "done" };
+
+function renderHeader() {
+  const m = state.meta || {};
+  document.getElementById("f-main").textContent = m.main || "—";
+  document.getElementById("f-updated").textContent = m.updatedAt ? `${day(m.updatedAt)} ${hm(m.updatedAt)}` : "—";
+  const idx = byId();
+  const counts = {};
+  for (const i of state.items) { let s = effective(i, idx).s; s = TONE[s] && s !== "gating" ? TONE[s] : s; counts[s] = (counts[s] || 0) + 1; }
+  const order = ["running", "gating", "review", "ready", "waiting", "blocked", "merged"];
+  document.getElementById("tally").innerHTML = order.filter((s) => counts[s]).map((s) => pill(s, `${counts[s]} ${LABELS[s].toLowerCase()}`)).join("");
+}
+
+const KINDS = { builder: "Builder", gate: "Merge gate", reviewer: "Reviewer" };
+
+function renderAgents() {
+  const idx = byId();
+  const active = state.agents.filter((a) => !agentDone(a.status)).sort((a, b) => (a.startedAt < b.startedAt ? 1 : -1));
+  // A row with no finish time sorts by its start time, so a reviewer recorded without one is not pushed off the list.
+  const doneAt = (a) => Date.parse(a.finishedAt || a.startedAt || "") || 0;
+  const finished = state.agents.filter((a) => agentDone(a.status)).sort((a, b) => doneAt(b) - doneAt(a)).slice(0, 12);
+  // The database snapshot re-renders this list, not the minute tick (which only rewrites the .elapsed text), so the open state is read back before the rewrite.
+  const wasOpen = document.querySelector("#agents details.finished")?.open ?? false;
+  document.getElementById("agents-count").textContent = active.length ? `${active.length} working` : "None working";
+  const card = (a) => {
+    const item = idx[a.item];
+    return `<article class="agent">
+      ${a.kind ? `<span class="label">${esc(KINDS[a.kind] || a.kind)}</span>` : ""}
+      <div class="top"><span class="who">${esc(a.name || a.id)}</span>${pill(a.status, a.kind === "gate" && a.status === "running" ? (a.step || "Gating") : null)}</div>
+      <div class="t">${item ? `<span class="mono">${esc(item.label || item.id)}</span> ${esc(item.title)}` : esc(a.task || "")}</div>
+      ${a.note ? `<div class="note">${esc(a.note)}</div>` : ""}
+      ${fields([["Model", esc(a.model || "")], ["Lane", esc(a.lane || "")], ["PR", prLinks(a.pr)], ["Elapsed", `<span class="elapsed" data-from="${esc(a.startedAt || "")}" data-to="${esc(a.finishedAt || "")}" title="${esc(a.startedAt ? `since ${when(utc(a.startedAt))} UTC` : "start time not recorded")}">${esc(span(a.startedAt, a.finishedAt) || "—")}</span>`]])}
+    </article>`;
+  };
+  const list = finished.length ? `<details class="finished"${wasOpen ? " open" : ""}><summary>Recently finished (${finished.length})</summary><ul>${finished.map((a) => {
+    const item = idx[a.item];
+    return `<li><strong>${esc(a.name || a.id)}</strong><span class="muted">${esc(item ? (item.label || item.id) : a.task || "")}</span>${prLinks(a.pr)}<span class="mono muted">${esc([when(utc(a.finishedAt)), a.startedAt && a.finishedAt && span(a.startedAt, a.finishedAt) && `took ${span(a.startedAt, a.finishedAt)}`].filter(Boolean).join(" · "))}</span></li>`;
+  }).join("")}</ul></details>` : "";
+  document.getElementById("agents").innerHTML = (active.length ? `<div class="agents">${active.map(card).join("")}</div>` : `<div class="notice">No agents are working right now. Builders appear here when a wave starts.</div>`) + list;
+}
+
+function renderBoard() {
+  const idx = byId();
+  const cols = { ready: [], progress: [], testing: [], done: [] };
+  for (const i of state.items) {
+    const e = effective(i, idx);
+    const stage = STAGE[e.s];
+    if (stage) cols[stage].push({ i, e });
+  }
+  cols.ready.sort((a, b) => (a.e.s === "ready" ? 0 : 1) - (b.e.s === "ready" ? 0 : 1) || (a.i.order ?? 0) - (b.i.order ?? 0));
+  cols.progress.sort((a, b) => (a.i.order ?? 0) - (b.i.order ?? 0));
+  cols.testing.sort((a, b) => (a.i.order ?? 0) - (b.i.order ?? 0));
+  cols.done.sort((a, b) => ((a.i.mergedAt || "") < (b.i.mergedAt || "") ? 1 : -1));
+  const DONE_SHOWN = 8;
+  const tile = ({ i, e }, stage) => {
+    let g = "";
+    if (e.s === "waiting") g = `after ${e.open.map((x) => idx[x]?.label || x).join(", ")}`;
+    else if (i.pr?.length) g = `PR ${i.pr.map((p) => `#${p}`).join(" ")}`;
+    else if (i.issue) g = `issue #${i.issue}`;
+    if (stage === "done" && i.mergedAt) g = `${g}${g ? " · " : ""}${day(i.mergedAt)}`;
+    return `<div class="tile${e.s === "waiting" ? " gated" : ""}">
+      <div class="top"><span class="id">${esc(i.label || i.id)}</span>${stage === "done" ? "" : pill(e.s)}</div>
+      <div class="t">${esc(i.title)}</div>
+      ${g ? `<div class="g">${esc(g)}</div>` : ""}
+    </div>`;
+  };
+  const col = (key, name) => {
+    const list = cols[key];
+    const shown = key === "done" ? list.slice(0, DONE_SHOWN) : list;
+    const more = key === "done" && list.length > DONE_SHOWN ? `<div class="more">${list.length - DONE_SHOWN} more merged; the lanes below count them.</div>` : "";
+    return `<div class="col" data-stage="${key}">
+      <div class="col-head"><strong>${name}</strong><span class="mono muted">${list.length}</span></div>
+      ${shown.length ? shown.map((x) => tile(x, key)).join("") : `<div class="none">Nothing here.</div>`}
+      ${more}
+    </div>`;
+  };
+  document.getElementById("board").innerHTML = col("ready", "Ready") + col("progress", "In progress") + col("testing", "Testing") + col("done", "Done");
+}
+
+function renderLanes() {
+  const idx = byId();
+  const finished = [];
+  const groups = [...state.lanes].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)).map((lane) => {
+    const items = state.items.filter((i) => i.lane === lane.id).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    const done = items.filter((i) => isDone(i.status)).length;
+    const open = items.filter((i) => !isDone(i.status));
+    if (!open.length) { if (items.length) finished.push(lane.name); return ""; }
+    const pct = items.length ? Math.round((done / items.length) * 100) : 0;
+    const cards = open.map((i) => {
+      const e = effective(i, idx);
+      const stateText = e.s === "waiting" ? `Waiting on ${e.open.map((g) => idx[g]?.label || g).join(", ")}` : null;
+      return `<article class="card">
+        <div class="top"><span class="id">${esc(i.label || i.id)}</span>${pill(e.s, stateText)}</div>
+        <div class="t">${esc(i.title)}</div>
+        ${i.note ? `<div class="note">${esc(i.note)}</div>` : ""}
+        ${fields([["Issue", issueLink(i.issue)], ["PR", prLinks(i.pr)], ["Model", esc(i.model || "")]])}
+      </article>`;
+    }).join("");
+    return `<div class="lane-group">
+      <div class="lane-name">
+        <strong>${esc(lane.name)}</strong>
+        <span class="muted">${esc(lane.scope || "")}</span>
+        ${lane.issue ? issueLink(lane.issue) : ""}
+        <span class="meter"><span class="bar"><i style="width:${pct}%"></i></span>${done} of ${items.length} merged</span>
+      </div>
+      <div class="cards">${cards}</div>
+    </div>`;
+  }).filter(Boolean);
+  const tail = finished.length ? `<p class="done-lanes">All merged: ${finished.map(esc).join(", ")}.</p>` : "";
+  document.getElementById("lanes").innerHTML = (groups.join("") || `<div class="notice">No open work items.</div>`) + tail;
+}
+
+function renderReviews() {
+  const open = state.reviews.filter((r) => r.state !== "done").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  document.getElementById("reviews-count").textContent = `${open.length} open`;
+  const li = (r) => `<li><div class="li-top">${r.ref ? `<a class="mono" href="${esc(r.url || GH)}" target="_blank" rel="noopener">${esc(r.ref)}</a>` : ""}<strong>${esc(r.title)}</strong></div>${r.detail ? `<span class="muted">${esc(r.detail)}</span>` : ""}</li>`;
+  document.getElementById("reviews").innerHTML = open.length ? `<ul class="list">${open.map(li).join("")}</ul>` : `<div class="notice">Nothing is waiting on you.</div>`;
+}
+
+function renderQuestions() {
+  const num = (q) => Number(String(q.id).slice(1));
+  const open = state.questions.filter((q) => q.state === "open").sort((a, b) => num(a) - num(b));
+  const closed = state.questions.length - open.length;
+  document.getElementById("questions-count").textContent = `${open.length} open${closed ? `, ${closed} closed hidden` : ""}`;
+  const openLi = (q) => `<li><div class="li-top"><span class="mono">${esc(q.id)}</span><strong>${esc(q.title)}</strong>${pill("open", q.proceeding ? "Open, proceeding" : "Open")}</div>${q.note ? `<span class="muted">${esc(q.note)}</span>` : ""}</li>`;
+  document.getElementById("questions").innerHTML = open.length ? `<ul class="list">${open.map(openLi).join("")}</ul>` : `<div class="notice">No open questions.</div>`;
+}
+
+function renderFollowups() {
+  const idx = byId();
+  const rank = { review: 0, running: 1, open: 2 };
+  const open = state.followups.filter((f) => !isDone(f.status)).sort((a, b) => (rank[a.status] ?? 2) - (rank[b.status] ?? 2) || a.issue - b.issue);
+  const closed = state.followups.length - open.length;
+  const card = (f) => {
+    const waits = (f.waitsOn || []).map((g) => (idx[g] && isDone(idx[g].status) ? `<s class="muted">${esc(g)}</s>` : esc(g))).join(", ");
+    const s = f.status === "open" ? "waiting" : f.status;
+    return `<article class="card">
+      <div class="top">${issueLink(f.issue)}${pill(s, f.status === "open" ? "Open" : null)}</div>
+      <div class="t">${esc(f.title)}</div>
+      ${f.note ? `<div class="note">${esc(f.note)}</div>` : ""}
+      ${fields([["Workspace", esc(f.workspace || "")], ["Waits on", waits], ["PR", prLinks(f.pr)]])}
+    </article>`;
+  };
+  document.getElementById("followups-count").textContent = `${open.length} open${closed ? `, ${closed} closed hidden` : ""}`;
+  document.getElementById("followups").innerHTML = open.length ? `<div class="cards">${open.map(card).join("")}</div>` : `<div class="notice">No open follow-ups.</div>`;
+}
+
+function renderLog() {
+  const days = [...state.log].sort((a, b) => (a.id < b.id ? 1 : -1));
+  document.getElementById("log").innerHTML = days.map((d) => {
+    // Sort by the instant and show it in UTC, so an entry written with an offset still lands in order.
+    const instant = (e) => Date.parse(e.at || "") || 0;
+    const entries = [...(d.entries || [])].sort((a, b) => instant(b) - instant(a));
+    return `<div class="log-day"><span class="label">${esc(d.id)}</span><ol>${entries.map((e) => `<li><time>${esc(hm(utc(e.at)))}</time><span>${esc(e.text)}</span></li>`).join("")}</ol></div>`;
+  }).join("") || `<div class="empty">Nothing logged yet.</div>`;
+}
+
+function render() {
+  renderHeader(); renderAgents(); renderBoard(); renderLanes(); renderReviews(); renderQuestions(); renderFollowups(); renderLog();
+}
+
+function unavailable() {
+  const s = document.getElementById("f-status");
+  s.textContent = "The ledger's data can't be read in this view.";
+  s.hidden = false;
+}
+
+render();
+// Elapsed times count up while the page is open. Only their text changes, so focus and open lists stay put.
+setInterval(() => {
+  for (const el of document.querySelectorAll("#agents .elapsed")) {
+    el.textContent = span(el.dataset.from, el.dataset.to) || "—";
+  }
+}, 60_000);
+
+(async () => {
+  const db = await (window.claude?.use?.("db") ?? Promise.resolve(null));
+  if (!db) { unavailable(); return; }
+  const onErr = () => unavailable();
+  const watch = (name, q) => q.onSnapshot((snap) => { state[name] = snap.docs.map((d) => ({ id: d.id, ...d.data() })); render(); }, onErr);
+  for (const name of ["lanes", "items", "followups", "questions", "reviews", "agents"]) watch(name, db.collection(name));
+  watch("log", db.collection("log").orderBy("day", "desc").limit(10));
+  db.doc("meta/state").onSnapshot((snap) => { state.meta = snap.exists ? snap.data() : null; render(); }, onErr);
+})();
+</script>
