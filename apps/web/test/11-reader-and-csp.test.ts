@@ -27,4 +27,31 @@ describe("11-reader-and-csp", () => {
       expect(withoutNonce(res.headers.get("content-security-policy"))).toBe(STRICT);
     }
   });
+
+  it("Turnstile pages allow only the Turnstile challenge frame", async () => {
+    for (const path of ["/login", "/upload", "/remove"]) {
+      const res = await fetchW(path);
+      const csp = res.headers.get("content-security-policy");
+      expect(res.status).toBe(200);
+      expect(withoutNonce(csp)).toBe(TURNSTILE);
+
+      const html = await res.text();
+      const scripts = html.match(/<script\b[^>]*>/g) ?? [];
+      const apiJs = scripts.filter((tag) =>
+        tag.includes('src="https://challenges.cloudflare.com/turnstile/v0/api.js"'),
+      );
+      expect(apiJs).toHaveLength(1);
+      expect(apiJs[0]).toContain(`nonce="${nonceOf(csp)}"`);
+      for (const tag of scripts) expect(tag).toContain(`nonce="${nonceOf(csp)}"`);
+      expect(html).toContain("<noscript>");
+    }
+
+    // The allowance is keyed on the exact path, whatever the method.
+    const post = await fetchW("/login", { method: "POST" });
+    expect(withoutNonce(post.headers.get("content-security-policy"))).toBe(TURNSTILE);
+    for (const path of ["/", "/login/confirm", "/loginx", "/upload/new"]) {
+      const res = await fetchW(path);
+      expect(withoutNonce(res.headers.get("content-security-policy"))).toBe(STRICT);
+    }
+  });
 });

@@ -15,10 +15,17 @@ const strictPolicy = (nonce: string) =>
     "frame-ancestors 'none'",
   ].join("; ");
 
+// The pages with a Turnstile check, matched exactly: only they may frame the challenge.
+const TURNSTILE_PATHS = new Set(["/login", "/upload", "/remove"]);
+const TURNSTILE_FRAME = "frame-src https://challenges.cloudflare.com";
+
 /** A fresh base64 nonce of 16 random bytes. */
 const newNonce = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
 
-/** Sets the CSP on every HTML response, with a nonce handlers read as c.get("nonce"). */
+/**
+ * Sets the CSP on every HTML response, with a nonce handlers read as c.get("nonce").
+ * The Turnstile pages get the challenge frame too, keyed on path so any method has it.
+ */
 export const contentSecurityPolicy: MiddlewareHandler<{ Variables: SecurityVariables }> = async (
   c,
   next,
@@ -27,6 +34,10 @@ export const contentSecurityPolicy: MiddlewareHandler<{ Variables: SecurityVaria
   c.set("nonce", nonce);
   await next();
   if (c.res.headers.get("content-type")?.startsWith("text/html")) {
-    c.res.headers.set("Content-Security-Policy", strictPolicy(nonce));
+    const policy = strictPolicy(nonce);
+    c.res.headers.set(
+      "Content-Security-Policy",
+      TURNSTILE_PATHS.has(c.req.path) ? `${policy}; ${TURNSTILE_FRAME}` : policy,
+    );
   }
 };
