@@ -1,5 +1,5 @@
 import {
-  boundedText, cleanText, find, findAll, findOutermost, hasClass, idOf, nextElementSibling, type ElementNode,
+  boundedText, cleanText, find, findAll, findOutermost, hasClass, idOf, nextElementSibling, walk, type ElementNode,
 } from "./dom";
 import { collapseWhitespace, decodeEntities } from "./entities";
 import type { Author, SeriesRef, Stats } from "./types";
@@ -161,23 +161,39 @@ function headedBlock(scope: readonly ElementNode[], label: string): ElementNode 
   return null;
 }
 
-/** The work URL from the innermost "Posted originally on the Archive of Our Own" element. */
+// The line reads "Posted originally on the <a>Archive of Our Own</a> at <a>URL</a>".
+const POSTED = /posted originally on the/i;
+// Bounds the work on hostile input: matching text nodes tried, and elements
+// looked at after each one.
+const MAX_POSTED_MATCHES = 20;
+const MAX_POSTED_SIBLINGS = 8;
+
+/**
+ * The work URL from the "Posted originally on the Archive of Our Own" line:
+ * the first work link among the elements that follow the matching text node.
+ * Anchored on the text node, so it works whatever element holds the line.
+ */
 function findWorkId(prefaces: ElementNode[]): string | null {
-  const posted = /posted originally on the archive of our own/i;
+  let tried = 0;
   for (const region of prefaces) {
-    const matches = findAll(region, (el) => posted.test(boundedText(el, LINE_CHARS) ?? ""));
-    // `matches` is in document order, so a match contains another exactly when
-    // the next match starts inside it.
-    const innermost = matches.filter((m, i) => {
-      const next = matches[i + 1];
-      return next === undefined || next.pos > m.end;
-    });
-    for (const line of innermost) {
-      for (const a of findAll(line, (el) => el.tag === "a")) {
-        const id = workIdFromUrl(href(a));
-        if (id) return id;
+    let id: string | null = null;
+    walk(region, (n) => {
+      if (id !== null || tried >= MAX_POSTED_MATCHES) return false;
+      if (n.type !== "text" || !n.parent || !POSTED.test(decodeEntities(n.raw))) return true;
+      tried++;
+      const siblings = n.parent.children;
+      for (let i = siblings.indexOf(n) + 1, seen = 0; i < siblings.length && seen < MAX_POSTED_SIBLINGS; i++) {
+        const s = siblings[i]!;
+        if (s.type !== "element") continue;
+        seen++;
+        for (const a of s.tag === "a" ? [s] : findAll(s, (el) => el.tag === "a")) {
+          id = workIdFromUrl(href(a));
+          if (id !== null) return false;
+        }
       }
-    }
+      return true;
+    });
+    if (id !== null) return id;
   }
   return null;
 }
@@ -233,6 +249,7 @@ export function parsePreface(roots: readonly ElementNode[]): Preface {
     summary: headedBlock(prefaces, "Summary"),
     notes: headedBlock(prefaces, "Notes"),
     endNotes: headedBlock(endNoteScope.length ? endNoteScope : regionsById(roots, "afterword"), "End Notes"),
-    rawMeta,
+    // A plain object for callers; fromEntries keeps "__proto__" as an own key.
+    rawMeta: Object.fromEntries(Object.entries(rawMeta)),
   };
 }

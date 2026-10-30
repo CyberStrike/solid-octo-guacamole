@@ -7,7 +7,7 @@ import { dirOf, readPackage, resolveHref } from "./package";
 import { parsePreface, workIdFromUrl } from "./preface";
 import { serializeChildren, type SanitizeContext } from "./sanitize";
 import type { Chapter, ParsedWork, ProcessOptions } from "./types";
-import { LIMITS, unzipEpub } from "./unzip";
+import { LIMITS, READABLE, unzipEpub } from "./unzip";
 import { countWords } from "./words";
 
 /**
@@ -44,6 +44,13 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
   // A missing spine item is held for review like a missing spine file: the
   // chapter count check alone would not notice if the rest still match Stats.
   for (const idref of pkg.unknownSpineRefs) reviewReasons.push(`unknown_spine_item: ${JSON.stringify(idref)}`);
+  // unzipEpub reads entries by extension, before the manifest is known. Flag a
+  // document or raster image it skipped, rather than lose it silently.
+  for (const item of pkg.manifest.values()) {
+    const wanted = item.mediaType === "application/xhtml+xml" || item.mediaType === "text/html" ||
+      (item.mediaType.startsWith("image/") && item.mediaType !== "image/svg+xml");
+    if (wanted && !READABLE.test(item.path)) reviewReasons.push(`unread_manifest_item: ${item.path}`);
+  }
 
   // One node budget for every document parsed from this epub.
   const budget = nodeBudget();

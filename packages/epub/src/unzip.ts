@@ -29,17 +29,18 @@ function isSafeName(name: string): boolean {
 
 // Entries the processor can read. Others (fonts, CSS, SVG) are counted and
 // name-checked but never inflated or kept in memory.
-const READABLE = /^mimetype$|\.(?:x?html?|xml|opf|ncx|png|jpe?g|gif|webp)$/i;
+export const READABLE = /^mimetype$|\.(?:x?html?|xht|xml|opf|ncx|png|jpe?g|jpe|jfif|gif|webp)$/i;
 
 const corrupt = (why: string) => new EpubError("not_epub", `Corrupt zip: ${why}`);
 
 /**
  * Checks the central directory (the zip's file index) before anything is
- * inflated: names, entry count and declared sizes. Returns the entry names, so
- * the caller can confirm the local headers it streams list the same entries.
- * Unzip tools read names from here, not from the local headers.
+ * inflated: names, entry count and declared sizes. Returns each entry's name
+ * decoded both as UTF-8 and as Latin-1, so the caller can confirm the local
+ * headers it streams list the same entries even when a writer set the UTF-8
+ * flag in only one of the two headers. Unzip tools read names from here.
  */
-function readCentralDirectory(bytes: Uint8Array): string[] {
+function readCentralDirectory(bytes: Uint8Array): [string, string][] {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   let eocd = -1;
   for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 0xffff); i--) {
@@ -56,24 +57,25 @@ function readCentralDirectory(bytes: Uint8Array): string[] {
   if (count > LIMITS.maxEntries) throw new EpubError("zip_bomb", `More than ${LIMITS.maxEntries} entries`);
   if (offset + size > eocd) throw corrupt("central directory out of range");
 
-  const names: string[] = [];
+  const names: [string, string][] = [];
   let declared = 0;
   let at = offset;
   for (let i = 0; i < count; i++) {
     if (at + 46 > eocd || view.getUint32(at, true) !== 0x02014b50) throw corrupt("bad central directory entry");
-    const utf8 = (view.getUint16(at + 8, true) & 0x800) !== 0;
     const entryBytes = view.getUint32(at + 24, true);
     const nameEnd = at + 46 + view.getUint16(at + 28, true);
     if (nameEnd > eocd) throw corrupt("bad central directory entry");
-    // Decoded as fflate decodes local header names, so the two lists compare.
-    const name = strFromU8(bytes.subarray(at + 46, nameEnd), !utf8);
-    if (!isSafeName(name)) throw new EpubError("not_epub", `Unsafe entry name: ${JSON.stringify(name)}`);
+    const raw = bytes.subarray(at + 46, nameEnd);
+    const decoded: [string, string] = [strFromU8(raw), strFromU8(raw, true)];
+    for (const name of decoded) {
+      if (!isSafeName(name)) throw new EpubError("not_epub", `Unsafe entry name: ${JSON.stringify(name)}`);
+    }
     if (entryBytes > LIMITS.maxEntryBytes) {
-      throw new EpubError("zip_bomb", `Entry declares more than ${LIMITS.maxEntryBytes} bytes: ${name}`);
+      throw new EpubError("zip_bomb", `Entry declares more than ${LIMITS.maxEntryBytes} bytes: ${decoded[0]}`);
     }
     declared += entryBytes;
     if (declared > LIMITS.maxTotalBytes) throw new EpubError("zip_bomb", `Archive declares more than ${LIMITS.maxTotalBytes} bytes`);
-    names.push(name);
+    names.push(decoded);
     at = nameEnd + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
   }
   return names;
@@ -170,7 +172,7 @@ export function unzipEpub(bytes: Uint8Array): Map<string, Uint8Array> {
   if (pending > 0) throw new EpubError("not_epub", "Truncated zip");
   // The index and the local headers must describe the same entries, or other
   // tools would see a different archive from the one checked here.
-  if (indexed.length !== seen.size || !indexed.every((name) => seen.has(name))) {
+  if (indexed.length !== seen.size || !indexed.every(([utf8, latin1]) => seen.has(utf8) || seen.has(latin1))) {
     throw corrupt("central directory and local headers disagree");
   }
   return files;

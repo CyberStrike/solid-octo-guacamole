@@ -87,6 +87,23 @@ describe("hostile containers", () => {
     await expectEpubError(processEpub(zipEntries(entries)), "zip_bomb");
   });
 
+  it("accepts a non-ASCII entry name whose UTF-8 flag is set in only one header", async () => {
+    const name = "作品_split_001.xhtml";
+    const zip = ao3Epub({ files: [{ name, body: `<div id="chapters"><p>marker-utf8</p></div>` }] });
+    // Clear bit 11 (UTF-8) of the central directory entry's flags only.
+    const cleared = patchHeaders(zip, name, (view, local, _size, nameAt) => {
+      if (!local) view.setUint16(nameAt - 38, view.getUint16(nameAt - 38, true) & ~0x800, true);
+    });
+    expect(cleared).toBe(2);
+    const work = await processEpub(zip);
+    expect(work.chapters[0]!.html).toContain("marker-utf8");
+  });
+
+  it("flags a manifest image the unzipper does not read", async () => {
+    const work = await processEpub(ao3Epub({ extraManifest: [{ href: "images/p.bmp", mediaType: "image/bmp", data: "BM" }] }));
+    expect(work.reviewReasons).toEqual(["unread_manifest_item: images/p.bmp"]);
+  });
+
   it("flags a spine itemref with no manifest item", async () => {
     const files = unzipSync(ao3Epub());
     const opf = strFromU8(files["content.opf"]!).replace("</spine>", `<itemref idref="ghost"/></spine>`);

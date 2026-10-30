@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { processEpub } from "../src";
+import { numberTree, parseHtml } from "../src/dom";
+import { parsePreface } from "../src/preface";
 import { ao3Epub, type Ao3Spec, type SpineFile } from "./helpers";
 
 // Three chapters over three size-split files:
@@ -142,6 +144,7 @@ describe("preface labels and entities", () => {
     const work = await processEpub(
       ao3Epub({ extraDl: `<dt>Constructor:</dt><dd>one</dd><dt>__proto__:</dt><dd>two</dd><dt>toString:</dt><dd>three</dd>` }),
     );
+    expect(Object.getPrototypeOf(work.rawMeta)).toBe(Object.prototype);
     expect(Object.entries(work.rawMeta)).toEqual([
       ["Constructor", "one"],
       ["__proto__", "two"],
@@ -154,5 +157,14 @@ describe("preface labels and entities", () => {
       ao3Epub({ extraDl: `<dt>Characters:</dt><dd><a href="http://archiveofourown.org/tags/c">Ren&eacute;e &Omega; &euro;</a></dd>` }),
     );
     expect(work.characters).toEqual(["Renée Ω €"]);
+  });
+
+  it("finds the posted-originally work URL directly inside a large preface element", async () => {
+    const root = await parseHtml(`<div id="preface"><blockquote><a href="http://archiveofourown.org/works/99">inspired by</a></blockquote>
+Posted originally on the <a href="http://archiveofourown.org/">Archive of Our Own</a> at
+<a href="http://archiveofourown.org/works/77">http://archiveofourown.org/works/77</a>.
+<p>${"long notes ".repeat(1_000)}</p></div>`);
+    numberTree(root, 0);
+    expect(parsePreface([root]).workId).toBe("77");
   });
 });
