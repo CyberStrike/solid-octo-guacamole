@@ -1,0 +1,140 @@
+import { splitChapters, type SpineDoc } from "./chapters";
+import { hasClass, numberTree, parseHtml, type ElementNode } from "./dom";
+import { collapseWhitespace } from "./entities";
+import { EpubError } from "./errors";
+import { collectImages, type ImageCandidate } from "./images";
+import { dirOf, readPackage, resolveHref } from "./package";
+import { parsePreface, workIdFromUrl } from "./preface";
+import { serializeChildren, type SanitizeContext } from "./sanitize";
+import type { Chapter, ParsedWork, ProcessOptions } from "./types";
+import { LIMITS, unzipEpub } from "./unzip";
+import { countWords } from "./words";
+
+/**
+ * Parses an AO3-exported epub into metadata and sanitized chapter HTML.
+ * Pure: no I/O, no clock, no randomness. Throws `EpubError` with a rejection code.
+ */
+export async function processEpub(input: Uint8Array | ArrayBuffer, options: ProcessOptions = {}): Promise<ParsedWork> {
+  const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  if (bytes.byteLength > LIMITS.maxInputBytes) {
+    throw new EpubError("too_large", `File is larger than ${LIMITS.maxInputBytes} bytes`);
+  }
+  try {
+    return await run(bytes, options);
+  } catch (e) {
+    if (e instanceof EpubError) throw e;
+    throw new EpubError("parse_failed", e instanceof Error ? e.message : String(e), { cause: e });
+  }
+}
+
+async function run(bytes: Uint8Array, options: ProcessOptions): Promise<ParsedWork> {
+  const files = unzipEpub(bytes);
+
+  const mimetype = files.get("mimetype");
+  if (!mimetype || new TextDecoder().decode(mimetype).trim() !== "application/epub+zip") {
+    throw new EpubError("not_epub", "Missing or wrong mimetype entry");
+  }
+
+  const pkg = readPackage(files);
+  const reviewReasons: string[] = [];
+
+  const docs: SpineDoc[] = [];
+  let next = 0;
+  for (const item of pkg.spine) {
+    const data = files.get(item.path);
+    if (!data) {
+      reviewReasons.push(`missing_spine_file: ${item.path}`);
+      continue;
+    }
+    const root = await parseHtml(new TextDecoder().decode(data), item.path);
+    next = numberTree(root, next);
+    docs.push({ path: item.path, root });
+  }
+
+  const preface = parsePreface(docs.map((d) => d.root));
+  const opf = pkg.metadata;
+
+  const opfWorkId = [...opf.identifiers, ...opf.sources].map(workIdFromUrl).find((id) => id !== null) ?? null;
+  const ao3WorkId = preface.workId ?? opfWorkId;
+  if (!ao3WorkId) throw new EpubError("not_ao3", "No archiveofourown.org work URL found");
+  if (preface.workId && opfWorkId && preface.workId !== opfWorkId) {
+    reviewReasons.push(`work_id_mismatch: preface ${preface.workId}, OPF ${opfWorkId}`);
+  }
+
+  const opfTitle = opf.titles[0] ? collapseWhitespace(opf.titles[0]) : null;
+  const title = preface.title ?? opfTitle ?? "";
+  if (!title) reviewReasons.push("missing_title");
+  else if (preface.title && opfTitle && preface.title !== opfTitle) {
+    reviewReasons.push("title_mismatch: preface and OPF titles differ");
+  }
+
+  // Images: only manifest images that pass the checks, and only those the output uses.
+  const candidates = await collectImages(files, pkg.manifest);
+  const used = new Map<string, ImageCandidate>();
+  const imageBase = options.imageBase ?? "";
+  const ctx: SanitizeContext = {
+    resolveImage(src, fromFile) {
+      const target = resolveHref(dirOf(fromFile), src);
+      const candidate = target ? candidates.get(target.path) : undefined;
+      if (!candidate) return null;
+      if (!used.has(candidate.ref.key)) used.set(candidate.ref.key, candidate);
+      return imageBase + candidate.ref.key;
+    },
+    // "See the end of the work/chapter for more notes" links point inside the epub.
+    skip: (el) => hasClass(el, "endnote-link"),
+  };
+  const html = (el: ElementNode | null): string | null => {
+    const out = el ? serializeChildren(el.children, ctx).trim() : "";
+    return out === "" ? null : out;
+  };
+
+  let summaryHtml = html(preface.summary);
+  if (summaryHtml === null && opf.descriptions[0]) {
+    summaryHtml = html(await parseHtml(opf.descriptions[0], pkg.opfPath));
+  }
+  const notesHtml = html(preface.notes);
+
+  const split = splitChapters(docs, pkg.navPoints);
+  if (split.method === "files") reviewReasons.push("chapters_one_per_file: no usable table of contents or chapter headings");
+  const chapters: Chapter[] = split.chapters.map((c, i) => {
+    const body = serializeChildren(c.nodes, ctx).trim();
+    return { n: i + 1, title: c.title, html: body, words: countWords(body) };
+  });
+  const endNotesHtml = html(preface.endNotes);
+
+  // AO3 always sets a rating; without one the preface was not parsed (e.g. a
+  // non-native file that only passed on an OPF work URL), and the reader's
+  // content warning depends on it.
+  if (preface.rating === null) reviewReasons.push("missing_rating");
+
+  const stats = preface.stats;
+  if (chapters.length !== stats.chapters.posted) {
+    reviewReasons.push(`chapter_count_mismatch: parsed ${chapters.length}, Stats says ${stats.chapters.posted}`);
+  }
+
+  const images = [...used.values()];
+  for (const image of images) options.onImage?.(image.ref, image.bytes);
+
+  return {
+    ao3WorkId,
+    title,
+    authors: preface.authors.length > 0 ? preface.authors : opf.creators.map((pseud) => ({ pseud, user: null })),
+    rating: preface.rating,
+    warnings: preface.warnings,
+    categories: preface.categories,
+    fandoms: preface.fandoms,
+    relationships: preface.relationships,
+    characters: preface.characters,
+    freeforms: preface.freeforms,
+    language: preface.language,
+    series: preface.series,
+    stats,
+    summaryHtml,
+    notesHtml,
+    endNotesHtml,
+    chapters,
+    images: images.map((i) => i.ref),
+    rawMeta: preface.rawMeta,
+    reviewReasons,
+  };
+}
