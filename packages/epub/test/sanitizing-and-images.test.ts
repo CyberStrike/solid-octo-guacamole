@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { processEpub, type ImageRef } from "../src";
 import { ao3Epub, fromBase64, MiB } from "./helpers";
 
-// One test per case in specs/scenarios/mvp/07-sanitizing-and-images.md, through processEpub.
+// The sanitizer and image cases of specs/scenarios/mvp/07-sanitizing-and-images.md that issue #39 lists, through processEpub.
+// Chapter-link rewriting, content-origin image keys, signature sniffing of JPEG/GIF/WebP and key sharing live elsewhere or are tracked as issues.
 
 const PNG = fromBase64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=");
 const IMAGE_BASE = "https://content.example/img/";
@@ -50,6 +51,8 @@ describe("07-sanitizing-and-images", () => {
       [PNG_MANIFEST],
     );
 
+    expect(html).toContain(`<div lang="en">div-text</div>`);
+    expect(html).toContain(`<span lang="en">span-text</span>`);
     for (const tag of [
       "p", "br", "hr", "em", "strong", "i", "b", "u", "s", "sub", "sup", "blockquote",
       "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "dl", "dt", "dd",
@@ -78,6 +81,11 @@ describe("07-sanitizing-and-images", () => {
 <p title="t3" ${extra}>para</p>`,
       [PNG_MANIFEST],
     );
+    expect(html).toMatch(/<a [^>]*title="t1"/);
+    expect(html).toMatch(/<a [^>]*dir="rtl"[^>]*lang="en"|<a [^>]*lang="en"[^>]*dir="rtl"/);
+    expect(html).toMatch(/<img [^>]*title="t2"/);
+    expect(html).toMatch(/<td [^>]*colspan="2"/);
+    expect(html).toMatch(/<td [^>]*rowspan="3"/);
     for (const kept of ["href=", "src=", "alt=", "title=", "colspan=", "rowspan=", "dir=", "lang=", "align="]) {
       expect(html, kept).toContain(` ${kept}`);
     }
@@ -163,13 +171,14 @@ describe("07-sanitizing-and-images", () => {
 
   it("Summary and notes are sanitized too", async () => {
     const payload = (m: string) =>
-      `<p>keep-${m}</p><script>x('${m}')</script><p><img src="y.png" onerror="x('${m}')"/></p><p><a href="javascript:x('${m}')">link-${m}</a></p><style>p{display:none}</style><form><input name="f"/></form><p style="color:red">styled-${m}</p>`;
+      `<p>keep-${m}</p><script>x('${m}')</script><p onclick="x('${m}')">onclick-${m}</p><p><a href="javascript:x('${m}')">link-${m}</a></p><style>p{display:none}</style><form><input name="f"/></form><p style="color:red">styled-${m}</p>`;
     const work = await processEpub(ao3Epub({ summary: payload("sum"), notes: payload("note"), endNotes: payload("end") }));
     for (const [field, m] of [[work.summaryHtml, "sum"], [work.notesHtml, "note"], [work.endNotesHtml, "end"]] as const) {
       expect(field, m).not.toBeNull();
-      expect(field).not.toMatch(/<script|<style|<form|<input|<img|<a[\s>]|javascript|style=|\sonerror|x\('/i);
+      expect(field).not.toMatch(/<script|<style|<form|<input|<img|<a[\s>]|javascript|style=|\son\w+\s*=|x\('/i);
       expect(field).toContain(`keep-${m}`);
       expect(field).toContain(`link-${m}`);
+      expect(field).toContain(`<p>onclick-${m}</p>`);
       expect(field).toContain(`styled-${m}`);
     }
   });
@@ -201,7 +210,7 @@ describe("07-sanitizing-and-images", () => {
     expect(work.images).toEqual([{ key, mediaType: "image/png", size: 5 * MiB, sourcePath: "images/big.png" }]);
     expect(sizes).toEqual([5 * MiB]);
     expect(work.chapters[0]!.html).toContain(`<img src="${IMAGE_BASE}${key}"`);
-  }, 60_000);
+  });
 
   it("Image over 5 MB is not stored", async () => {
     const calls: number[] = [];
@@ -212,7 +221,7 @@ describe("07-sanitizing-and-images", () => {
     expect(work.images).toEqual([]);
     expect(calls).toEqual([]);
     expect(work.chapters[0]!.html).not.toContain("<img");
-  }, 60_000);
+  });
 
   it("SVG, fonts and stylesheets are dropped", async () => {
     const calls: number[] = [];
