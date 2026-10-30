@@ -8,6 +8,6 @@ export function render(message: EmailMessage, from: string): OutgoingEmail {
     from,
     to: message.to,
     subject: "Your sign-in link for rarepair",
-    text: `Use this link to sign in. It works once and expires in 15 minutes.\n\n${message.url}\n\nIf you didn't ask to sign in, you can ignore this email.\n`,
+    text: `Use this link to sign in. It works once, and only for 15 minutes after you asked for it.\n\n${message.url}\n\nIf you didn't ask to sign in, you can ignore this email.\n`,
   };
 }

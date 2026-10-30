@@ -135,11 +135,27 @@ describe("mailer failures", () => {
       { kind: "newsletter", to: "reader3@example.test", url: "https://rarepair.fans/" },
       { kind: "sign-in", to: "reader4@example.test", url: "javascript:alert(1)" },
       "not an object",
+      { kind: "sign-in", to: "reader5@example.test", url: "https://evil.example/login/confirm?token=x" },
+      { kind: "sign-in", to: "reader6@example.test", url: "https://rarepair.fans/upload" },
     ]);
 
     expect(calls).toHaveLength(1);
     expect(calls[0]!.emails).toHaveLength(1);
-    expect(result.explicitAcks.sort()).toEqual(["msg-0", "msg-1", "msg-2", "msg-3", "msg-4"]);
+    expect(result.explicitAcks.sort()).toEqual([
+      "msg-0", "msg-1", "msg-2", "msg-3", "msg-4", "msg-5", "msg-6",
+    ]);
     expect(result.retryMessages).toEqual([]);
+  });
+
+  it("a link with line breaks in it cannot add lines to the email", async () => {
+    const calls = stubResend(accepted);
+
+    await consume([
+      { kind: "sign-in", to: "reader1@example.test", url: "https://rarepair.fans/login/confirm?token=x\n\nInjected line\n" },
+    ]);
+
+    const [sent] = calls[0]!.emails as { text: string }[];
+    expect(sent!.text).not.toContain("\nInjected line");
+    expect(sent!.text).toContain("https://rarepair.fans/login/confirm?token=xInjected%20line");
   });
 });

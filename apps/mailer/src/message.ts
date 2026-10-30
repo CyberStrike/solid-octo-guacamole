@@ -8,6 +8,8 @@ export interface SignInEmail {
 
 export type EmailMessage = SignInEmail;
 
+const SITE = "https://rarepair.fans";
+
 // Returns the message if its body keeps the contract, or null. A body that doesn't can never
 // be sent, so retrying it would only keep an address in the queue longer.
 export function parseMessage(body: unknown): EmailMessage | null {
@@ -15,6 +17,10 @@ export function parseMessage(body: unknown): EmailMessage | null {
   const { kind, to, url } = body as Record<string, unknown>;
   if (kind !== "sign-in") return null;
   if (typeof to !== "string" || !/^[^\s@]+@[^\s@]+$/.test(to)) return null;
-  if (typeof url !== "string" || !URL.canParse(url) || new URL(url).protocol !== "https:") return null;
-  return { kind, to, url };
+  if (typeof url !== "string") return null;
+  // A sign-in link goes to GET /login/confirm on the site (ARCHITECTURE, Auth and Hosts).
+  const link = URL.parse(url);
+  if (link === null || link.origin !== SITE || link.pathname !== "/login/confirm") return null;
+  // The parsed href, not the raw string: parsing drops line breaks that would add lines to the email.
+  return { kind, to, url: link.href };
 }

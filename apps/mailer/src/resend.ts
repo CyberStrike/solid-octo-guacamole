@@ -34,7 +34,7 @@ export function resendSender(
         return { outcome: "sent", ids: Array.isArray(body.data) ? body.data.map((d) => d.id) : [] };
       }
       // The body is never read on failure: providers echo the recipient in error messages.
-      await res.body?.cancel();
+      await res.body?.cancel().catch(() => {});
       // A refusal is a rate limit, a quota (both 429) or an outage (5xx).
       // https://resend.com/docs/api-reference/errors
       if (res.status === 429 || res.status >= 500) return { outcome: "refused", status: res.status };
