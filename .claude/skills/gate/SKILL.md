@@ -18,6 +18,7 @@ The design this gate checks against is `docs/ARCHITECTURE.md`. Its *Decisions so
 ## 1. Read what must be true
 
 - `gh issue view <n>`: copy its definition-of-done bullets and its `Depends on:` line, when it has one. Check each dependency is closed.
+- No issue (a tooling or docs PR, say): take the scope the PR description or the operator's request states as the definition of done, and say "no issue" in the report. Don't invent bullets.
 - Read the sections of `docs/ARCHITECTURE.md` the issue touches.
 - A bullet you cannot check locally is reported **not run**, with the reason. That covers a deployed check, a Cloudflare or Neon account, or a sign-in only the operator can do. It is never dropped.
 
@@ -68,18 +69,26 @@ The parser and sanitizer are the security boundary (ARCHITECTURE, *Sanitizing*).
 ### ingest — `apps/ingest` changed, or anything `epub` covers
 
 - The same upload delivered twice produces one work and one version (ARCHITECTURE, *EPUB processor*, Lease the job).
+- Each job writes only under its own `works/<ao3_work_id>/<upload_id>/` prefix, plus content-hashed images under `works/<ao3_work_id>/img/` (ARCHITECTURE, *Why these pieces* and *EPUB processor* step 6).
 - R2 is written before the Postgres transaction, and the work goes `live` last. A failure before the transaction leaves only files under the upload's prefix.
 - Each rejection code the diff touches has a test that reaches it, and the uploader-facing message says what happened in plain words.
-- The versioning rules hold: a newer, consistent upload replaces; a newer upload that changes earlier chapters or the tags or authors is `held_for_review`; one that is not newer is `duplicate`. No uploader gets special treatment: there are no work claims while AO3 is down.
+- The versioning rules hold: a newer, consistent upload replaces; a newer upload that changes earlier chapters or the tags or authors is `held_for_review`; one that is not newer is `duplicate`. `held_for_review` and `duplicate` are statuses, not rejections: their files are kept. No uploader gets special treatment: there are no work claims while AO3 is down.
 - The opt-out and takedown lists are checked before anything is written.
 
 ### web — `apps/web` changed
 
-- Every HTML response carries the CSP from ARCHITECTURE, *Reading*, with a nonce that differs between two requests. No `<script>` lacks it.
+- Every HTML response carries the CSP from ARCHITECTURE, *Reading*, with a nonce that differs between two requests. No `<script>` lacks it. Only the Turnstile pages (`/login`, `/upload`, `/remove`) add `frame-src https://challenges.cloudflare.com`; reader and work pages never do.
+- Those three pages show a `<noscript>` message with JS off. Reading, browsing, search and reader settings still work fully without JS.
 - Chapter HTML reaches a page only from a sanitized fragment under `works/`, never from `uploads/` or `originals/`.
-- Session cookies are `HttpOnly; Secure; SameSite=Lax` and scoped to the app host.
+- Session cookies are `HttpOnly; Secure; SameSite=Lax` with no `Domain`, so they cover the app host only.
+- Sign-in (ARCHITECTURE, *Auth*): our routes, not Better Auth, do these, because server-side `auth.api` calls skip its own checks:
+  - `POST /login` refuses a cross-site `Origin` / `Sec-Fetch-Site`.
+  - `next` is reduced to a same-site path.
+  - Sign-in is rate limited per IP and per email.
+  - `GET /login/confirm` uses nothing up.
+  - Magic-link tokens stay in the Postgres `verification` table, never KV.
 - A work rated Mature or Explicit, or with archive warnings, shows the interstitial before its first chapter.
-- Login, upload and search answer 429 when their rate limit is exceeded.
+- Login, upload and search are throttled when their rate limit is exceeded. ARCHITECTURE doesn't fix a status code yet; until it does, report the status used, and expect 429.
 - Live check (§5): walk each story the issue names. At 360 px wide the page does not scroll sideways (`document.documentElement.scrollWidth <= innerWidth`). Screenshot the changed page at 1280 px and 360 px into the scratchpad subfolder and list the paths.
 
 ### content — `apps/content` changed

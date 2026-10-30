@@ -28,7 +28,7 @@ while IFS= read -r f; do
   # path runs everything.
   case "$f" in
     # Bindings, limits and dependencies change how every Worker runs, wherever the file sits.
-    */wrangler.jsonc | */wrangler.toml | */package.json | package-lock.json) need[integration]=1 ;;
+    */wrangler.jsonc | */wrangler.toml | */package.json | package-lock.json | */package-lock.json) need[integration]=1 ;;
     packages/epub/* | fixtures/*) need[epub]=1; need[ingest]=1 ;;
     packages/db/*) need[db]=1 ;;
     apps/ingest/*) need[ingest]=1 ;;
@@ -37,9 +37,12 @@ while IFS= read -r f; do
     # No Worker and no CI job reads Markdown or issue templates under .github.
     .github/*.md | .github/ISSUE_TEMPLATE/*) need[docs]=1 ;;
     .github/* | scripts/*) need[integration]=1 ;;
-    # A skill's script is executable process, not docs.
-    .claude/*.sh | .claude/*/*.sh | .claude/*/*/*.sh | .claude/settings*.json) need[integration]=1 ;;
-    docs/* | *.md | .claude/*) need[docs]=1 ;;
+    # Markdown under .claude/ (skills, agents) is docs. Anything else there (scripts, hooks,
+    # settings) is executable process. In a case pattern `*` also matches `/`, so this covers
+    # every depth.
+    .claude/*.md) need[docs]=1 ;;
+    .claude/*) need[integration]=1 ;;
+    docs/* | *.md) need[docs]=1 ;;
     *) need[integration]=1 ;;
   esac
 done <<< "$files"

@@ -27,6 +27,11 @@ check "integration" .github/workflows/ci.yml
 check "integration" .github/workflows/ci.yml .github/pull_request_template.md
 check "integration" .claude/skills/gate/classify.sh
 check "integration" .claude/settings.json
+check "integration" .claude/hooks/pre-tool.js
+check "integration" .claude/skills/gate/lib/deep/helper.sh
+check "docs" specs/scenarios/mvp/01-auth-magic-link.md
+check "integration" spikes/better-auth/src/worker.ts
+check "integration" packages/epub/package-lock.json
 check "integration" scripts/a.sh
 check "integration" package.json
 check "web integration" apps/web/wrangler.jsonc apps/web/src/a.ts
