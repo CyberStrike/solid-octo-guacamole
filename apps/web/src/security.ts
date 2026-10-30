@@ -25,6 +25,16 @@ export const strictTransportSecurity: MiddlewareHandler = async (c, next) => {
   c.res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
 };
 
+/**
+ * Answers every request on www, whatever the method, with a 308 to the same path
+ * and query on the bare domain, before any route runs. A 308 keeps a POST a POST.
+ */
+export const wwwToBareDomain: MiddlewareHandler = async (c, next) => {
+  const url = new URL(c.req.url);
+  if (url.hostname !== "www.rarepair.fans") return next();
+  return c.body(null, 308, { Location: `https://rarepair.fans${url.pathname}${url.search}` });
+};
+
 /** A fresh base64 nonce of 16 random bytes. */
 const newNonce = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
 
