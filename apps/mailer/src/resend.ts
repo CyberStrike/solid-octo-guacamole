@@ -2,9 +2,17 @@ import type { OutgoingEmail, SendResult, Sender } from "./sender";
 
 const BATCH_URL = "https://api.resend.com/emails/batch";
 
+// One consumer runs at a time (max_concurrency 1), so a call that hangs would hold up every
+// sign-in email behind it.
+const TIMEOUT_MS = 10_000;
+
 // Resend's batch API: one call for up to 100 emails.
 // https://resend.com/docs/api-reference/emails/send-batch-emails
-export function resendSender(apiKey: string, fetcher: typeof fetch = (...a) => fetch(...a)): Sender {
+export function resendSender(
+  apiKey: string,
+  fetcher: typeof fetch = (...a) => fetch(...a),
+  timeoutMs = TIMEOUT_MS,
+): Sender {
   return {
     name: "resend",
     async sendBatch(emails: OutgoingEmail[]): Promise<SendResult> {
@@ -14,14 +22,16 @@ export function resendSender(apiKey: string, fetcher: typeof fetch = (...a) => f
           method: "POST",
           headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
           body: JSON.stringify(emails),
+          signal: AbortSignal.timeout(timeoutMs),
         });
       } catch {
-        // A network error is an outage. The error is dropped: it may echo the request.
+        // A network error or a timeout is an outage. The error is dropped: it may echo the request.
         return { outcome: "refused", status: 0 };
       }
       if (res.ok) {
-        const body = (await res.json()) as { data?: { id: string }[] };
-        return { outcome: "sent", ids: (body.data ?? []).map((d) => d.id) };
+        // Accepted, so it is sent even when the answer can't be read: retrying would send it twice.
+        const body = (await res.json().catch(() => ({}))) as { data?: { id: string }[] };
+        return { outcome: "sent", ids: Array.isArray(body.data) ? body.data.map((d) => d.id) : [] };
       }
       // The body is never read on failure: providers echo the recipient in error messages.
       await res.body?.cancel();

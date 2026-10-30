@@ -41,6 +41,19 @@ describe("Resend batch sender", () => {
     expect(await sender.sendBatch([email])).toEqual({ outcome: "refused", status: 0 });
   });
 
+  it("a call that never answers times out as a refusal", async () => {
+    // Answers only by rejecting when the sender aborts the request.
+    const hanging: typeof fetch = (_input, init) =>
+      new Promise((_, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)));
+    const sender = resendSender("re_test_key", hanging, 10);
+    expect(await sender.sendBatch([email])).toEqual({ outcome: "refused", status: 0 });
+  });
+
+  it("an accepted batch whose answer can't be read is still sent", async () => {
+    const sender = resendSender("re_test_key", answering(() => new Response("<html>", { status: 200 })));
+    expect(await sender.sendBatch([email])).toEqual({ outcome: "sent", ids: [] });
+  });
+
   it.each([400, 401, 403, 422])("a %i is a failure, not a refusal", async (status) => {
     const sender = resendSender("re_test_key", answering(() => new Response("{}", { status })));
     expect(await sender.sendBatch([email])).toEqual({ outcome: "failed", status });
