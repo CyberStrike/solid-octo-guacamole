@@ -102,5 +102,54 @@ describe("06 AO3 preface and chapters", () => {
       ]);
       expect(work.reviewReasons).toEqual([]);
     });
+
+    it("uses only the toc nav when a landmarks nav comes first", async () => {
+      const landmarks = `<nav epub:type="landmarks"><ol>
+<li><a epub:type="bodymatter" href="Nav%20Parts_split_001.xhtml#toc3">Landmark start</a></li>
+</ol></nav>`;
+      const work = await processEpub(epub3(navDoc(`${landmarks}\n${tocNav(flatItems())}`)));
+      expect(work.chapters.map((c) => [c.n, c.title])).toEqual([
+        [1, "Nav first"],
+        [2, "Nav second"],
+        [3, "Nav third"],
+      ]);
+      expect(work.reviewReasons).toEqual([]);
+    });
+
+    it("resolves nav hrefs against the nav document's directory", async () => {
+      const work = await processEpub(epub3(navDoc(tocNav(flatItems("../"))), { navPath: "text/nav.xhtml" }));
+      expect(work.chapters.map((c) => [c.n, c.title])).toEqual([
+        [1, "Nav first"],
+        [2, "Nav second"],
+        [3, "Nav third"],
+      ]);
+      expect(work.reviewReasons).toEqual([]);
+    });
+
+    it("falls back to headings when the nav has no toc and there is no NCX", async () => {
+      const landmarksOnly = `<nav epub:type="landmarks"><ol>
+<li><a epub:type="bodymatter" href="Nav%20Parts_split_000.xhtml">Landmark start</a></li>
+</ol></nav>`;
+      const work = await processEpub(epub3(navDoc(landmarksOnly)));
+      expect(work.chapters.map((c) => [c.n, c.title])).toEqual([
+        [1, "One"],
+        [2, "Two"],
+        [3, "Three"],
+      ]);
+      expect(work.reviewReasons).toEqual([]);
+    });
+
+    it("reads the nav when it is also in the spine", async () => {
+      const entries = unzipSync(epub3(navDoc(tocNav(flatItems()))));
+      const opf = strFromU8(entries["content.opf"]!).replace("<spine>", '<spine>\n    <itemref idref="nav" linear="no"/>');
+      const { mimetype: _, ...rest } = entries;
+      const work = await processEpub(zipEntries({ ...rest, "content.opf": opf }));
+      expect(work.chapters.map((c) => [c.n, c.title])).toEqual([
+        [1, "Nav first"],
+        [2, "Nav second"],
+        [3, "Nav third"],
+      ]);
+      expect(work.reviewReasons).toEqual([]);
+    });
   });
 });
