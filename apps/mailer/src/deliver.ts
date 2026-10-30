@@ -1,32 +1,21 @@
 import type { OutgoingEmail, SendResult, Sender } from "./sender";
 
-// Resend takes at most 100 emails per batch call.
-const MAX_PER_CALL = 100;
-
 export interface Delivery {
   sender: string;
   result: SendResult;
-  // Indexes into the emails passed to deliver().
-  indexes: number[];
 }
 
-// Sends the emails in as few calls as the providers allow.
-export async function deliver(emails: OutgoingEmail[], senders: Sender[]): Promise<Delivery[]> {
-  const deliveries: Delivery[] = [];
-  for (let start = 0; start < emails.length; start += MAX_PER_CALL) {
-    const chunk = emails.slice(start, start + MAX_PER_CALL);
-    const indexes = chunk.map((_, i) => start + i);
-    deliveries.push({ ...(await sendWithFailover(chunk, senders)), indexes });
-  }
-  return deliveries;
-}
-
-// Tries each provider in order. Only a refusal moves on to the next one.
-async function sendWithFailover(emails: OutgoingEmail[], senders: Sender[]) {
-  let last: { sender: string; result: SendResult } | null = null;
+// Sends the emails of one queue batch in one call, trying each provider in order.
+// Only a refusal moves on to the next provider. A queue batch holds at most 100 messages,
+// which is also the most Resend takes in one call.
+export async function deliver(
+  emails: OutgoingEmail[],
+  senders: readonly [Sender, ...Sender[]],
+): Promise<Delivery> {
+  let delivery!: Delivery;
   for (const sender of senders) {
-    last = { sender: sender.name, result: await sender.sendBatch(emails) };
-    if (last.result.outcome !== "refused") break;
+    delivery = { sender: sender.name, result: await sender.sendBatch(emails) };
+    if (delivery.result.outcome !== "refused") break;
   }
-  return last!;
+  return delivery;
 }

@@ -27,23 +27,19 @@ describe("01-auth-magic-link", () => {
     const resend = stubSender("resend", { outcome: "refused", status: 429 });
     const second = stubSender("second", { outcome: "sent", ids: ["second-1"] });
 
-    const deliveries = await deliver([email(1)], [resend.sender, second.sender]);
+    const delivery = await deliver([email(1)], [resend.sender, second.sender]);
 
     expect(second.batches).toEqual([[email(1)]]);
-    expect(deliveries).toEqual([
-      { sender: "second", result: { outcome: "sent", ids: ["second-1"] }, indexes: [0] },
-    ]);
+    expect(delivery).toEqual({ sender: "second", result: { outcome: "sent", ids: ["second-1"] } });
   });
 
   it("A failure that is not a refusal does not go to the second provider", async () => {
     const resend = stubSender("resend", { outcome: "failed", status: 422 });
     const second = stubSender("second", { outcome: "sent", ids: ["second-1"] });
 
-    const deliveries = await deliver([email(1)], [resend.sender, second.sender]);
+    const delivery = await deliver([email(1)], [resend.sender, second.sender]);
 
     expect(second.batches).toEqual([]);
-    expect(deliveries).toEqual([
-      { sender: "resend", result: { outcome: "failed", status: 422 }, indexes: [0] },
-    ]);
+    expect(delivery).toEqual({ sender: "resend", result: { outcome: "failed", status: 422 } });
   });
 });
