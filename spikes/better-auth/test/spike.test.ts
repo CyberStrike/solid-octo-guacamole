@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { exports } from "cloudflare:workers";
 import { getMigrations } from "better-auth/db/migration";
 import { beforeAll, describe, expect, it } from "vitest";
-import { makeAuth, type CapturedEmail, type Env } from "../src/worker";
+import { makeAuth, safeNext, type CapturedEmail, type Env } from "../src/worker";
 
 const E = env as unknown as Env;
 const BASE = "https://archive.test";
@@ -204,6 +204,33 @@ describe("Q2: no-JS flow", () => {
     expect(setCookies(first)[0]).toMatch(/HttpOnly; Secure; SameSite=Lax/);
     const second = await post();
     expect(second.headers.get("location")).toContain("error=INVALID_TOKEN");
+    expect(await sessionsFor(email)).toBe(1);
+  });
+
+  it("safeNext rejects paths that only become protocol-relative after normalization", () => {
+    for (const evil of ["/a/..//evil.example", "/./..//evil.example", "/a/%2e%2e//evil.example", "//evil.example", "/\\evil.example"]) {
+      expect(safeNext(evil), evil).toBe("/");
+    }
+    expect(safeNext("/works/12?x=1")).toBe("/works/12?x=1");
+    expect(safeNext("/a/../works/12")).toBe("/works/12");
+  });
+
+  it("confirm POST with next=/a/..//evil.example stays on the site", async () => {
+    const email = "dotdot@example.test";
+    await postLogin(email, "/works/5");
+    const u = new URL((await lastMail(email)).confirmUrl);
+    const res = await fetchW("/auth/confirm", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        origin: BASE,
+        "sec-fetch-site": "same-origin",
+      },
+      // A tampered confirm form: next is replaced after the email was sent.
+      body: new URLSearchParams({ token: u.searchParams.get("token")!, next: "/a/..//evil.example" }).toString(),
+    });
+    expect(res.status).toBe(302);
+    expect(new URL(res.headers.get("location")!).origin).toBe(BASE);
     expect(await sessionsFor(email)).toBe(1);
   });
 });

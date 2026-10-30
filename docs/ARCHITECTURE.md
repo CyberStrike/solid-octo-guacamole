@@ -336,7 +336,9 @@ can be snapshotted.
   - it checks `Origin` / `Sec-Fetch-Site`
   - it rate limits per IP and per email with the Workers rate-limiting binding
   - it reduces `next` to a same-site path (root-relative only: no `//`, no
-    `\`, no control characters) before passing it on
+    `\`, no control characters) before passing it on. The `//` check runs
+    again after URL normalization, because `/a/..//evil.example` normalizes
+    to `//evil.example`.
   Tokens last 15 minutes and are stored hashed (`storeToken: "hashed"`) in
   Better Auth's `verification` table.
 - **Using the link.** The email links to our `GET /login/confirm?token=…`,

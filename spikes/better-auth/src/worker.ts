@@ -58,6 +58,9 @@ export function safeNext(value: unknown): string {
   try {
     const u = new URL(value, "https://x.invalid");
     if (u.origin !== "https://x.invalid") return "/";
+    // Check again after normalization: "/a/..//evil.example" passes the checks
+    // above but normalizes to "//evil.example", a protocol-relative URL.
+    if (u.pathname.startsWith("//")) return "/";
     return u.pathname + u.search;
   } catch {
     return "/";
