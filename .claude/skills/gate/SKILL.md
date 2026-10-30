@@ -52,7 +52,7 @@ A check that fails in a workspace the item should not have touched is a stop eve
 
 ### epub — `packages/epub` or `fixtures/` changed
 
-The parser and sanitizer are the security boundary (ARCHITECTURE, *Sanitizing*). Its tests run in the Workers runtime under `@cloudflare/vitest-plugin`, since `HTMLRewriter` does not exist in Node.
+The parser and sanitizer are the security boundary (ARCHITECTURE, *Sanitizing*). Its tests run in the Workers runtime (`packages/epub/vitest.config.ts`), since `HTMLRewriter` does not exist in Node.
 
 - Every fixture's snapshot still matches, or each changed snapshot is listed in the PR with the reason. A snapshot updated without a reason is a failure.
 - The hostile fixtures are still rejected with their codes: zip bomb, path traversal, missing OPF.
