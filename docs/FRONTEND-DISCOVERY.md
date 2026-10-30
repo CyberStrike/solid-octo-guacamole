@@ -73,8 +73,10 @@ Reading never requires an account (ARCHITECTURE, *Auth*).
    so this step needs JavaScript; with it off, the page says so.
 2. A "Check your email" page tells them the link lasts 15 minutes and may take
    a minute to arrive.
-3. The link signs them in and sends them back to the page they started from.
-   It uses a stored `next` value, never an open redirect.
+3. The link opens a short page with a "Sign in" button (a POST form, so a mail
+   scanner opening the link in advance can't use it up). Pressing it signs them
+   in, with or without JavaScript, and sends them back to the page they started
+   from. It uses a stored same-site `next` value, never an open redirect.
 
 **3. Upload works** (uploader)
 1. They pick one or more `.epub` files on the upload page and submit. Each
@@ -129,6 +131,7 @@ need JavaScript and show a `<noscript>` message without it. Elsewhere the
 | Entire work | `/works/:id/full` | all | All chapters on one page | Saves position |
 | Reader settings | `/settings/reader` | all | POST form sets a cookie, then redirects back | Applied live from the reader |
 | Sign in | `/login` | all | `<noscript>` message: signing in needs JavaScript | Email form with Turnstile, "check your email", error states |
+| Confirm sign-in | `/login/confirm?token=…` | all | "Sign in" button (POST form); used or expired links go back to `/login` with a message | — |
 | Upload | `/upload` | signed in | `<noscript>` message: uploading needs JavaScript | Turnstile, then direct-to-R2 upload with progress, one or more files |
 | My uploads | `/me/uploads` | signed in | Status list that refreshes itself with `<meta http-equiv="refresh">` while anything is processing | Updates in place |
 | Remove my work / opt out | `/remove` (`?work=:id` prefills) | all | `<noscript>` message with the moderators' contact address | Request form with Turnstile, then a confirmation page |

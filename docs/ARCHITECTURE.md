@@ -15,7 +15,7 @@ AO3 URL and says plainly that this is an unofficial stopgap.
 | Who can read uploads | Shared public archive. Every upload is readable by everyone, with takedowns and author removal requests from day one |
 | Hosting | Cloudflare: Workers, R2, Queues, KV, plus Neon Postgres through Hyperdrive |
 | Load target | Surge-ready: assume tens of thousands of signups in the first days |
-| Sign-in | Email magic link, with no passwords stored |
+| Sign-in | Email magic link with no passwords stored, through Better Auth (self-hosted in the Worker, data in Neon) and Resend |
 | Accepted files | AO3-native epub exports only. FanFicFare support comes later |
 | New versions | Replace the current version automatically only if newer and consistent with it. Otherwise hold for review |
 | Author identity | No work claims and no author verification while AO3 is down. Removal and opt-out are requests anyone can make, without proving who they are |
@@ -32,9 +32,9 @@ AO3 URL and says plainly that this is an unofficial stopgap.
    │             └──────┬──────────────┬──────────────────┬───────────────────────┘
    │                    │ Hyperdrive   │ KV               │ Queue: ingest
    │                    ▼              ▼                  ▼
-   │              Neon Postgres    sessions,         ingest Worker (consumer)
-   │              (metadata,       reading pos.,      • unzip, parse OPF + AO3 preface
-   │               tags, FTS)      rate counters      • sanitize chapter XHTML
+   │              Neon Postgres    caches,           ingest Worker (consumer)
+   │              (metadata, FTS,  reading pos.,      • unzip, parse OPF + AO3 preface
+   │               users, auth)    rate counters      • sanitize chapter XHTML
    │                    ▲                             • write chapters to R2, rows to PG
    │                    └─────────────────────────────┘
    │  upload: presigned PUT from the browser (needs JS, like every Turnstile form)
@@ -76,7 +76,9 @@ AO3 URL and says plainly that this is an unofficial stopgap.
 ## Data model (first cut)
 
 ```sql
-users        (id, email, display_name, created_at, role, upload_quota_used, banned_at)
+user         (id, email, name, email_verified, image, created_at, updated_at,  -- Better Auth's table
+              role, upload_quota_used, banned_at)                             -- plus our fields
+session, account, verification  -- Better Auth's tables; verification holds hashed magic-link tokens
 works        (id, ao3_work_id UNIQUE NULL, title, summary_html, rating, language,
               words, chapters_count, complete, published_at, updated_at,
               status,            -- processing | live | held | hidden | removed
@@ -315,23 +317,59 @@ can be snapshotted.
   `Content-Disposition: attachment` from `content.<domain>`. It's never
   displayed inline.
 
-## Auth (magic link)
+## Auth (magic link: Better Auth + Resend)
 
-- `POST /login` takes an email address and Turnstile. Rate limits apply per IP
-  and per email. It emails a single-use token valid for 15 minutes, stored in KV
-  as a hash.
-- `GET /login/verify?t=…` uses up the token and sets a session cookie
-  (`HttpOnly; Secure; SameSite=Lax`) scoped to `app.<domain>` only. Sessions are
-  stored in KV.
-- Emails go through a queue to a sender behind a small interface. Volume isn't
-  the risk; sending limits are:
-  - **Cloudflare Email Sending** is in beta and needs Workers Paid. It includes
-    3,000 emails a month, then $0.35 per 1,000. New accounts start on a
-    "conservative daily quota" that rises as the domain builds a reputation,
-    so a signup surge on a brand-new domain will hit that cap.
-  - So go live with a second provider (Postmark, SES or Resend) wired in as
-    failover from day one, and ask both for higher limits before launch. Watch
-    out: Resend's default API rate limit is about 2 requests per second.
+- **Library.** [Better Auth](https://www.better-auth.com/) 1.7 with its
+  magic-link plugin, running inside the web Worker. It's open source and
+  self-hosted: users and sessions live in Neon, and no third-party script
+  reaches the browser, which only ever sees our own HTML forms. A spike against
+  1.7.14 confirmed the behaviour below. Notes:
+  - Workers needs `nodejs_compat`, because Better Auth uses `AsyncLocalStorage`.
+  - Build the auth instance per request from `env` (Hyperdrive, secrets),
+    because bindings only exist inside a request.
+  - Pin `better-auth` and `@better-auth/kysely-adapter` to the same version.
+- **Requesting a link.** `POST /login` is our own route: a plain form with
+  Turnstile. Better Auth's own endpoint only accepts JSON, so our route calls
+  `auth.api.signInMagicLink` on the server. Calls made that way skip Better
+  Auth's CSRF check, its redirect check and its rate limiter, so our route does
+  all three:
+  - it checks `Origin` / `Sec-Fetch-Site`
+  - it rate limits per IP and per email with the Workers rate-limiting binding
+  - it reduces `next` to a same-site path (root-relative only: no `//`, no
+    `\`, no control characters) before passing it on
+  Tokens last 15 minutes and are stored hashed (`storeToken: "hashed"`) in
+  Better Auth's `verification` table.
+- **Using the link.** The email links to our `GET /login/confirm?token=…`,
+  which only shows a "Sign in" button: a POST form that uses nothing up. Mail
+  scanners that open links in advance therefore can't burn it.
+  `POST /login/confirm` calls `auth.api.magicLinkVerify`, which redirects to
+  `next` with the session cookie. A used or expired link comes back to `/login`
+  with a plain message.
+- **Single use.** The token is consumed by one `DELETE … RETURNING` in
+  Postgres, and only the request that gets the row back is signed in, so two
+  simultaneous uses can't both succeed. This holds only while tokens live in
+  the database. KV has no atomic get-and-delete, so if KV is ever added as
+  Better Auth's `secondaryStorage`, set `verification.storeInDatabase: true`.
+- **Session cookie.**
+  `__Secure-better-auth.session_token; HttpOnly; Secure; SameSite=Lax; Path=/`,
+  set with `useSecureCookies: true`. There is no `Domain`
+  (`crossSubDomainCookies` stays off), so the cookie never reaches
+  `content.<domain>`.
+- **Better Auth's own rate limiter** only covers requests through
+  `auth.handler`. Its default memory store is per isolate on Workers, so set
+  `rateLimit.storage: "database"` (or a Durable Object through
+  `customStorage`), with `ipAddressHeaders: ["cf-connecting-ip"]`.
+- **Email: Resend primary.** Emails go through a queue to a sender behind a
+  small interface. Volume isn't the risk; sending limits are.
+  - The queue consumer sends with Resend's batch API, to stay under its
+    per-second API limit (by default about 2 requests a second; ask for more
+    before launch).
+  - Mail goes from a dedicated subdomain with SPF, DKIM and DMARC, warmed up
+    before launch.
+  - Postmark or SES is wired in as failover from day one.
+  - Cloudflare Email Sending isn't used for launch: it's in beta, and new
+    accounts start on a "conservative daily quota" that a signup surge would
+    hit.
   - The login page tells people that links can take a minute to arrive during
     busy periods.
 - Accounts are needed only to upload, report or save reading position. Reading
