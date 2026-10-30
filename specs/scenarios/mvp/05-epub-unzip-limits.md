@@ -3,7 +3,7 @@
 Relates to: docs/ARCHITECTURE.md § EPUB processor (step 2), § Rejection codes, § Testing
 
 ## Setup
-- `packages/epub` unzips with `fflate` and runs under `@cloudflare/vitest-pool-workers`
+- `packages/epub` unzips with `fflate`, and its tests run in the Workers runtime
 - Hand-built bad files: zip bombs, a zip whose index under-reports sizes, path traversal names, duplicate entry names, wrong or missing `mimetype` entry, a non-zip file, a ZIP64 archive, a zip whose central directory disagrees with its local headers, a missing `META-INF/container.xml`, a missing OPF, an OPF that declares XML entities, a malformed `container.xml`, OPF or NCX, a document nested more than 256 elements deep, and an epub whose documents hold more than 300,000 elements and text nodes in total
 - Size-edge fixtures built for each limit: entry counts of 2,000 and 2,001; uncompressed totals of exactly 100 MB and just over; a single entry of exactly 20 MB and just over
 
