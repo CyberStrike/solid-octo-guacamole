@@ -23,7 +23,7 @@ fandoms and pseuds in it are invented placeholders.
 | Author identity | No claims, no author accounts, no "my works". Removal and opt-out are a public request form that needs no sign-in (ARCHITECTURE, *Author requests & takedowns*) |
 | Card summaries | Clamped to 3 lines with a "more" link to the work page, which shows the full summary. Rating and archive warnings are separate lines and are never clamped. A content note in summary line 4 is hidden on cards, and that's accepted |
 | Home page | Leads with search. Popular fandoms and recently added works go below |
-| Original AO3 link | A live link with a note that it works again once AO3 is back. Nothing changes when AO3 returns |
+| Original AO3 link | A live link with a note that it works again once AO3 is back. Nothing changes automatically when AO3 returns; redirecting works to AO3 is part of a later wind-down the operator starts by hand |
 | Discovery output | This doc plus low-fidelity clickable wireframes |
 
 ## Principles
@@ -92,8 +92,11 @@ Reading never requires an account (ARCHITECTURE, *Auth*).
 4. There's no proof of identity, because there's nothing to check against
    while AO3 is down. That's stated plainly on the form.
 
-**5. Report a work** (anyone)
+**5. Report a work** (signed-in user)
 1. "Report" on a work page opens a short form: a reason and optional details.
+   A signed-out reader is sent to sign in first and brought back to the form
+   (the same stored `next` value as sign-in). Authors who want a work removed
+   use `/remove` instead, which needs no account.
 2. A confirmation page explains what happens next.
 
 **6. Moderate** (moderator)
@@ -123,7 +126,7 @@ enhancement only.
 | Upload | `/upload` | signed in | Multipart form POST, one or more files | Direct-to-R2 upload with progress |
 | My uploads | `/me/uploads` | signed in | Status list that refreshes itself with `<meta http-equiv="refresh">` while anything is processing | Updates in place |
 | Remove my work / opt out | `/remove` (`?work=:id` prefills) | all | Request form, then a confirmation page | — |
-| Report | `/works/:id/report` | all | Form, then a confirmation page | — |
+| Report | `/works/:id/report` | signed in (others are sent to sign in) | Form, then a confirmation page | — |
 | DMCA notice | `/dmca` | all | Statutory notice form | — |
 | Moderation queues | `/admin/{reports,takedowns,requests}` | moderator | Tables with detail pages | — |
 | About / terms / privacy | `/about`, `/terms`, `/privacy` | all | Static | — |

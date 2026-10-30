@@ -51,7 +51,11 @@ AO3 URL and says plainly that this is an unofficial stopgap.
 - **R2 for all bytes.** It has no egress fees, which matters most when the
   workload is mostly serving books. Fresh uploads land in `uploads/`, which
   expires on its own. Original files we keep go in `originals/`, and processed
-  chapters go under `works/<work_id>/v<version>/`.
+  chapters go under `works/<ao3_work_id>/<upload_id>/`: one prefix per version,
+  keyed by the upload that produced it, so a retried job overwrites only its own
+  files. `work_versions.r2_prefix` records it; version numbers live only in
+  Postgres. The AO3 work ID is known once the preface is parsed, before anything
+  is written.
 - **Neon Postgres over D1.** D1 is capped at 10 GB per database, the cap can't
   be raised, and each database runs one query at a time. AO3 has more than 15M
   works. Even metadata-only rows (title, summary, tags) for a large share of
@@ -84,7 +88,7 @@ tags         (id, type, name, name_norm) -- type: fandom|relationship|character|
 work_tags    (work_id, tag_id)
 uploads      (id, user_id, r2_key, sha256, bytes, status, lease_until,
               error_stage, error, work_id NULL, created_at)
-reports      (id, work_id, reporter_id NULL, kind, body, status, created_at)
+reports      (id, work_id, reporter_id, kind, body, status, created_at)  -- reporting needs an account
 takedowns    (id, work_id, requester, basis, status, resolved_by, created_at)
 requests     (id, kind, work_id NULL, pseud_norm NULL, contact_email, statement,
               status, ip_hash, created_at)        -- kind: remove_work | opt_out
@@ -120,8 +124,9 @@ merge synonyms later.
 4. **Process.** The ingest consumer runs with a batch size of about 5, retries,
    and a dead-letter queue. See the EPUB processor section below.
 5. **Track.** The uploader's page polls `GET /uploads/:id` for its status:
-   `processing`, `live`, `held_for_review`, or one of the rejection codes
-   below.
+   `processing`, `live`, `held_for_review`, `duplicate`, or one of the
+   rejection codes below. `held_for_review` and `duplicate` are not
+   rejections: the upload is kept, it just isn't (yet) the current version.
 
 ### EPUB processor
 
@@ -137,8 +142,8 @@ Chapter text isn't indexed.
 1. **Lease the job.** Queues may deliver a message more than once, so the job starts
    with an atomic `UPDATE uploads SET status='processing', lease_until=…` that
    only matches when the upload is `pending` or its lease has expired. All
-   output goes under a prefix keyed by the upload ID, so a retry overwrites its
-   own files and never touches another run's.
+   output goes under `works/<ao3_work_id>/<upload_id>/`, so a retry overwrites
+   its own files and never touches another run's.
 2. **Unzip with limits.** Read the object from R2 (25 MB or less) and check
    the zip's file index before decompressing anything:
    - at most 2,000 entries
@@ -184,7 +189,7 @@ Chapter text isn't indexed.
 6. **Sanitize.** Apply the allowlist below to chapter bodies, the summary and
    the notes. Images listed in the manifest are checked by their file signature
    (PNG, JPEG, GIF or WebP only), capped at 5 MB each, stored by SHA-256 under
-   `works/<id>/img/`, and their links rewritten. SVG, fonts and stylesheets are
+   `works/<ao3_work_id>/img/`, and their links rewritten. SVG, fonts and stylesheets are
    dropped.
 7. **Versioning.** Each work is keyed by `ao3_work_id`. The first upload
    creates the work. A later upload:
@@ -197,6 +202,8 @@ Chapter text isn't indexed.
      chapters differ, or if its tags or authors changed. This blocks someone
      editing an epub to tamper with a work.
    - **is marked `duplicate`** if it isn't newer. It's stored but not used.
+     This is a status, not a rejection: the uploader is told the work is
+     already in the archive.
 
    Nobody's upload gets special treatment, the author's included. We can't
    tell who the author is while AO3 is down.
@@ -206,13 +213,14 @@ Chapter text isn't indexed.
    Postgres transaction that upserts the work, adds the version, chapters and
    tags, and points `current_version_id` at the new version. Set the work
    `live` last. If the job fails before the transaction, R2 is left with
-   orphaned files under an upload prefix, which the cleanup rules delete. A
+   orphaned files under its `<upload_id>/` prefix, which the cleanup rules
+   delete. A
    job that fails for good goes to the dead-letter queue as `parse_failed`,
    with the stage and error recorded on the upload row.
 
 **Rejection codes:** `not_epub`, `zip_bomb`, `too_large`, `not_ao3`,
-`opted_out`, `duplicate`, `parse_failed`. Each one shows a plain-language
-message to the uploader.
+`opted_out`, `parse_failed`. Each one shows a plain-language message to the
+uploader. (`held_for_review` and `duplicate` are statuses, not rejections.)
 
 **Testing.** `HTMLRewriter` exists only in the Workers runtime, so the
 `packages/epub` tests run under `@cloudflare/vitest-pool-workers`. Fixtures are
@@ -349,7 +357,7 @@ epub, under the normal versioning rules.
   together, restore in bulk, and block a requester. We accept this risk: an
   unfair hide is temporary, while ignoring a genuine author is not.
 - **Removal really removes.** Setting a work to `removed`, through a takedown,
-  an author request or a moderator, also deletes `works/<id>/` and the raw
+  an author request or a moderator, also deletes `works/<ao3_work_id>/` and the raw
   upload from R2, and purges the work's pages, cached fragments, images and
   download URLs from the cache. Images and downloads are cached as
   `immutable`, so without the purge parts of a removed work stay reachable.
@@ -357,8 +365,11 @@ epub, under the normal versioning rules.
   a designated agent registered with the US Copyright Office, a public takedown
   form, a counter-notice process and a repeat-infringer policy. Get a lawyer to
   review this before launch.
-- **Reports.** Every work has a report button. Works with N or more open
-  reports are hidden automatically until a moderator looks at them.
+- **Reports.** Every work has a report button. Reporting needs a signed-in
+  account, so each report has a reporter who can be rate limited or blocked;
+  signed-out readers are sent to sign in and brought back to the form. Works
+  with N or more open reports are hidden automatically until a moderator looks
+  at them. (Authors asking for removal use `/remove`, which needs no account.)
 - **Moderation.** A small admin area has queues for reports, takedowns and
   removal or opt-out requests, plus actions to hide, remove, restore, block a
   requester and ban an uploader.
@@ -408,8 +419,9 @@ epub, under the normal versioning rules.
 - Comments (needs much more moderation, so leave it out unless people ask)
 - Bulk upload from a zip of epubs
 - FanFicFare epubs of AO3 works (second preface parser, keyed on `dc:source`)
-- Export and shut down: once AO3 returns, redirect every work to its AO3 URL
-  and wind the site down
+- Export and shut down: nothing changes automatically when AO3 returns (the
+  AO3 links simply start working). The operator starts the wind-down by hand:
+  redirect every work to its AO3 URL, then shut the site down
 
 ## Proposed repo layout
 

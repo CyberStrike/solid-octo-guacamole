@@ -1,0 +1,102 @@
+# Scenario: Chapter reader and strict CSP
+
+Relates to: docs/ARCHITECTURE.md § Decisions so far (Chapter rendering), § Reading; docs/FRONTEND-DISCOVERY.md § Key journeys (1. Find and read a work), § Page inventory (Chapter reader, Entire work), § Components (Chapter nav), § Reading experience
+
+## Setup
+- A live work W with 5 chapters, chapter notes on chapter 2 and end notes on chapter 2, rated General Audiences with no archive warnings
+- Chapter fragments are stored in R2 under the version's prefix
+- A chapter fixture containing an injected `<script>` that survived the sanitizer (test-only)
+
+## Cases
+
+### Chapter renders inline in the page
+- GIVEN live work W
+- WHEN a reader opens `/works/:id/chapters/2`
+- THEN the sanitized chapter fragment is server-rendered inline inside `<article class="chapter">`
+- AND the page contains no `<iframe>` and no client-side epub engine
+
+### Every app page sends the strict CSP
+- GIVEN any page served by `app.<domain>`
+- WHEN the response is returned
+- THEN it has the header `default-src 'self'; script-src 'nonce-{n}' 'strict-dynamic'; style-src 'self'; img-src 'self' https://content.<domain>; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`
+
+### Nonce is fresh per response
+- GIVEN the same chapter page requested twice
+- WHEN both responses are returned
+- THEN each has a different nonce in its CSP header
+
+### Fresh nonce on edge-cached pages for signed-out readers
+- GIVEN a chapter page served to signed-out readers from a short edge cache
+- WHEN two signed-out readers request it
+- THEN each response still carries its own nonce
+
+### Script that gets past the sanitizer does not run
+- GIVEN the test chapter containing an injected `<script>` without the page nonce
+- WHEN the chapter page is loaded in a browser
+- THEN the script does not execute
+
+### Page cannot be framed
+- GIVEN any app page
+- WHEN another origin tries to embed it in a frame
+- THEN the browser refuses because of `frame-ancestors 'none'`
+
+### Chapter content is contained
+- GIVEN the reader stylesheet
+- WHEN a chapter page renders
+- THEN `.chapter` has `contain: content` and positioning stays locked inside it
+
+### Chapter nav at both ends
+- GIVEN chapter 3 of W
+- WHEN the page renders
+- THEN previous, a chapter `<select>` and next appear at both the top and the bottom of the chapter
+
+### Chapter select works without JS
+- GIVEN chapter 3 of W with JavaScript off
+- WHEN the reader picks chapter 5 in the `<select>` and presses its form button
+- THEN chapter 5 opens
+
+### First chapter has no previous link
+- GIVEN chapter 1 of W
+- WHEN the page renders
+- THEN there is no previous-chapter link
+
+### Last chapter has no next link
+- GIVEN chapter 5 of W
+- WHEN the page renders
+- THEN there is no next-chapter link
+
+### Notes surround the chapter text
+- GIVEN chapter 2 of W with chapter notes and end notes
+- WHEN the page renders
+- THEN chapter notes come before the text and end notes after it, in a smaller, muted style
+- AND the work summary is not repeated
+
+### Slim top bar
+- GIVEN any chapter of W
+- WHEN the page renders
+- THEN the only chrome is a slim top bar with the work title and a settings link, which scrolls away
+
+### Entire work on one page
+- GIVEN live work W
+- WHEN a reader opens `/works/:id/full`
+- THEN every chapter is shown on one page in order
+
+### Chapter number out of range
+- GIVEN live work W with 5 chapters
+- WHEN a reader opens `/works/:id/chapters/6`
+- THEN no chapter is rendered and the not-found page is shown
+
+### Browser features keep working
+- GIVEN a chapter page
+- WHEN the reader uses Ctrl+F, prints, selects text or uses a screen reader
+- THEN the chapter text is found, printed, selectable and read as normal page content
+
+### Same fragment serves every reader
+- GIVEN two readers with different font, spacing and theme settings
+- WHEN they open the same chapter
+- THEN both pages embed the identical chapter fragment, served from the Worker's Cache API after the first read
+
+### Fragments are immutable per version
+- GIVEN a work whose current version was replaced
+- WHEN a reader opens a chapter
+- THEN the fragment comes from the new version's prefix, and the old version's fragments are unchanged
