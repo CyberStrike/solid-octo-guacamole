@@ -3,41 +3,41 @@
 Relates to: docs/ARCHITECTURE.md § System overview, § Why these pieces (Two layers of XSS defense), § Reading (Download original epub), § Surge controls (Edge cache), § Author requests & takedowns (Removal really removes)
 
 ## Setup
-- The content Worker serves `content.<domain>`, a separate origin from `app.<domain>`
+- The content Worker serves `content.rarepair.fans`, a separate origin from `rarepair.fans`
 - A live work W with images stored under `works/<ao3_work_id>/img/` and its original epub in `originals/`
-- A signed-in user with an `app.<domain>` session cookie
+- A signed-in user with a `rarepair.fans` session cookie
 
 ## Cases
 
 ### Images are served from the content origin
 - GIVEN a chapter of work W that contains an image
 - WHEN a reader loads the chapter
-- THEN the image URL is on `content.<domain>`, not `app.<domain>`
+- THEN the image URL is on `content.rarepair.fans`, not `rarepair.fans`
 
 ### Content origin sets no cookies
-- GIVEN any request to `content.<domain>` for an image or original download
+- GIVEN any request to `content.rarepair.fans` for an image or original download
 - WHEN the response is returned
 - THEN it has no `Set-Cookie` header
 
 ### App session cookie is not sent to the content origin
-- GIVEN a signed-in user whose session cookie is scoped to `app.<domain>`
-- WHEN their browser requests an image from `content.<domain>`
+- GIVEN a signed-in user whose session cookie is scoped to `rarepair.fans`
+- WHEN their browser requests an image from `content.rarepair.fans`
 - THEN the request carries no session cookie
 
 ### Responses forbid content sniffing
-- GIVEN any image or original download served by `content.<domain>`
+- GIVEN any image or original download served by `content.rarepair.fans`
 - WHEN the response is returned
 - THEN it has `X-Content-Type-Options: nosniff`
 
 ### Images and downloads are cached as immutable
-- GIVEN any image or original download served by `content.<domain>`
+- GIVEN any image or original download served by `content.rarepair.fans`
 - WHEN the response is returned
 - THEN it has `Cache-Control: public, max-age=31536000, immutable`
 
 ### Original epub downloads as an attachment
 - GIVEN work W's page
 - WHEN a reader follows "Download original epub"
-- THEN the file is served from `originals/` on `content.<domain>`
+- THEN the file is served from `originals/` on `content.rarepair.fans`
 - AND the response has `Content-Disposition: attachment`
 
 ### Original epub is never displayed inline
@@ -48,7 +48,7 @@ Relates to: docs/ARCHITECTURE.md § System overview, § Why these pieces (Two la
 ### Content origin only serves images and original downloads
 - GIVEN the content Worker
 - WHEN a request asks it for a chapter fragment or an app page
-- THEN it does not serve chapter HTML; chapters are only rendered on `app.<domain>`
+- THEN it does not serve chapter HTML; chapters are only rendered on `rarepair.fans`
 
 ### Removed work's images and downloads stop being served
 - GIVEN work W whose images and original download have been fetched and edge-cached

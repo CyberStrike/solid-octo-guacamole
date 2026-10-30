@@ -68,7 +68,7 @@ Relates to: docs/ARCHITECTURE.md § Sanitizing (security requirement), § EPUB p
 ### Images inside the epub are rewritten to the content origin
 - GIVEN an `img` whose `src` points to an image in the epub manifest
 - WHEN it is sanitized
-- THEN the `src` is rewritten to the image's R2 key on `content.<domain>`
+- THEN the `src` is rewritten to the image's R2 key on `content.rarepair.fans`
 
 ### Remote images are dropped
 - GIVEN an `img` whose `src` is a remote URL
