@@ -26,7 +26,7 @@ Edit this table to retune. The tiers and the Fable caveat are in `/escalate`, *T
 | Pick | When the ticket is |
 |------|--------------------|
 | `haiku` | Tier 0 prose, or a mechanical batch (an expand-migrate-contract step) whose notes name every file and the exact change |
-| `sonnet` | Test-only (expected gate tier 2), or a code change of one workspace that follows a pattern the notes point to |
+| `sonnet` | Test-only (expected gate tier 2), a code change of one workspace that follows a pattern the notes point to, or a design doc or skill (tier 1) |
 | `opus` | Expected tier 3: crosses layers (migration, ingest, route, page), touches the security boundary, or is the first ticket in a workspace that doesn't exist yet |
 | `fable` | Consults only, by default. Build on it only when the operator says so for an item |
 
@@ -43,7 +43,7 @@ You follow `/escalate` like every agent. Your part in it for the others:
 
 ## 1. Set up the scratchpad
 
-Every agent reads and writes notes under one root, `<scratch>`: `orchestrate/` inside your session's scratchpad directory. Use its absolute path in every brief, because subagents aren't told it.
+Every agent of a wave reads and writes notes under one root, `<scratch>`: `orchestrate/wave-<n>/` inside your session's scratchpad directory, with `n` counting this session's waves from 1. Use its absolute path in every brief, because subagents aren't told it. Each wave gets its own root, so a later wave never overwrites an earlier one's `wave.md` while its agents may still get rework, and its conventions are written against `main` as it is now.
 
 ```
 <scratch>/
@@ -71,7 +71,7 @@ The scratchpad lasts for this session.
 
 ## 3. Explore
 
-**Conventions first.** When `<scratch>/shared/conventions.md` doesn't exist, launch one `explorer` to write it alone, and wait for it. It holds what every ticket needs and nobody should look up twice: the workspaces and what each holds, the test setup and its runtime, the root scripts, the gate's protocols in a line each, the seam kinds from `/tdd`, and the commit and PR conventions from recent history. Its brief: "Write `<scratch>/shared/conventions.md` (`.claude/agents/explorer.md`, *Writing `shared/conventions.md`*). Scratch root: … Code: …", with the `Code:` line below.
+**Conventions first.** Launch one `explorer` to write `<scratch>/shared/conventions.md` alone, and wait for it. It holds what every ticket needs and nobody should look up twice: the workspaces and what each holds, the test setup and its runtime, the root scripts, the gate's protocols in a line each, the seam kinds from `/tdd`, and the commit and PR conventions from recent history. Its brief: "Write `<scratch>/shared/conventions.md` (`.claude/agents/explorer.md`, *Writing `shared/conventions.md`*). Scratch root: … Code: …", with the `Code:` line below.
 
 **Then one explorer per item,** all in one message so they run at once. The brief:
 
@@ -96,7 +96,7 @@ Then settle the item's model and launch its engineer.
 
 ## 4. Build
 
-Launch one `engineer` per item, as soon as its notes are settled: a fresh agent, never a fork and never one reused from another ticket. Its definition puts it in its own worktree. Pass `model` from *Models* on each call. The brief:
+Launch one `engineer` per item, as soon as its notes are settled: a fresh agent, never a fork and never one reused from another ticket. Run at most four engineers at once, unless the operator sets another limit; the rest wait, in the order of the wave plan, and launch as running ones reach `pr-open`, `stopped` or `failed`. Its definition puts it in its own worktree. Pass `model` from *Models* on each call. The brief:
 
 ```
 Item <ITEM>, issue #<n>: <title>.
