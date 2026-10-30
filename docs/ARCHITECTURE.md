@@ -82,7 +82,7 @@ user         (id, email, name, email_verified, image, created_at, updated_at,  -
               terms_accepted_at NULL,  -- NULL until a new account accepts the terms
               warnings_off)            -- signed-in reader turned the warnings screen off
 session, account, verification  -- Better Auth's tables; verification holds hashed magic-link tokens
-works        (id, ao3_work_id UNIQUE NULL, title, summary_html, rating, language,
+works        (id, ao3_work_id UNIQUE NOT NULL, title, summary_html, rating, language,  -- ao3_work_id is the URL key
               words, chapters_count, complete, published_at, updated_at,
               status,            -- processing | live | hidden | removed
               hidden_cause NULL, -- removal_request | reports | moderator, while hidden
@@ -360,6 +360,11 @@ can be snapshotted.
 
 ## Reading
 
+- **Work URLs use the AO3 work ID:** `:id` in `/works/:id` (and every path under
+  it) is `ao3_work_id`, not the internal `works.id`. It's stable, it mirrors
+  AO3's own URLs, and it's already known when ingest writes chapter fragments
+  (before the Postgres transaction), so internal chapter links can be rewritten
+  in the same pass. It also makes the wind-down redirect a one-line rule.
 - The reader page is server-rendered on the app: `/works/:id/chapters/:n`. The
   web Worker reads the sanitized chapter fragment from R2 through its binding
   and renders it inline in the page, inside `<article class="chapter">`. There
