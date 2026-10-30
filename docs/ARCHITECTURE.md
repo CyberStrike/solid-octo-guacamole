@@ -147,11 +147,16 @@ request and to every byline at ingest.
    (Turnstile can't produce a token without it); without JS the upload page
    says so (FRONTEND-DISCOVERY, *Where the frontend changes the architecture*).
 3. **Confirm.** `POST /uploads/:id/complete` HEADs the object, checks its size,
-   and hashes it (SHA-256). If the hash matches an upload already stored, the
-   new upload is marked `duplicate` straight away, with `work_id` set to that
-   upload's work: nothing is enqueued, there is no ingest run, and the object is
-   never copied to `originals/`, so no second copy is kept. The uploader sees
-   the "Already in the archive" badge with a link to the work. Otherwise it
+   and hashes it (SHA-256). If the hash matches an earlier upload that was
+   ingested into a work that is `live` or `hidden` (that upload's status is
+   `live`, `held_for_review` or `duplicate`, with a `work_id`), the new upload
+   is marked `duplicate` straight away, with `work_id` set to that work:
+   nothing is enqueued, there is no ingest run, and the object is never copied
+   to `originals/`, so no second copy is kept. The uploader sees the "Already
+   in the archive" badge with a link to the work. Any other match (an upload
+   still `pending` or `processing`, one that was rejected, or one whose work
+   was removed) gets no shortcut: the new upload is enqueued like any other,
+   and the versioning rules or the same rejection decide it. Otherwise it
    enqueues `{upload_id}`.
 4. **Process.** The ingest consumer runs with a batch size of about 5, retries,
    and a dead-letter queue. See the EPUB processor section below.
@@ -195,11 +200,13 @@ Chapter text isn't indexed.
      isn't `application/epub+zip`; an entry name is unsafe (`..`, a leading
      `/` or a drive letter) or appears twice; the central directory disagrees
      with the local headers; the archive is ZIP64; `META-INF/container.xml`
-     or the OPF is missing; or an XML file declares entities (`<!ENTITY`).
+     or the OPF is missing; an XML file declares entities (`<!ENTITY`); or
+     `container.xml`, the OPF or the NCX isn't well-formed XML.
    - **`too_large`:** the input is over 25 MB, or the documents together pass
      the parser's node budget (300,000 elements and text nodes).
-   - **`parse_failed`:** elements are nested more than 256 deep, or a document
-     fails to parse in some other way.
+   - **`parse_failed`:** elements are nested more than 256 deep, or a content
+     document (XHTML) fails to parse in some other way. Malformed package XML
+     (container, OPF, NCX) is `not_epub`, above.
 3. **Index files.** `META-INF/container.xml` points to the OPF, which gives the
    metadata, the file list, the reading order and the table of contents (NCX
    or EPUB3 nav). Workers have no `DOMParser`, so XML is parsed with

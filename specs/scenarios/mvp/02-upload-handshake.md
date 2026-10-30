@@ -86,12 +86,29 @@ Relates to: docs/ARCHITECTURE.md § Ingestion pipeline (steps 1-3), § Dedupe, �
 - AND a `{upload_id}` message is put on the ingest queue
 
 ### Confirm marks a byte-identical re-upload as duplicate
-- GIVEN an upload whose object in R2 has SHA-256 H, the same as W's stored upload
+- GIVEN an upload whose object in R2 has SHA-256 H, the same as an earlier upload that was ingested into live work W
 - WHEN `POST /uploads/:id/complete` is called
 - THEN the upload is marked `duplicate` straight away, with its `work_id` set to W
 - AND nothing is put on the ingest queue and no ingest run happens
 - AND the object is not copied to `originals/`, so no second copy is kept
 - AND the uploader sees the "Already in the archive" badge with a link to W
+
+### Hash match on an upload still being processed gets no shortcut
+- GIVEN an earlier upload with SHA-256 H that is still `pending` or `processing`, with no work yet
+- WHEN a new upload with the same hash H is confirmed
+- THEN it is enqueued like any other upload, not marked `duplicate` at confirm
+- AND once both are processed, the versioning rules mark the later one `duplicate`
+
+### Hash match on a rejected upload gets no shortcut
+- GIVEN an earlier upload with SHA-256 H that was rejected (for example `not_ao3`), so it has no work
+- WHEN a new upload with the same hash H is confirmed
+- THEN it is enqueued and processed like any other upload
+- AND it ends with the same rejection code, not as `duplicate`
+
+### Hash match on a removed work gets no shortcut
+- GIVEN an earlier upload with SHA-256 H whose work was removed
+- WHEN a new upload with the same hash H is confirmed
+- THEN it is enqueued and processed, and the takedown or opt-out checks decide it
 
 ### Confirm deletes an oversized object
 - GIVEN an upload whose presigned PUT stored an object larger than 25 MB, despite a smaller declared size

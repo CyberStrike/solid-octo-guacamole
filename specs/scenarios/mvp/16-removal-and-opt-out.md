@@ -62,7 +62,7 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data 
 - GIVEN a remove request for W just submitted by a requester who isn't blocked
 - WHEN the confirmation page renders
 - THEN it says "Your request was received; a moderator will review it and email you."
-- AND it also says the work is hidden now
+- AND it says nothing about whether the work is hidden, so it reads the same as a blocked requester's
 
 ### Hidden work shows a temporary-hide page
 - GIVEN W hidden after a removal request
@@ -86,7 +86,7 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data 
 - GIVEN an opt-out for pseud P just submitted by a requester who isn't blocked
 - WHEN the confirmation page renders
 - THEN it says "Your request was received; a moderator will review it and email you."
-- AND it also says every work by the pseud is hidden now
+- AND it says nothing about whether any work is hidden, so it reads the same as a blocked requester's
 
 ### Opt-out blocks future uploads
 - GIVEN an active opt-out for pseud P
@@ -165,8 +165,7 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Author identity), § Data 
 ### Blocked requester sees the same confirmation
 - GIVEN requester B, blocked by contact email and IP hash
 - WHEN B submits a request to remove live work X, or an opt-out for pseud P, with a passing Turnstile token
-- THEN the confirmation page says "Your request was received; a moderator will review it and email you."
-- AND it does not say that anything is hidden now
+- THEN the confirmation page is identical to an unblocked requester's: "Your request was received; a moderator will review it and email you."
 - AND nothing on the page reveals that B is blocked
 
 ### Requests record a hashed IP

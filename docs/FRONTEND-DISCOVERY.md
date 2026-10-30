@@ -104,9 +104,10 @@ Reading never requires an account (ARCHITECTURE, *Auth*).
    this needs JavaScript; with it off, the page says so and gives the
    moderators' contact address.
 3. Every requester sees the same confirmation: "Your request was received; a
-   moderator will review it and email you." When the request isn't from a
-   blocked requester, the page also says the work, or every work by the
-   pseud, is hidden now. The page never reveals that a requester is blocked.
+   moderator will review it and email you." Nothing on the page depends on
+   whether the work was hidden, so it never reveals that a requester is
+   blocked. (An unblocked request still hides the work at once; the work page
+   shows that, not the confirmation.)
    A form missing a contact email, or a work or pseud, comes back with a 400
    and the errors marked. If they gave an AO3 URL for a work that isn't in
    the archive, nothing is stored, and the page says so and suggests opting
