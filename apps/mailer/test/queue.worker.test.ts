@@ -114,6 +114,14 @@ describe("mailer logs", () => {
   });
 });
 
+describe("test setup", () => {
+  it("a fetch no test stubbed never reaches Resend", async () => {
+    const res = await fetch(RESEND_BATCH, { method: "POST", body: "[]" });
+    expect(res.status).toBe(599);
+    await res.body?.cancel();
+  });
+});
+
 describe("mailer failures", () => {
   it("a batch every provider refuses is retried by the queue, not acked", async () => {
     stubResend(() => new Response("{}", { status: 503 }));
@@ -137,13 +145,18 @@ describe("mailer failures", () => {
       "not an object",
       { kind: "sign-in", to: "reader5@example.test", url: "https://evil.example/login/confirm?token=x" },
       { kind: "sign-in", to: "reader6@example.test", url: "https://rarepair.fans/upload" },
+      { kind: "sign-in", to: "reader7@example.test", url: "https://evil.example@rarepair.fans/login/confirm?token=x" },
+      { kind: "sign-in", to: "Support<reader8@example.test>", url: signIn(8).url },
+      { kind: "sign-in", to: "reader9@example.test,other@example.test", url: signIn(9).url },
+      { kind: "sign-in", to: `${"a".repeat(250)}@example.test`, url: signIn(10).url },
+      { kind: "sign-in", to: "reader11@example.test", url: `${signIn(11).url}${"x".repeat(2048)}` },
+      { kind: "sign-in", to: "reader12@example.test", url: `${signIn(12).url}#more` },
     ]);
 
     expect(calls).toHaveLength(1);
     expect(calls[0]!.emails).toHaveLength(1);
-    expect(result.explicitAcks.sort()).toEqual([
-      "msg-0", "msg-1", "msg-2", "msg-3", "msg-4", "msg-5", "msg-6",
-    ]);
+    expect(result.explicitAcks).toHaveLength(13);
+    expect(result.explicitAcks).toContain("msg-0");
     expect(result.retryMessages).toEqual([]);
   });
 

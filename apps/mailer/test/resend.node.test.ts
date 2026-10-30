@@ -54,6 +54,15 @@ describe("Resend batch sender", () => {
     expect(await sender.sendBatch([email])).toEqual({ outcome: "sent", ids: [] });
   });
 
+  it.each([
+    ["null", []],
+    ['{"data":null}', []],
+    ['{"data":[null,{"id":"resend-2"},{"id":"reader@example.test"},{"id":{"to":"x"}}]}', ["resend-2"]],
+  ])("an accepted batch answered with %s keeps only well-formed IDs", async (body, ids) => {
+    const sender = resendSender("re_test_key", answering(() => new Response(body, { status: 200 })));
+    expect(await sender.sendBatch([email])).toEqual({ outcome: "sent", ids });
+  });
+
   it.each([400, 401, 403, 422])("a %i is a failure, not a refusal", async (status) => {
     const sender = resendSender("re_test_key", answering(() => new Response("{}", { status })));
     expect(await sender.sendBatch([email])).toEqual({ outcome: "failed", status });

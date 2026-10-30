@@ -6,6 +6,16 @@ const BATCH_URL = "https://api.resend.com/emails/batch";
 // sign-in email behind it.
 const TIMEOUT_MS = 10_000;
 
+// The provider message IDs from an accepted batch's answer. These are logged, so anything that
+// doesn't look like an ID (Resend's are UUIDs) is left out rather than trusted.
+function messageIds(body: unknown): string[] {
+  const data = (body as { data?: unknown } | null)?.data;
+  if (!Array.isArray(data)) return [];
+  return data
+    .map((d) => (d as { id?: unknown } | null)?.id)
+    .filter((id): id is string => typeof id === "string" && /^[\w-]{1,64}$/.test(id));
+}
+
 // Resend's batch API: one call for up to 100 emails.
 // https://resend.com/docs/api-reference/emails/send-batch-emails
 export function resendSender(
@@ -30,8 +40,8 @@ export function resendSender(
       }
       if (res.ok) {
         // Accepted, so it is sent even when the answer can't be read: retrying would send it twice.
-        const body = (await res.json().catch(() => ({}))) as { data?: { id: string }[] };
-        return { outcome: "sent", ids: Array.isArray(body.data) ? body.data.map((d) => d.id) : [] };
+        const body: unknown = await res.json().catch(() => null);
+        return { outcome: "sent", ids: messageIds(body) };
       }
       // The body is never read on failure: providers echo the recipient in error messages.
       await res.body?.cancel().catch(() => {});
