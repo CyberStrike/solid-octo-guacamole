@@ -116,10 +116,10 @@ An engineer writes under `<scratch>` from outside its worktree, so it may raise 
 Each engineer ends with one status:
 
 - **`ready`**: the engineer ran `/gate merge` and one Copilot review, fixed any critical finding, and filed the rest as bug issues. You decide whether it's done, and you merge it, as `docs/process.md` says (*Work items*, "The orchestrator merges"):
-  1. Check the PR: its body's *What was run* block is the merge gate's and names the tier's ladder, a Copilot review posted or is recorded as not run, no critical finding is open, and every other finding has a bug issue. A gap goes back to the engineer.
+  1. Check the PR: its body's *What was run* block is the merge gate's and names the tier's ladder, no critical finding is open, and every other finding has a bug issue. Read its reviews yourself (`gh api repos/CyberStrike/solid-octo-guacamole/pulls/<n>/reviews`): a Copilot review that arrived after the engineer recorded it as not run is handled as if it had arrived in time. A gap goes back to the engineer.
   2. Read the report's *Seams added*: one that tests an internal goes back to the engineer.
-  3. `git fetch`, and check the PR contains `main` (`git merge-base --is-ancestor origin/main origin/<branch>`). If it doesn't, send the engineer to merge `main` in and rerun the `/gate` §3 checks, and wait for `ready` again. That is not a new merge gate: no ladder, and no second Copilot review.
-  4. Mark the PR ready for review (`gh pr ready <n>`) and merge it (`gh pr merge <n> --squash`), one at a time. Set the engineer's row `finished`, with GitHub's `mergedAt` as its `finishedAt`, and then run the ledger check (§6): an `idle` row would stop the check settling the item.
+  3. `git fetch`, and check the PR contains `main` (`git merge-base --is-ancestor origin/main origin/<branch>`). If it doesn't, send the engineer to merge `main` in and rerun the `/gate` §3 checks, and wait for `ready` again. That is not a new merge gate: no second Copilot review, and the ladder runs again only on a conflict resolved by hand.
+  4. Mark the PR ready for review (`gh pr ready <n>`) and merge it (`gh pr merge <n> --squash`), one at a time. Set every `idle` or `failed` agent row of the item `finished`, the engineer's with GitHub's `mergedAt` as its `finishedAt`, and then run the ledger check (§6): such a row would stop the check settling the item.
 
   A PR that can't pass these checks, such as one with a critical finding nobody can fix, goes to the operator under *Waiting on you*.
 - **`needs-consult`**: see *Escalation*.
@@ -128,14 +128,12 @@ Each engineer ends with one status:
 
 Review rework on an open PR goes to the same engineer with `SendMessage`, so it keeps its context. "One fresh agent per ticket" means per ticket, not per round.
 
-When an item touched files that another open PR in the wave also touched, the second to merge brings main in and resolves; send that to its engineer once the first merges.
-
 ## 6. Keep the ledger
 
 The ledger, its row ids and its statuses are in `docs/process.md`, *The ledger*. Write it through ArtifactData, with times from `date -u`, and put the writes of one moment in one `batch`.
 
 - **At each launch:** an `agents` row with `item`, `model`, `lane`, `status: "running"` and `startedAt`. Its kind follows the agent type: `explorer`, `builder` for an engineer, or `consultant`. Name it `<ITEM> explorer`, `<ITEM> engineer` or `<ITEM> consult <n>`; a consultant's `note` holds its question in a line. At an engineer's launch, also set the item's `status` to `building` and its `model`.
-- **At each report:** an explorer's or consultant's row becomes `finished`, with `finishedAt`; a consultant's `note` gets its confidence and the answer's file. An engineer at `ready` becomes `idle`, with its `pr`. The PR number is appended to the item's `pr` array, keeping any already there (the board and `scripts/ledger-check.mjs` read the item's PRs, not the agent's), and the item's `status` becomes `review`. Each bug issue the merge gate filed gets a `followups` row, `open`, with the PR in its `pr`. The item stays `building` while the engineer is in the merge gate, since you hear nothing from it until it reports. One that `failed` becomes `failed`. One that ends waiting on you becomes `idle`:
+- **At each report:** an explorer's or consultant's row becomes `finished`, with `finishedAt`; a consultant's `note` gets its confidence and the answer's file. An engineer at `ready` becomes `idle`, with its `pr`. The PR number is appended to the item's `pr` array, keeping any already there (the board and `scripts/ledger-check.mjs` read the item's PRs, not the agent's), and the item's `status` becomes `review`. Each issue the merge gate filed gets a `followups` row, `open`, with the PR it came from in its `note` (its `pr` is for a PR that fixes it). The item stays `building` while the engineer is in the merge gate, since you hear nothing from it until it reports. One that `failed` becomes `failed`. One that ends waiting on you becomes `idle`:
   - at `needs-consult` or `stopped`, with the question or stop event in a line as its `note`.
 
   It goes back to `running` when you send it work with `SendMessage`. Once you've merged its PR, set it `finished` before the ledger check (§5, `ready`, step 4).
