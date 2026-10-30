@@ -51,7 +51,7 @@ describe("packages/db with Better Auth", () => {
       .execute();
     expect(pending).toHaveLength(1);
     // Stored hashed: neither column holds the token that was mailed.
-    expect(pending[0]!.identifier).not.toBe(token);
+    expect(pending[0]!.identifier).not.toContain(token);
     expect(pending[0]!.value).not.toContain(token);
     expect(pending[0]!.expires_at).toBeInstanceOf(Date);
 
@@ -72,7 +72,12 @@ describe("packages/db with Better Auth", () => {
       .where("user_id", "=", user.id).execute();
     expect(sessions).toHaveLength(1);
 
-    // Single use: the token's row is gone once the link is used.
+    // Single use: the token's row is gone once the link is used, and using the
+    // link again starts no second session.
     expect(await t.db.selectFrom("verification").select("id").execute()).toEqual([]);
+    await auth.api.magicLinkVerify({ query: { token }, headers }).catch(() => undefined);
+    const after = await t.db.selectFrom("session").select("id")
+      .where("user_id", "=", user.id).execute();
+    expect(after).toHaveLength(1);
   });
 });
