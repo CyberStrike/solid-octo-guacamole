@@ -85,6 +85,8 @@ describe("11-reader-and-csp", () => {
     const cases: [string, string][] = [
       ["/works/1/chapters/2?x=1&y=2", "https://rarepair.fans/works/1/chapters/2?x=1&y=2"],
       ["/", "https://rarepair.fans/"],
+      // A routed page: on www even it is redirected, never served.
+      ["/login", "https://rarepair.fans/login"],
       ["/login?next=%2Fmy%20uploads", "https://rarepair.fans/login?next=%2Fmy%20uploads"],
       ["/caf%C3%A9", "https://rarepair.fans/caf%C3%A9"],
     ];

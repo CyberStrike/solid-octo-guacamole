@@ -2,14 +2,12 @@ import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
 // The Worker's HTTP surface runs in workerd, through exports.default.fetch.
-// No bindings yet: A1 adds the database and nodejs_compat.
+// The entry, compatibility date and (later) bindings come from wrangler.jsonc,
+// so the tests run the config that deploys.
 export default defineConfig({
   plugins: [
     cloudflareTest({
-      main: "./src/index.ts",
-      miniflare: {
-        compatibilityDate: "2026-08-01",
-      },
+      wrangler: { configPath: "./wrangler.jsonc" },
     }),
   ],
   test: {
