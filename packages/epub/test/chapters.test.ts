@@ -168,3 +168,47 @@ Posted originally on the <a href="http://archiveofourown.org/">Archive of Our Ow
     expect(parsePreface([root]).workId).toBe("77");
   });
 });
+
+describe("06-ao3-preface-and-chapters", () => {
+  it("Chapter boundaries from table-of-contents anchors", async () => {
+    // A heading that looks like a chapter start but has no TOC anchor stays content.
+    const extra = files.map((f, i) =>
+      i === 0 ? { ...f, body: f.body.replace(`<p>marker-c2-a</p>`, `<p>marker-c2-a</p><h2 class="toc-heading" id="extra">Aside</h2><p>marker-c2-aside</p>`) } : f,
+    );
+    const work = await processEpub(ao3Epub(spec("Chapters: 3/3", { files: extra })));
+    expect(work.chapters.map((c) => c.title)).toEqual(["1. One", "2. Two", "3. Three"]);
+    expect(work.chapters.map((c) => markers(c.html))).toEqual([
+      ["c1-notes", "c1-a"],
+      ["c2-a", "c2-aside", "c2-b"],
+      ["c3-a", "c3-b"],
+    ]);
+    expect(work.reviewReasons).toEqual([]);
+  });
+
+  it("One file holding several chapters is split by anchors", async () => {
+    const one: SpineFile[] = [
+      {
+        name: "Single.xhtml",
+        body: `<div id="chapters"><h2 class="toc-heading" id="a1">First</h2><p>marker-c1-a</p><h2 class="toc-heading" id="a2">Second</h2><p>marker-c2-a</p></div>`,
+      },
+    ];
+    const nav = [
+      { label: "1. First", src: "Single.xhtml#a1" },
+      { label: "2. Second", src: "Single.xhtml#a2" },
+    ];
+    const work = await processEpub(ao3Epub({ files: one, navPoints: nav, stats: "Chapters: 2/2" }));
+    expect(work.chapters.map((c) => c.title)).toEqual(["1. First", "2. Second"]);
+    expect(work.chapters.map((c) => markers(c.html))).toEqual([["c1-a"], ["c2-a"]]);
+    expect(work.reviewReasons).toEqual([]);
+  });
+
+  it("Chapter headings are used when the table of contents is missing", async () => {
+    const work = await processEpub(ao3Epub(spec("Chapters: 3/3", { navPoints: [] })));
+    expect(work.chapters.map((c) => c.title)).toEqual(["One", "Two", "Three"]);
+    expect(work.reviewReasons).toEqual([]);
+    const broken = [navPoints[0]!, { ...navPoints[1]!, src: "Three%20Parts_split_000.xhtml#nowhere" }, navPoints[2]!];
+    const mismatched = await processEpub(ao3Epub(spec("Chapters: 3/3", { navPoints: broken })));
+    expect(mismatched.chapters.map((c) => c.title)).toEqual(["One", "Two", "Three"]);
+    expect(mismatched.reviewReasons).toEqual([]);
+  });
+});
