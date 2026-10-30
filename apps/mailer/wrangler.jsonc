@@ -11,11 +11,14 @@
     "consumers": [
       {
         "queue": "email",
-        "max_batch_size": 10,
+        // Up to 100 messages per batch, the most Resend takes in one call: fewer calls against
+        // its per-second API limit (about 2 a second by default).
+        "max_batch_size": 100,
         "max_batch_timeout": 5,
-        // One consumer at a time keeps Resend under its per-second API limit.
+        // One batch at a time: no two calls to Resend run in parallel. It does not space calls
+        // out, so a backlog can still meet a 429, which the queue retries.
         "max_concurrency": 1,
-        // Two retries a minute apart, well inside the 15-minute life of a sign-in link.
+        // Two retries a minute apart, inside the 15-minute life of a sign-in link.
         "max_retries": 2,
         "retry_delay": 60,
         // Retention must be one day at most, set outside this file:
