@@ -12,6 +12,7 @@ const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2
 const EPUB = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 9, 8, 7, 6]);
 
 const IMAGE_KEY = "works/123456/img/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+const MISSING_IMAGE_KEY = "works/123456/img/" + "0".repeat(64);
 const ORIGINAL_KEY = "originals/01J9ZQ4K7M3XYV8T2W5R6N0B1C";
 
 const get = (key: string, init: RequestInit = {}) => worker.fetch(`${ORIGIN}/${key}`, init);
@@ -37,7 +38,7 @@ describe("09-content-origin", () => {
     const responses = [
       await get(IMAGE_KEY),
       await get(ORIGINAL_KEY),
-      await get("works/123456/img/missing"),
+      await get(MISSING_IMAGE_KEY),
       await get("about"),
     ];
     for (const res of responses) {
@@ -55,7 +56,7 @@ describe("09-content-origin", () => {
       await res.arrayBuffer();
     }
     // A miss is not cached as immutable: the key may be written later.
-    const miss = await get("works/123456/img/missing");
+    const miss = await get(MISSING_IMAGE_KEY);
     expect(miss.status).toBe(404);
     expect(miss.headers.get("cache-control")).toBe("no-store");
   });
@@ -94,7 +95,17 @@ describe("09-content-origin", () => {
     await E.BUCKET.put("index.html", html, { httpMetadata: { contentType: "text/html" } });
     await E.BUCKET.put("works/123456/img/.hidden", PNG, { httpMetadata: { contentType: "image/png" } });
     await E.BUCKET.put("originals/.hidden", EPUB);
+    // Image keys that are not a SHA-256 hex digest, so not versioned by their key.
+    const unversioned = ["works/123456/img/cover.png", `works/123456/img/${"A".repeat(64)}`];
+    for (const key of unversioned) {
+      await E.BUCKET.put(key, PNG, { httpMetadata: { contentType: "image/png" } });
+    }
     const refused = [
+      ...unversioned,
+      // Stored keys asked for with a query string: a second URL a purge would miss.
+      `${IMAGE_KEY}?v=2`,
+      `${ORIGINAL_KEY}?x=1`,
+      `${ORIGINAL_KEY}?`,
       fragment,
       "uploads/01J9ZQ4K7M3XYV8T2W5R6N0B1C",
       "index.html",
@@ -162,7 +173,7 @@ describe("content Worker", () => {
     await seed();
     await E.BUCKET.put("index.html", new TextEncoder().encode("<p>x</p>"));
     // A refused path and a well-formed key that is not in the bucket.
-    for (const key of ["index.html", "works/123456/img/missing"]) {
+    for (const key of ["index.html", MISSING_IMAGE_KEY]) {
       for (const method of ["GET", "HEAD"]) {
         const res = await get(key, { method, headers: { cookie: "session=abc" } });
         expect(res.status, `${method} ${key}`).toBe(404);
