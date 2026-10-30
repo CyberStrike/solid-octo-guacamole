@@ -7,7 +7,7 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § 
 - Better Auth's `user`, `session`, `account` and `verification` tables exist in Postgres; magic-link tokens are stored hashed in `verification`
 - Turnstile is configured on the sign-in form; a test Turnstile token that passes and one that fails are available
 - The Workers rate-limiting binding is configured per IP and per email for `POST /login`
-- The outbound email queue and a stub Resend sender capture sent messages; a failover provider stub (Postmark or SES) is wired in
+- The web Worker puts sign-in emails on the `email` queue; the mailer Worker (`apps/mailer`) consumes it, with a stub Resend sender capturing sent messages and a failover provider stub (Postmark or SES) wired in
 - No passwords are stored anywhere
 
 ## Cases
@@ -111,7 +111,7 @@ Relates to: docs/ARCHITECTURE.md § Auth (magic link: Better Auth + Resend), § 
 
 ### Sign-in emails go through Resend in batches
 - GIVEN several sign-in emails waiting on the email queue
-- WHEN the queue consumer runs
+- WHEN the mailer Worker takes them off the queue
 - THEN it sends them through Resend's batch API rather than one API call per email
 
 ### Email sending fails over to the second provider

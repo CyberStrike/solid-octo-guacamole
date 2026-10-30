@@ -42,6 +42,8 @@ check "db" packages/db/migrations/0001_init.sql
 check "ingest" apps/ingest/src/a.ts
 check "web" apps/web/src/a.ts
 check "content" apps/content/src/a.ts
+check "mailer" apps/mailer/src/a.ts
+check "mailer integration" apps/mailer/wrangler.jsonc apps/mailer/src/a.ts
 check "epub ingest web docs" packages/epub/src/a.ts apps/web/src/a.ts docs/ARCHITECTURE.md
 
 exit "$fail"
