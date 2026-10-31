@@ -1,5 +1,5 @@
 import { createDb } from "@archive/db";
-import { putFragments, seedWork, type SeedChapter } from "@archive/db/seed";
+import { putFragments, seedVersion, seedWork, type SeedChapter } from "@archive/db/seed";
 import { env } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { STRICT, fetchW, nonceOf, withoutNonce } from "./helpers";
@@ -63,9 +63,9 @@ const aroundArticle = (html: string) => {
 
 /** The text of every link to `href`. */
 const linksTo = (html: string, href: string) =>
-  [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)]
-    .filter(([, attrs]) => attrs.includes(`href="${href}"`))
-    .map(([, , text]) => text);
+  [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].flatMap(([, attrs = "", text = ""]) =>
+    attrs.includes(`href="${href}"`) ? [text] : [],
+  );
 
 const htmlOf = async (path: string) => (await fetchW(path)).text();
 
@@ -79,9 +79,11 @@ const stylesheetOf = async (html: string) => {
 
 /** The declarations of every top-level rule whose selector list is exactly `selector`. */
 const rulesFor = (css: string, selector: string) =>
-  [...css.replaceAll(/\/\*[\s\S]*?\*\//g, "").matchAll(/(?<=^|\})\s*([^{}@]+?)\s*\{([^{}]*)\}/g)]
-    .filter(([, selectors]) => selectors.split(",").some((s) => s.trim() === selector))
-    .map(([, , body]) => body);
+  [
+    ...css.replaceAll(/\/\*[\s\S]*?\*\//g, "").matchAll(/(?<=^|\})\s*([^{}@]+?)\s*\{([^{}]*)\}/g),
+  ].flatMap(([, selectors = "", body = ""]) =>
+    selectors.split(",").some((s) => s.trim() === selector) ? [body] : [],
+  );
 
 describe("11-reader-and-csp", () => {
   it("Chapter renders inline in the page", async () => {
@@ -125,19 +127,20 @@ describe("11-reader-and-csp", () => {
       expect(linksTo(html, chapterUrl(W, 4)), end).toEqual([expect.stringMatching(/next/i)]);
       const selects = html.match(/<select\b[\s\S]*?<\/select>/g) ?? [];
       expect(selects, end).toHaveLength(1);
-      const options = [...selects[0].matchAll(/<option value="(\d+)"/g)].map(([, n]) => n);
+      const select = selects[0] ?? "";
+      const options = [...select.matchAll(/<option value="(\d+)"/g)].map(([, n]) => n);
       expect(options, end).toEqual(["1", "2", "3", "4", "5"]);
-      expect(selects[0], end).toMatch(/<option value="3" selected>/);
+      expect(select, end).toMatch(/<option value="3" selected>/);
     }
   });
 
   it("Chapter select works without JS", async () => {
     const html = await htmlOf(chapterUrl(W, 3));
-    const forms = [...html.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/g)].filter(([, , inner]) =>
-      inner.includes("<select"),
+    const forms = [...html.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/g)].flatMap(
+      ([, attrs = "", inner = ""]) => (inner.includes("<select") ? [{ attrs, inner }] : []),
     );
     expect(forms).toHaveLength(2);
-    for (const [, attrs, inner] of forms) {
+    for (const { attrs, inner } of forms) {
       // What a browser does with JavaScript off: picks option 5 and submits the form.
       const action = attrs.match(/action="([^"]*)"/)?.[1] ?? "";
       const method = attrs.match(/method="([^"]*)"/)?.[1] ?? "get";
@@ -231,6 +234,35 @@ describe("11-reader-and-csp", () => {
     }
   });
 
+  it("Fragments are immutable per version", async () => {
+    // Its own work, and every step in this one test: the plugin's isolated storage
+    // undoes R2 writes made inside a test when it ends, while database rows stay.
+    const first = await seedWork(db, {
+      ao3WorkId: 20002,
+      tags: TAGS,
+      chapters: [{ html: "<p>V1-ONE</p>" }, { html: "<p>V1-TWO</p>" }, { html: "<p>V1-THREE</p>" }],
+    });
+    await putFragments(env.BUCKET, first.fragments);
+    expect(articleOf(await htmlOf(chapterUrl(20002, 2)))).toBe("<p>V1-TWO</p>");
+
+    const second = await seedVersion(db, first, {
+      chapters: [{ html: "<p>V2-ONE</p>" }, { html: "<p>V2-TWO</p>" }],
+    });
+    await putFragments(env.BUCKET, second.fragments);
+
+    // The new version's fragment, from its own prefix.
+    expect(articleOf(await htmlOf(chapterUrl(20002, 2)))).toBe("<p>V2-TWO</p>");
+    expect(second.chapterKeys[1]?.startsWith(second.r2Prefix)).toBe(true);
+    expect(second.r2Prefix).not.toBe(first.r2Prefix);
+    // The old version's fragments are untouched.
+    const oldBodies = await Promise.all(
+      first.chapterKeys.map(async (key) => (await env.BUCKET.get(key))?.text()),
+    );
+    expect(oldBodies).toEqual(["<p>V1-ONE</p>", "<p>V1-TWO</p>", "<p>V1-THREE</p>"]);
+    // The new version has two chapters, so the old third one is past the last.
+    expect((await fetchW(chapterUrl(20002, 3))).status).toBe(404);
+  });
+
   it("First chapter has no previous link", async () => {
     const html = await htmlOf(chapterUrl(W, 1));
     expect(html).not.toMatch(/rel="prev"|>Previous/i);
@@ -248,6 +280,20 @@ describe("11-reader-and-csp", () => {
   });
 });
 
+// Not a scenario case: the orchestrator's ruling on a chapter row whose fragment isn't in R2.
+describe("chapter reader", () => {
+  it("A chapter whose fragment is missing is an empty, uncached 503", async () => {
+    await seedWork(db, { ao3WorkId: 20003, tags: TAGS, chapters: 1 });
+    const res = await fetchW(chapterUrl(20003, 1));
+    expect(res.status).toBe(503);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("strict-transport-security")).toBe(
+      "max-age=31536000; includeSubDomains",
+    );
+    expect(await res.text()).toBe("");
+  });
+});
+
 describe("09-content-origin", () => {
   it("Images are served from the content origin", async () => {
     const res = await fetchW(chapterUrl(W, 5));
@@ -255,7 +301,7 @@ describe("09-content-origin", () => {
     // The fragment's absolute URL as ingest wrote it: not rewritten, proxied or dropped.
     const sources = [...html.matchAll(/<img\b[^>]*\bsrc="([^"]*)"/g)].map(([, src]) => src);
     expect(sources).toEqual([IMAGE]);
-    expect(new URL(sources[0]).origin).toBe("https://content.rarepair.fans");
+    expect(new URL(sources[0] ?? "").origin).toBe("https://content.rarepair.fans");
     expect(res.headers.get("content-security-policy")).toContain(
       "img-src 'self' https://content.rarepair.fans;",
     );
