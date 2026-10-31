@@ -198,12 +198,22 @@ describe("02-upload-handshake", () => {
   });
 
   it("The upload page has the site's chrome", async () => {
-    // What 20-site-chrome checks on pages anyone can open.
+    // What 20-site-chrome and 11-reader-and-csp check on pages anyone can open.
     const { cookie } = await signIn("u1-chrome@example.test");
     const html = await (await fetchW("/upload", { headers: { cookie } })).text();
-    expect(html.match(/<[a-z]+ class="banner"[^>]*>/g)).toHaveLength(1);
-    expect(html.match(/<h1\b/g)).toHaveLength(1);
-    expect(html).toContain('<a href="/remove">Remove my work</a>');
+    const count = (pattern: RegExp) => (html.match(pattern) ?? []).length;
+    expect(count(/<[a-z]+ class="banner"[^>]*>[^<]*unofficial/gi)).toBe(1);
+    expect(html.indexOf('class="banner"')).toBeLessThan(html.indexOf("<main"));
+    for (const landmark of [/<h1\b/g, /<header\b/g, /<main id="main">/g, /<footer\b/g]) {
+      expect(count(landmark)).toBe(1);
+    }
+    expect(html.match(/<a\b[^>]*>/)?.[0]).toBe('<a class="skip" href="#main">');
+    expect(html).toMatch(/<footer>[^]*<a href="\/remove">Remove my work<\/a>[^]*<\/footer>/);
+    expect(count(/<link rel="stylesheet"/g)).toBe(1);
+    expect(html).not.toMatch(/style=|<style/i);
+    expect(
+      count(/<script src="https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js"/g),
+    ).toBe(1);
     expect(html).not.toMatch(/AO3|OTW|Archive of Our Own|woff2|@font-face/i);
   });
 });
