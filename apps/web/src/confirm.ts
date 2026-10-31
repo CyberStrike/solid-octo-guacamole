@@ -2,8 +2,8 @@ import { createDb } from "@archive/db";
 import type { Context } from "hono";
 import { makeAuth } from "./auth";
 import type { Bindings } from "./env";
-import { readForm } from "./login";
-import { confirmPage, forbiddenPage } from "./pages";
+import { INVALID_TOKEN, readForm } from "./login";
+import { confirmPage, forbiddenPage, serverErrorPage } from "./pages";
 import type { SecurityVariables } from "./security";
 import { isSameOrigin, safeNext } from "./signin";
 
@@ -41,9 +41,30 @@ export async function confirmSignIn(c: ConfirmContext) {
       headers: c.req.raw.headers,
       asResponse: true,
     });
-    // A POST answered with a redirect is a 303: the next request is a GET.
-    return new Response(null, { status: 303, headers: verified.headers });
+    return answerVerified(verified) ?? c.html(serverErrorPage(), 500);
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }
+}
+
+const SESSION_COOKIE = "__Secure-better-auth.session_token=";
+
+/** Where a used, expired or unknown link is sent: `showSignIn` says why. `next` is dropped. */
+export const REFUSED = `/login?error=${INVALID_TOKEN}`;
+
+/**
+ * Our answer to Better Auth's verify response. Signed in: its redirect, with its
+ * cookie, as a 303, since a POST is answered with a GET. A used, expired or
+ * unknown link: a 303 to `REFUSED`, never Better Auth's own error redirect. Null
+ * for anything else, such as failing to create the user or the session: a fault
+ * of ours, not the link's.
+ */
+export function answerVerified(verified: Response): Response | null {
+  if (verified.status !== 302) return null;
+  if (verified.headers.getSetCookie().some((cookie) => cookie.startsWith(SESSION_COOKIE))) {
+    return new Response(null, { status: 303, headers: verified.headers });
+  }
+  const location = URL.parse(verified.headers.get("location") ?? "");
+  if (location?.searchParams.get("error") !== INVALID_TOKEN) return null;
+  return new Response(null, { status: 303, headers: { Location: REFUSED } });
 }

@@ -164,3 +164,10 @@ export const confirmPage = (token: string, next: string) =>
 <button type="submit">Sign in</button>
 </form>`,
   );
+
+/** Something failed on our side, not in the request. */
+export const serverErrorPage = () =>
+  layout(
+    "Something went wrong",
+    `<p>That didn't work, and it isn't anything you did. Please try again in a minute.</p>`,
+  );
