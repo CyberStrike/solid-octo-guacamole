@@ -8,11 +8,20 @@ import { TURNSTILE_ORIGIN } from "./security";
 
 const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
-/** A whole wait list page. Every argument is trusted markup from this file, never escaped. */
+// Served from public/ by assetRoute. The names carry each file's content hash.
+const STYLESHEET = "/assets/waitlist/waitlist.18413ecf8afd6c0b.css";
+const FRAUNCES_LICENCE = "/assets/waitlist/fonts/fraunces/OFL.txt";
+const PLEX_LICENCE = "/assets/waitlist/fonts/ibm-plex-mono/license.txt";
+
+/**
+ * A whole wait list page, in the wait list's web fonts, with their licences linked.
+ * Every argument is trusted markup from this file, never escaped.
+ */
 export const waitlistPage = (title: string, body: string, head = "") => `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} · rarepair</title>${head}</head>
-<body><main>${body}</main></body>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} · rarepair</title><link rel="stylesheet" href="${STYLESHEET}">${head}</head>
+<body><main>${body}
+<footer><p>Set in Fraunces (<a href="${FRAUNCES_LICENCE}">licence</a>) and IBM Plex Mono (<a href="${PLEX_LICENCE}">licence</a>).</p></footer></main></body>
 </html>`;
 
 /**
@@ -32,7 +41,7 @@ export const comingSoonPage = (nonce: string, siteKey: string) =>
 <button id="join" type="submit" disabled>Join the wait list</button>
 </form>
 <noscript><p>Joining the wait list needs JavaScript, for its anti-spam check.</p></noscript>
-<p>Your address gets one email when the archive opens, and nothing else.</p>`,
+<p class="note">Your address gets one email when the archive opens, and nothing else.</p>`,
     `<script nonce="${nonce}">
 function waitlistReady() { document.getElementById("join").disabled = false; }
 function waitlistExpired() { document.getElementById("join").disabled = true; }
