@@ -106,7 +106,7 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Wait list), § Wait list, 
 
 ### The launch send emails each confirmed address once
 - GIVEN confirmed and unconfirmed addresses on the wait list, and a signed-in account with the `admin` role
-- WHEN that account starts the launch send from the admin area
+- WHEN that account starts the launch send from the admin area, with `PRELAUNCH` on or off
 - THEN each confirmed address with `notified_at` empty gets `notified_at` set and a launch email put on the `email-bulk` queue, in batches
 - AND a batch whose enqueue fails has `notified_at` cleared again, so the next run picks it up
 - AND unconfirmed addresses get no email
@@ -129,6 +129,7 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Wait list), § Wait list, 
 - WHEN it is built
 - THEN it carries `List-Unsubscribe` with an `https://rarepair.fans/waitlist/unsubscribe` link holding a token, and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`
 - AND a `POST` to that link deletes the address's row and answers 200, with no sign-in and no page to click through
+- AND the link keeps working with `PRELAUNCH` off, and a `POST` with a token whose row is already gone (unsubscribed or purged) also answers 200
 
 ### The wait list is deleted after the launch send
 - GIVEN the launch send has finished
