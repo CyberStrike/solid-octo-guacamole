@@ -15,7 +15,7 @@
     "format:check": "oxfmt --check"
   },
   "overrides": {
-    "@oxlint/plugins": "1.90.0"
+    "@oxlint/plugins": "$@oxlint/plugins"
   },
   "devDependencies": {
     "@oxlint/plugins": "1.90.0",

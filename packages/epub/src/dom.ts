@@ -158,7 +158,8 @@ export async function parseHtml(
 
   // Set once the document is rejected; later tokens are skipped. (Throwing from
   // a handler surfaces in workerd as an uncaught exception.)
-  let failure: EpubError | null = null;
+  // SAFETY: widens the initial null, so TS doesn't read it as null after the handlers have run.
+  let failure = null as EpubError | null;
   const spend = (): boolean => {
     if (--budget.remaining >= 0) return true;
     failure = new EpubError("too_large", `More than ${LIMITS.maxNodes} elements and text nodes`);
@@ -216,7 +217,6 @@ export async function parseHtml(
   await rewriter
     .transform(new Response(expandSelfClosing(html)))
     .body?.pipeTo(new WritableStream());
-  // oxlint-disable-next-line typescript/no-unnecessary-condition -- the handlers set failure, unseen by TS
   if (failure) throw failure;
   return root;
 }
