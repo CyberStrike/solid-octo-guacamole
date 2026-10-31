@@ -3,56 +3,22 @@ import { processEpub, type ParsedWork } from "../src";
 import { fromBase64 } from "./helpers";
 
 // Real AO3 epubs live in fixtures/epubs/ locally and are git-ignored (the repo is
-// public). Assertions stick to metadata, counts and short markers: no fic text.
+// public). The repo holds no real text and no expected values: they live in the
+// git-ignored fixtures/epubs/expected.json (see expected.example.json), keyed by epub
+// file name. Each real string is compared by the SHA-256 of its UTF-8 bytes. A fixture
+// with no entry there gets the generic checks only.
 
 const fixtures = inject("epubFixtures");
+const EXPECTED = inject("epubExpected");
 const names = Object.keys(fixtures);
 
-interface Expected {
-  workId: string;
-  title: string;
-  authors: { pseud: string; user: string | null }[];
-  rating: string;
-  fandoms: string[];
-  relationships: number;
-  relationshipIncludes?: string;
-  characters: number;
-  freeforms: number;
-  words: number;
-  published: string;
-  opening: string;
+async function sha256(text: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
-
-// oxlint-disable-next-line deslop/no-known-value-widening -- each entry read as an Expected, by file name
-const EXPECTED: Record<string, Expected> = {
-  "***REMOVED***": {
-    workId: "***REMOVED***",
-    title: "***REMOVED***",
-    authors: [{ pseud: "***REMOVED***", user: "***REMOVED***" }],
-    rating: "Teen And Up Audiences",
-    fandoms: ["***REMOVED***"],
-    relationships: 1,
-    characters: 4,
-    freeforms: 4,
-    words: 5850,
-    published: "2017-10-03",
-    opening: "***REMOVED***",
-  },
-  "***REMOVED***": {
-    workId: "***REMOVED***",
-    title: "***REMOVED***",
-    authors: [{ pseud: "***REMOVED***", user: "***REMOVED***" }],
-    rating: "General Audiences",
-    fandoms: ["***REMOVED***"],
-    relationships: 2,
-    relationshipIncludes: '***REMOVED***',
-    characters: 3,
-    freeforms: 6,
-    words: 3877,
-    published: "2018-12-15",
-    opening: "***REMOVED***",
-  },
-};
+async function shas(values: string[]): Promise<string[]> {
+  return Promise.all(values.map(sha256));
+}
 
 function expectClean(html: string): void {
   expect(html).not.toMatch(/class=|style=|<script|calibre|\son\w+=/i);
@@ -88,15 +54,24 @@ for (const [name, want] of Object.entries(EXPECTED)) {
 
     it("reads the preface metadata", async () => {
       const w = await load();
-      expect(w.ao3WorkId).toBe(want.workId);
-      expect(w.title).toBe(want.title);
-      expect(w.authors).toEqual(want.authors);
+      expect(await sha256(w.ao3WorkId)).toBe(want.workIdSha);
+      expect(await sha256(w.title)).toBe(want.titleSha);
+      expect(
+        await Promise.all(
+          w.authors.map(async (a) => ({
+            pseudSha: await sha256(a.pseud),
+            userSha: a.user === null ? null : await sha256(a.user),
+          })),
+        ),
+      ).toEqual(want.authors);
       expect(w.rating).toBe(want.rating);
       expect(w.warnings).toEqual(["No Archive Warnings Apply"]);
       expect(w.categories).toEqual(["M/M"]);
-      expect(w.fandoms).toEqual(want.fandoms);
+      expect(await shas(w.fandoms)).toEqual(want.fandomShas);
       expect(w.relationships).toHaveLength(want.relationships);
-      if (want.relationshipIncludes) expect(w.relationships).toContain(want.relationshipIncludes);
+      if (want.relationshipIncludesSha) {
+        expect(await shas(w.relationships)).toContain(want.relationshipIncludesSha);
+      }
       expect(w.characters).toHaveLength(want.characters);
       expect(w.freeforms).toHaveLength(want.freeforms);
       expect(w.language).toBe("English");
@@ -118,9 +93,11 @@ for (const [name, want] of Object.entries(EXPECTED)) {
       expect(w.chapters).toHaveLength(1);
       const [chapter] = w.chapters;
       expect(chapter!.n).toBe(1);
-      expect(chapter!.title).toBe(want.title);
+      expect(await sha256(chapter!.title)).toBe(want.titleSha);
       expect(chapter!.html.length).toBeGreaterThan(1000);
-      expect(chapter!.html.replace(/\s+/g, " ")).toContain(want.opening);
+      const { offset, length, sha } = want.opening;
+      const collapsed = chapter!.html.replace(/\s+/g, " ");
+      expect(await sha256(collapsed.slice(offset, offset + length))).toBe(sha);
       expect(chapter!.html).not.toMatch(/<h2/);
       expect(chapter!.words).toBeGreaterThan(want.words * 0.9);
       expectClean(chapter!.html);
