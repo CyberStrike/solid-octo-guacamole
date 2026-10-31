@@ -29,6 +29,15 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Wait list), § Wait list, 
 - WHEN `/` is requested
 - THEN its CSP header is the strict policy plus exactly `frame-src https://challenges.cloudflare.com`, as on the other Turnstile pages
 
+### Coming-soon page serves its own fonts
+- GIVEN `PRELAUNCH` is on
+- WHEN a visitor opens `/`
+- THEN its headings and text are set in Fraunces and its labels and buttons in IBM Plex Mono, each loaded as woff2 from `rarepair.fans` with `font-display: swap`
+- AND the woff2 files are the font publishers' own, unmodified, served at content-hashed paths with `Cache-Control: public, max-age=31536000, immutable`
+- AND the page's HTML and its stylesheets reference no font, stylesheet or script on any other host except Turnstile's `api.js`
+- AND the fonts' OFL licence files are served from `rarepair.fans` too
+- AND the other wait list pages (check your email, confirm, unsubscribe) use the same fonts, and no other app page loads a web font
+
 ### Other app pages are closed before launch
 - GIVEN `PRELAUNCH` is on
 - WHEN a visitor opens any app page other than `/`, the `/waitlist` pages, `/terms`, `/privacy`, sign-in (`/login`, `/login/confirm`), `/welcome/terms`, sign-out or `/admin`

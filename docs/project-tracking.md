@@ -15,7 +15,7 @@ How the work is tracked in GitHub, and which issue is which work item. This file
 - **Depends on** comes from each issue's `Depends on:` line, which `/gate` checks is closed. If a dependency is wrong, correct it in the issue and here in the same PR.
 - **Reused issues:** E2, E3 and E7 are the earlier issues #5, #4 and #6, rewritten into the ticket template. OXC is #11, filed separately.
 
-The breakdown was cut on 2026-10-30, from `main` at `ee0b9c7`: 72 items covering 406 scenario cases, plus #11. The *Wait list* lane (WL1 to WL6, the 25 cases of `specs/scenarios/mvp/22-waitlist.md`) was added the same day, from `main` at `62c27a9`.
+The breakdown was cut on 2026-10-30, from `main` at `ee0b9c7`: 72 items covering 406 scenario cases, plus #11. The *Wait list* lane (WL1 to WL6, the 26 cases of `specs/scenarios/mvp/22-waitlist.md`) was added the same day, from `main` at `62c27a9`.
 
 ## Items
 
