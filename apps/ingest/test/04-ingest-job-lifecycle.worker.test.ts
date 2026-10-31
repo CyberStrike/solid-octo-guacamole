@@ -153,6 +153,33 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("Failure inside the transaction leaves an existing work's current version unchanged", async () => {
+    // Another job saves the work while this one writes R2: past the check before R2, this job
+    // finds the work only inside its transaction, which rolls back.
+    const workId = newWorkId();
+    const id = await pendingUpload(ao3Epub({ workId }));
+    // SAFETY: the bucket's put below assigns it; null until then.
+    let existing = null as Awaited<ReturnType<typeof existingWork>> | null;
+    const { handler } = watchedWorker({
+      bucket: beforePut(async (key) => {
+        if (key.startsWith("originals/")) existing = await existingWork({ ao3WorkId: workId });
+      }),
+    });
+
+    const result = await deliver([{ upload_id: id }], { handler });
+
+    const live = await liveWork(workId);
+    expect(live?.version.id).toBe(existing?.versionId);
+    expect(live?.chapters.map((c) => c.r2_key)).toEqual(existing?.chapterKeys);
+    expect((await savedRows(workId, id)).versions).toEqual([]);
+    expect(await uploadRow(id)).toMatchObject({
+      status: "parse_failed",
+      error_stage: "save",
+      error: "work_exists",
+    });
+    expect(result.explicitAcks).toEqual(["msg-0"]);
+  });
+
+  it("refuses an upload of a known work before writing anything", async () => {
     const existing = await existingWork({ ao3WorkId: newWorkId(), chapters: 2 });
     const before = await savedRows(existing.ao3WorkId, existing.uploadId);
     const id = await pendingUpload(ao3Epub({ workId: existing.ao3WorkId }));
@@ -232,6 +259,42 @@ describe("04-ingest-job-lifecycle", () => {
       error: "save_rejected_54000",
     });
     expect(result.explicitAcks).toEqual(["msg-0"]);
+  });
+
+  it("saves a work with more chapters and tags than one INSERT takes", async () => {
+    const count = 1_001;
+    const work = parsedWork({
+      chapters: Array.from({ length: count }, (_, i) => ({
+        n: i + 1,
+        title: `Chapter ${i + 1}`,
+        html: "<p>x</p>",
+        words: 1,
+      })),
+      freeforms: Array.from(
+        { length: count },
+        (_, i) => `Long work tag ${i} ${crypto.randomUUID()}`,
+      ),
+      stats: {
+        published: null,
+        updated: null,
+        completed: null,
+        words: null,
+        chapters: { posted: count, total: null },
+      },
+    });
+    const workId = Number(work.ao3WorkId);
+    const id = await pendingUpload(ao3Epub({ workId }));
+    const { handler } = watchedWorker({ process: async () => work });
+
+    await deliver([{ upload_id: id }], { handler });
+
+    const live = await liveWork(workId);
+    expect(live?.chapters).toHaveLength(1_001);
+    expect(live?.chapters.at(-1)?.r2_key).toBe(`works/${workId}/${id}/1001.html`);
+    // The rating, the warning and the fandom, then the freeforms in the author's order.
+    expect(live?.tags).toHaveLength(1_004);
+    expect(live?.tags.at(-1)?.name).toBe(work.freeforms.at(-1));
+    expect(live?.work.words).toBe(1_001);
   });
 
   it("Original file is kept", async () => {

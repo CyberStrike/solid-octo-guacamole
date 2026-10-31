@@ -25,13 +25,16 @@ export class LeaseLost extends Error {}
 const MAX_INT4 = 2_147_483_647;
 /** R2 writes in flight at once: a Worker limits its simultaneous subrequests. */
 const PUT_POOL = 6;
+/** Rows per INSERT, so a long work stays far under Postgres's 65,535 bind parameters. */
+const ROWS_PER_INSERT = 1_000;
 
 /**
  * Saves the first upload of a work, in the order ingest promises (ARCHITECTURE, EPUB
  * processor, step 8): the chapter fragments under the upload's own prefix, then the raw file
  * to `originals/`, then one Postgres transaction that creates the work and its version and
- * sets it `live` last. A failure before the transaction leaves only R2 objects, under keys a
- * retry overwrites; a failure inside it leaves nothing.
+ * sets it `live` last. A failure before or inside the transaction leaves no rows, only R2
+ * objects: under keys a retry overwrites when it is worth one, and left for the cleanup
+ * rules (#177) when the file is refused.
  */
 export async function saveWork(
   deps: { db: Kysely<Database>; bucket: SaveBucket },
@@ -41,8 +44,8 @@ export async function saveWork(
 ): Promise<void> {
   const ao3WorkId = workIdOf(work);
   if (work.chapters.length === 0) throw new SaveRejected("no_chapters");
-  // Refused before anything is written, so no fragments or original copy are left of a
-  // known work's upload. The transaction checks again, for two first uploads at once.
+  // Refused before R2 is written, so a known work's upload leaves no fragments or original
+  // copy. The transaction checks again, for two first uploads of one work at once.
   if (await workExists(deps.db, ao3WorkId)) throw new SaveRejected("work_exists");
   const prefix = `works/${ao3WorkId}/${lease.id}/`;
   const chapters = work.chapters.map((c) => ({ ...c, key: `${prefix}${c.n}.html` }));
@@ -89,7 +92,8 @@ async function writeRows(
   chapters: (ParsedWork["chapters"][number] & { key: string })[],
 ): Promise<void> {
   const total = int4OrNull(work.stats.chapters.total, 1);
-  const words = int4OrNull(work.stats.words ?? sum(work.chapters.map((c) => c.words)), 0);
+  const words =
+    int4OrNull(work.stats.words, 0) ?? int4OrNull(sum(work.chapters.map((c) => c.words)), 0);
   // First, so a work another job created since the check above is found before anything else
   // is written. Later uploads of a known work are I4's (#33): until then they are refused.
   const row = await trx
@@ -120,38 +124,31 @@ async function writeRows(
 
   // The byline's unique keys: a repeated entry keeps its first place.
   const authors = uniqueBy(work.authors, (a) => JSON.stringify([a.pseud, a.user]));
-  if (authors.length > 0) {
-    await trx
-      .insertInto("work_authors")
-      .values(
-        authors.map((a, position) => ({
-          work_id: workId,
-          pseud: a.pseud,
-          ao3_user: a.user,
-          position,
-        })),
-      )
-      .execute();
-  }
+  const bylines = authors.map((a, position) => ({
+    work_id: workId,
+    pseud: a.pseud,
+    ao3_user: a.user,
+    position,
+  }));
+  for (const part of chunks(bylines)) await trx.insertInto("work_authors").values(part).execute();
 
   // A tag given twice keeps its first place.
   const tagKey = (t: { type: TagType; name: string }) => JSON.stringify([t.type, t.name]);
   const tags = uniqueBy(tagsOf(work), tagKey).map((tag, position) => ({ ...tag, position }));
-  if (tags.length > 0) {
-    // One statement, its rows in the shared lock order (Postgres takes them in VALUES order),
-    // so concurrent ingests sharing tags can't deadlock. The update makes RETURNING give an
-    // existing tag's id, and brings its `name_norm` up to the rule.
+  // Upserted in the shared lock order, a statement of rows at a time (Postgres takes a
+  // statement's rows in VALUES order), so concurrent ingests sharing tags can't deadlock. The
+  // update makes RETURNING give an existing tag's id, and brings its `name_norm` up to the rule.
+  const ids = new Map<string, string>();
+  const sorted = tags.slice().sort(compareTagKeys);
+  for (const part of chunks(sorted)) {
     const rows = await trx
       .insertInto("tags")
       .values(
-        tags
-          .slice()
-          .sort(compareTagKeys)
-          .map((t) => ({
-            type: t.type,
-            name: t.name,
-            name_norm: normalizeTagName(t.type, t.name),
-          })),
+        part.map((t) => ({
+          type: t.type,
+          name: t.name,
+          name_norm: normalizeTagName(t.type, t.name),
+        })),
       )
       .onConflict((oc) =>
         oc
@@ -160,18 +157,16 @@ async function writeRows(
       )
       .returning(["id", "type", "name"])
       .execute();
-    const ids = new Map(rows.map((r) => [tagKey(r), r.id]));
-    const idOf = (t: { type: TagType; name: string }) => {
-      const id = ids.get(tagKey(t));
-      // Every row inserted or updated is returned: a miss is a bug here, not a bad file.
-      if (id === undefined) throw new Error("an upserted tag was not returned");
-      return id;
-    };
-    await trx
-      .insertInto("work_tags")
-      .values(tags.map((t) => ({ work_id: workId, tag_id: idOf(t), position: t.position })))
-      .execute();
+    for (const r of rows) ids.set(tagKey(r), r.id);
   }
+  const idOf = (t: { type: TagType; name: string }) => {
+    const id = ids.get(tagKey(t));
+    // Every row inserted or updated is returned: a miss is a bug here, not a bad file.
+    if (id === undefined) throw new Error("an upserted tag was not returned");
+    return id;
+  };
+  const workTags = tags.map((t) => ({ work_id: workId, tag_id: idOf(t), position: t.position }));
+  for (const part of chunks(workTags)) await trx.insertInto("work_tags").values(part).execute();
 
   const version = await trx
     .insertInto("work_versions")
@@ -185,19 +180,15 @@ async function writeRows(
     })
     .returning("id")
     .executeTakeFirstOrThrow();
-  await trx
-    .insertInto("chapters")
-    .values(
-      chapters.map((c) => ({
-        work_id: workId,
-        version_id: version.id,
-        n: c.n,
-        title: c.title,
-        words: c.words,
-        r2_key: c.key,
-      })),
-    )
-    .execute();
+  const rows = chapters.map((c) => ({
+    work_id: workId,
+    version_id: version.id,
+    n: c.n,
+    title: c.title,
+    words: c.words,
+    r2_key: c.key,
+  }));
+  for (const part of chunks(rows)) await trx.insertInto("chapters").values(part).execute();
 
   // The work's last write: it goes `live` with its version current.
   await trx
@@ -255,6 +246,15 @@ function dateOrNull(value: string | null): string | null {
   return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value)
     ? date.toISOString()
     : null;
+}
+
+/** `items` in runs of at most `ROWS_PER_INSERT`, in order. None for no items. */
+function chunks<T>(items: T[]): T[][] {
+  const runs: T[][] = [];
+  for (let i = 0; i < items.length; i += ROWS_PER_INSERT) {
+    runs.push(items.slice(i, i + ROWS_PER_INSERT));
+  }
+  return runs;
 }
 
 /** The first of each key, in order. */

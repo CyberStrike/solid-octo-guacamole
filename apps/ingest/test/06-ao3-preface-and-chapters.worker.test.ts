@@ -158,7 +158,8 @@ describe("06-ao3-preface-and-chapters", () => {
           published: "not a date",
           updated: null,
           completed: null,
-          words: 2,
+          // Out of range: the chapters' sum stands in, as for no count at all.
+          words: 3_000_000_000,
           chapters: { posted: 2, total: 2 },
         },
         expected: {
