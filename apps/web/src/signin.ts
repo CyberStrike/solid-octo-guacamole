@@ -9,9 +9,9 @@ export const SITE = "https://rarepair.fans";
  * absent value included, becomes "/": root-relative only, no `//`, no `\`, no
  * control characters.
  */
-export function safeNext(value: unknown): string {
-  if (typeof value !== "string") return "/";
-  if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return "/";
+export function safeNext(value: string | null): string {
+  if (value === null || !value.startsWith("/") || value.startsWith("//") || value.includes("\\"))
+    return "/";
   // oxlint-disable-next-line no-control-regex -- control characters are what it looks for
   if (/[\u0000-\u001f\u007f]/.test(value)) return "/";
   const url = URL.parse(value, "https://next.invalid");

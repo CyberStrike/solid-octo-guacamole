@@ -19,16 +19,16 @@ export interface TurnstileCheck {
   hostname: string;
   /** The visitor's address (`cf-connecting-ip`), when known. */
   remoteIp?: string | null;
-  /** The Worker's `fetch`; a test passes its own. */
-  fetch?: typeof fetch;
+  /** The Worker's `fetch` when left out; a test passes its own. */
+  fetch?: (url: string, init: RequestInit) => Promise<Response>;
 }
 
-/** Checks the `cf-turnstile-response` value of a submitted form. */
+/** Checks the `cf-turnstile-response` value of a submitted form, null when it has none. */
 export async function verifyTurnstile(
-  token: FormDataEntryValue | null | undefined | string[],
+  token: string | null,
   check: TurnstileCheck,
 ): Promise<TurnstileResult> {
-  if (typeof token !== "string" || token === "" || token.length > MAX_TOKEN) return "failed";
+  if (token === null || token === "" || token.length > MAX_TOKEN) return "failed";
   const body = new URLSearchParams({ secret: check.secret, response: token });
   if (check.remoteIp) body.set("remoteip", check.remoteIp);
 

@@ -24,7 +24,6 @@ describe("safeNext", () => {
   });
 
   it("gives the home page when there is no next", () => {
-    expect(safeNext(undefined)).toBe("/");
     expect(safeNext(null)).toBe("/");
   });
 });
@@ -41,7 +40,7 @@ describe("isSameOrigin", () => {
   });
 
   it("refuses another site, or another rarepair.fans host", () => {
-    for (const init of [
+    const refused: Record<string, string>[] = [
       { origin: "https://evil.example" },
       { origin: "https://content.rarepair.fans" },
       { origin: "http://rarepair.fans" },
@@ -52,9 +51,8 @@ describe("isSameOrigin", () => {
       // Each header present must pass on its own.
       { origin: "https://rarepair.fans", "sec-fetch-site": "same-site" },
       { origin: "https://content.rarepair.fans", "sec-fetch-site": "same-origin" },
-    ]) {
-      expect(isSameOrigin(headers(init))).toBe(false);
-    }
+    ];
+    for (const init of refused) expect(isSameOrigin(headers(init))).toBe(false);
   });
 
   it("refuses a request that carries neither header", () => {

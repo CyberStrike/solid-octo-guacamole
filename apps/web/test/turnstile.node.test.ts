@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { verifyTurnstile } from "../src/turnstile";
+import { verifyTurnstile, type TurnstileCheck } from "../src/turnstile";
 
 const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 // Cloudflare's published always-pass test secret and dummy token.
@@ -15,16 +15,23 @@ interface Call {
 /** A stand-in for Cloudflare's siteverify: records each call and answers with `reply`. */
 function siteverify(reply: () => Response | Promise<Response>) {
   const calls: Call[] = [];
-  const fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+  const fetch = async (url: string, init: RequestInit) => {
     // SAFETY: the verifier always posts a URLSearchParams body.
-    calls.push({ url: String(input), method: init?.method, body: init?.body as URLSearchParams });
+    calls.push({ url, method: init.method, body: init.body as URLSearchParams });
     return reply();
   };
   return { calls, fetch };
 }
 
-const answer = (body: object) => () => Response.json(body);
-const check = (fetch: typeof globalThis.fetch) => ({
+/** A siteverify reply, including the malformed ones a test sends. */
+interface Reply {
+  success?: boolean | string;
+  hostname?: string;
+  "error-codes"?: string[];
+}
+
+const answer = (body: Reply) => () => Response.json(body);
+const check = (fetch: TurnstileCheck["fetch"]) => ({
   secret: SECRET,
   hostname: "rarepair.fans",
   remoteIp: "192.0.2.1",
@@ -39,7 +46,7 @@ describe("19-surge-controls-and-quotas", () => {
     expect(await verifyTurnstile("not-a-passing-token", check(failing.fetch))).toBe("failed");
 
     const missing = siteverify(answer({ success: true, hostname: "rarepair.fans" }));
-    for (const token of [undefined, null, "", ["two", "tokens"]]) {
+    for (const token of [null, ""]) {
       expect(await verifyTurnstile(token, check(missing.fetch))).toBe("failed");
     }
     // A missing token fails without asking Cloudflare.
