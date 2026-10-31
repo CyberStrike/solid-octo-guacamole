@@ -1,5 +1,5 @@
-// The `email` queue's contract lives with its consumer. A type-only import: nothing
-// of apps/mailer is bundled into this Worker.
+// The `email` queue's contract lives with its consumer. A type-only import: of
+// apps/mailer, the Worker bundles only the address rule waitlist.ts imports.
 import type { EmailMessage } from "../../mailer/src/message";
 
 /** The web Worker's bindings, vars and secrets (wrangler.jsonc). */

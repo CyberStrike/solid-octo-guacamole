@@ -259,6 +259,25 @@ export interface RequesterBlockTable {
   created_at: CreatedTimestamp;
 }
 
+/**
+ * The launch wait list (ARCHITECTURE, Wait list): only what the launch email needs.
+ * Tokens are stored as SHA-256 hex hashes, never as themselves.
+ */
+export interface WaitlistTable {
+  /** Trimmed and lowercased. */
+  email: string;
+  /** Cleared once confirmed. */
+  confirm_token_hash: string | null;
+  /** The latest confirmation email's time: its link lasts 7 days from it. */
+  confirm_sent_at: CreatedTimestamp;
+  /** Confirmation emails sent, 3 at most. */
+  confirm_count: Generated<number>;
+  confirmed_at: Timestamp | null;
+  notified_at: Timestamp | null;
+  unsubscribe_token_hash: string | null;
+  created_at: CreatedTimestamp;
+}
+
 export interface Database {
   user: UserTable;
   session: SessionTable;
@@ -277,4 +296,5 @@ export interface Database {
   requests: RequestTable;
   optouts: OptoutTable;
   requester_blocks: RequesterBlockTable;
+  waitlist: WaitlistTable;
 }

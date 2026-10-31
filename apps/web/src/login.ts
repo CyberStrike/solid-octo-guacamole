@@ -10,7 +10,7 @@ import { isSameOrigin, safeNext } from "./signin";
 import { verifyTurnstile } from "./turnstile";
 
 // The longest address an email can be sent to (RFC 5321), as apps/mailer checks.
-const MAX_EMAIL = 254;
+export const MAX_EMAIL = 254;
 
 type LoginContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
 
@@ -25,7 +25,8 @@ export const showSignIn = (c: LoginContext) =>
 
 // The sign-in form at its largest, every character percent-encoded at its widest:
 // a 254-character address and a 512-character next (up to 9 bytes each, as
-// UTF-8) and a 2048-character token (3 each) come to about 13 KB.
+// UTF-8) and a 2048-character token (3 each) come to about 13 KB. The wait list
+// form, the same without `next`, is smaller.
 const MAX_BODY = 16 * 1024;
 
 /**
@@ -33,7 +34,7 @@ const MAX_BODY = 16 * 1024;
  * bytes, which stops being read there, or breaks off. Anything else, such as a
  * multipart body, has no fields and is never read.
  */
-async function readForm(request: Request): Promise<URLSearchParams | null> {
+export async function readForm(request: Request): Promise<URLSearchParams | null> {
   const type = request.headers.get("content-type") ?? "";
   if (!type.toLowerCase().startsWith("application/x-www-form-urlencoded")) {
     return new URLSearchParams();
