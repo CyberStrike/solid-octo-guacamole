@@ -13,7 +13,7 @@
   "preview_urls": false,
   // The wait list pages' fonts and stylesheet, under /assets/waitlist/. The Worker runs first
   // on every request and serves them through a route, so they get HSTS, the www 308
-  // and their Cache-Control from the Worker like every other response.
+  // and the content-hashed files their Cache-Control, from the Worker.
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

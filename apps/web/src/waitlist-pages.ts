@@ -15,7 +15,7 @@ const PLEX_LICENCE = "/assets/waitlist/fonts/ibm-plex-mono/license.txt";
 
 /**
  * A whole wait list page, in the wait list's web fonts, with their licences linked.
- * Every argument is trusted markup from this file, never escaped.
+ * Every argument is trusted markup from this file, never escaped (the sitekey is operator config).
  */
 export const waitlistPage = (title: string, body: string, head = "") => `<!doctype html>
 <html lang="en">
@@ -36,7 +36,7 @@ export const comingSoonPage = (nonce: string, siteKey: string) =>
 <p>A temporary, community-run reading archive for fanworks. Upload the epub files you downloaded, and anyone can browse, search and read them in the browser.</p>
 <form method="post" action="/waitlist">
 <label for="email">Email address</label>
-<input id="email" name="email" type="email" autocomplete="email" required>
+<input id="email" name="email" type="email" autocomplete="email" maxlength="254" required>
 <div class="cf-turnstile" data-sitekey="${siteKey}" data-callback="waitlistReady" data-expired-callback="waitlistExpired"></div>
 <button id="join" type="submit" disabled>Join the wait list</button>
 </form>

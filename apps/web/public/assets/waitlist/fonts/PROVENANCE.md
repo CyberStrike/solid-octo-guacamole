@@ -6,8 +6,8 @@ so far*, Coming-soon typography). Only the file names are ours: each woff2 is na
 with the first 16 hex of its SHA-256, so its path is content-hashed and can be cached
 as immutable. Each family's OFL licence sits beside it, also unmodified.
 
-`test/22-waitlist.prelaunch.test.ts` checks every served file's SHA-256 against the
-values below.
+`test/22-waitlist.prelaunch.test.ts` checks each served woff2 and licence file against a copy of the
+SHA-256 values below: keep the two in step.
 
 ## Fraunces
 
@@ -34,4 +34,5 @@ OFL 1.1 with Reserved Font Name "Plex".
 
 Take new files from the publishers' releases only, never from a font CDN (they
 re-subset). Rename each woff2 to the new hash, update `waitlist.<hash>.css` (and
-rename it to its own new hash, after `npm run format`), the table above and the test.
+rename it to its own new hash, after `npm run format`), `STYLESHEET` in
+`src/waitlist-pages.ts`, the table above and the test.

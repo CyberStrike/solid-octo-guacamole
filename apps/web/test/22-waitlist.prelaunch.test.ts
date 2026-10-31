@@ -57,7 +57,7 @@ describe("22-waitlist", () => {
     expect(email[0]).toContain('type="email"');
 
     // Turnstile alongside: its widget, and its api.js carrying the page nonce.
-    expect(html).toMatch(/<div class="cf-turnstile" data-sitekey="[^"]+"/);
+    expect(html).toContain(`<div class="cf-turnstile" data-sitekey="${env.TURNSTILE_SITE_KEY}"`);
     const scripts = tags(html, "script");
     const apiJs = scripts.filter((tag) => tag.includes(`src="${TURNSTILE_API}"`));
     expect(apiJs).toHaveLength(1);
@@ -264,7 +264,9 @@ describe("22-waitlist", () => {
       );
       expect(upload.status, String(PRELAUNCH)).toBe(302);
       const home = await app.fetch(new Request(`${BASE}/`), overridden, createExecutionContext());
+      expect(home.status).toBe(200);
       expect(withoutNonce(home.headers.get("content-security-policy"))).toBe(TURNSTILE);
+      expect(await home.text()).toMatch(/rarepair is coming soon/i);
     }
   });
 });

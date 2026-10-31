@@ -17,7 +17,8 @@ const strictPolicy = (nonce: string) =>
     "frame-ancestors 'none'",
   ].join("; ");
 
-// The pages with a Turnstile check, matched exactly: only they may frame the challenge.
+// The pages with a Turnstile check, matched exactly: only they, and / before launch
+// (hasTurnstile), may frame the challenge.
 const TURNSTILE_PATHS = new Set(["/login", "/upload", "/remove"]);
 export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 const TURNSTILE_FRAME = `frame-src ${TURNSTILE_ORIGIN}`;

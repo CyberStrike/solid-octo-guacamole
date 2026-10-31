@@ -21,7 +21,7 @@ app.use(wwwToBareDomain);
 app.use(closedBeforeLaunch);
 app.use(contentSecurityPolicy);
 
-// The wait list pages' fonts and stylesheet. S1's stylesheet has its own route beside it.
+// The wait list pages' fonts and stylesheet. S1 serves its own stylesheet elsewhere under /assets/.
 app.get("/assets/waitlist/*", assetRoute);
 
 // The coming-soon page before launch. After it there is no home page yet.
