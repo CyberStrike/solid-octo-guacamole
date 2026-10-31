@@ -277,6 +277,54 @@ describe("packages/db catalogue constraints", () => {
     );
   });
 
+  it("Co-authors may share a pseud name under different users", async () => {
+    const work = await addWork(211);
+    await t.db
+      .insertInto("work_authors")
+      .values([
+        { work_id: work.id, pseud: "Sam", ao3_user: "alice" },
+        { work_id: work.id, pseud: "Sam", ao3_user: "bob" },
+      ])
+      .execute();
+    const anonymous = { work_id: work.id, pseud: "Anonymous", ao3_user: null };
+    await t.db.insertInto("work_authors").values(anonymous).execute();
+    await expect(t.db.insertInto("work_authors").values(anonymous).execute()).rejects.toThrow(
+      /unique|duplicate key/i,
+    );
+  });
+
+  it("A work's tags can be renumbered in one statement", async () => {
+    const work = await addWork(212);
+    const a = await addTag("freeform", "Renumber A");
+    const b = await addTag("freeform", "Renumber B");
+    await t.db
+      .insertInto("work_tags")
+      .values([
+        { work_id: work.id, tag_id: a.id, position: 0 },
+        { work_id: work.id, tag_id: b.id, position: 1 },
+      ])
+      .execute();
+    await t.db
+      .updateTable("work_tags")
+      .set((eb) => ({ position: eb("position", "+", 1) }))
+      .where("work_id", "=", work.id)
+      .execute();
+    const rows = await t.db
+      .selectFrom("work_tags")
+      .select("position")
+      .where("work_id", "=", work.id)
+      .orderBy("position")
+      .execute();
+    expect(rows).toEqual([{ position: 1 }, { position: 2 }]);
+  });
+
+  it("An upload's size can't be negative", async () => {
+    const userId = await addUser();
+    await expect(
+      t.db.insertInto("uploads").values({ user_id: userId, r2_key: "k", bytes: -1 }).execute(),
+    ).rejects.toThrow(/check constraint/i);
+  });
+
   it("Two of a work's tags can't share a position", async () => {
     const work = await addWork(208);
     const a = await addTag("freeform", "Position A");

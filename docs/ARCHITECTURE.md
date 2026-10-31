@@ -152,7 +152,7 @@ re-uploads are caught at `/complete` by the file's SHA-256: the upload is marked
 
 **Tags.** AO3's tag wrangling (canonical tags and synonyms) can't be rebuilt in
 a week. Store tags exactly as written, plus a normalized form (`name_norm`:
-lowercased, whitespace and punctuation folded) used for matching. Moderators can
+in Unicode NFKC, lowercased, whitespace and punctuation folded) used for matching. Moderators can
 merge synonyms later. Relationship tags keep `/` and `&` when `name_norm` is
 computed, so "Kirk/Spock" and "Kirk & Spock" are different tags (whitespace
 and punctuation beside them still fold away, so "Kirk / Spock" matches

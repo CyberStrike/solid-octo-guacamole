@@ -66,7 +66,10 @@ export interface FragmentBucket {
   put(key: string, value: string): Promise<unknown>;
 }
 
+/** After the rating tag, which follows the `rating` option. */
 const DEFAULT_TAGS: { type: TagType; name: string }[] = [
+  { type: "warning", name: "No Archive Warnings Apply" },
+  { type: "category", name: "Gen" },
   { type: "fandom", name: "Seed Fandom" },
   { type: "relationship", name: "Seed One/Seed Two" },
   { type: "character", name: "Seed One" },
@@ -84,6 +87,11 @@ export async function seedWork(
 ): Promise<SeededWork> {
   const ao3WorkId = options.ao3WorkId ?? randomAo3WorkId();
   const status = options.status ?? "live";
+  const rating = options.rating === undefined ? "Not Rated" : options.rating;
+  const tags = options.tags ?? [
+    ...(rating === null ? [] : [{ type: "rating" as const, name: rating }]),
+    ...DEFAULT_TAGS,
+  ];
   return db.transaction().execute(async (trx) => {
     const userId = options.userId ?? (await addUser(trx));
     const work = await trx
@@ -92,8 +100,10 @@ export async function seedWork(
         ao3_work_id: ao3WorkId,
         title: options.title ?? `Seeded work ${ao3WorkId}`,
         summary_html: "<p>A seeded summary.</p>",
-        rating: options.rating === undefined ? "Not Rated" : options.rating,
+        rating,
         language: "English",
+        published_at: "2020-01-01T00:00:00Z",
+        updated_at: "2020-02-01T00:00:00Z",
         // The version below sets the counts as it becomes current.
         chapters_count: 0,
         complete: options.complete ?? true,
@@ -107,7 +117,7 @@ export async function seedWork(
       .insertInto("work_authors")
       .values(authors.map((a) => ({ work_id: work.id, ...a })))
       .execute();
-    await addTags(trx, work.id, options.tags ?? DEFAULT_TAGS);
+    await addTags(trx, work.id, tags);
     const seeded = { workId: work.id, ao3WorkId, userId };
     const version = await addVersion(trx, seeded, { ...options, current: true });
     // Last, as ingest does: the work leaves `processing` once its version is current.

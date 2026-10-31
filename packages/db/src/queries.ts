@@ -56,6 +56,8 @@ const SUMMARY = [
   "works.status",
 ] as const;
 
+const MAX_INT4 = 2_147_483_647;
+
 /**
  * A `live` work by its AO3 work ID, with its authors, tags and current
  * version's chapters. Null when there is none, or it's hidden or removed.
@@ -64,6 +66,8 @@ export async function getLiveWork(
   db: Kysely<Database>,
   ao3WorkId: number,
 ): Promise<LiveWork | null> {
+  // `ao3_work_id` is an int4: anything else is no work, not a database error.
+  if (!Number.isInteger(ao3WorkId) || ao3WorkId < 1 || ao3WorkId > MAX_INT4) return null;
   const row = await db
     .selectFrom("works")
     .innerJoin("work_versions", "work_versions.id", "works.current_version_id")
@@ -123,6 +127,8 @@ export async function listLiveWorksByTag(
   name: string,
 ): Promise<WorkSummary[]> {
   const nameNorm = normalizeTagName(type, name);
+  // A name of only punctuation folds to nothing, which names no tag.
+  if (nameNorm === "") return [];
   return db
     .selectFrom("works")
     .select(SUMMARY)

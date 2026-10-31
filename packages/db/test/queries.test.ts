@@ -43,6 +43,12 @@ describe("packages/db tag listing", () => {
     expect(normalizeTagName("character", "Listing Sherlock")).toBe("listing sherlock");
     expect(works.map((w) => w.id)).toEqual([fandom.workId]);
   });
+
+  it("A name with nothing left once folded lists no works", async () => {
+    await seedWork(t.db, { tags: [{ type: "freeform", name: "???" }] });
+    expect(await listLiveWorksByTag(t.db, "freeform", "!!!")).toEqual([]);
+    expect(await listLiveWorksByTag(t.db, "freeform", "")).toEqual([]);
+  });
 });
 
 describe("packages/db uploads", () => {

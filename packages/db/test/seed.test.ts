@@ -86,8 +86,22 @@ describe("@archive/db/seed seedWork", () => {
     expect(row).toEqual({ status: "hidden", hidden_cause: "reports" });
   });
 
+  it("A default seed carries its rating as a tag too", async () => {
+    const s = await seedWork(t.db, { rating: "Mature" });
+    const work = await getLiveWork(t.db, s.ao3WorkId);
+    expect(work?.work.rating).toBe("Mature");
+    expect(work?.tags.filter((x) => x.type === "rating").map((x) => x.name)).toEqual(["Mature"]);
+    expect(work?.tags.map((x) => x.type)).toContain("warning");
+  });
+
   it("A work nobody seeded is not found", async () => {
     expect(await getLiveWork(t.db, 2_147_483_647)).toBeNull();
+  });
+
+  it("A work ID no work can have is not found", async () => {
+    expect(await getLiveWork(t.db, 2_147_483_648)).toBeNull();
+    expect(await getLiveWork(t.db, 1.5)).toBeNull();
+    expect(await getLiveWork(t.db, 0)).toBeNull();
   });
 
   it("Two seeds of one tag share its row", async () => {

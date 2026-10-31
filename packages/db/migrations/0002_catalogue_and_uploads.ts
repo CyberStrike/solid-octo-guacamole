@@ -36,7 +36,7 @@ create table "uploads" (
   "user_id" text not null references "user" ("id"),
   "r2_key" text not null,
   "sha256" text,
-  "bytes" integer not null,
+  "bytes" integer not null check ("bytes" >= 0),
   "status" text not null default 'pending',
   "lease_until" timestamptz,
   "error_stage" text,
@@ -96,14 +96,16 @@ create table "work_tags" (
   "tag_id" text not null references "tags" ("id"),
   "position" integer not null,
   primary key ("work_id", "tag_id"),
-  unique ("work_id", "position")
+  -- Checked at commit, so a work's tags can be renumbered in one statement.
+  unique ("work_id", "position") deferrable initially deferred
 );
 
 create table "work_authors" (
   "work_id" text not null references "works" ("id") on delete cascade,
   "pseud" text not null,
   "ao3_user" text,
-  primary key ("work_id", "pseud")
+  -- A pseud name is unique only within its user, so two co-authors can share one.
+  unique nulls not distinct ("work_id", "pseud", "ao3_user")
 );
 
 create index "uploads_user_id_idx" on "uploads" ("user_id");

@@ -128,7 +128,7 @@ export interface WorkVersionTable {
   /** `works/<ao3_work_id>/<upload_id>/`, with the trailing slash. */
   r2_prefix: string;
   created_at: CreatedTimestamp;
-  /** From the parser; non-empty shows the "may be imperfect" notice. */
+  /** From the parser. Non-empty, with `checked_at` still NULL, shows the "may be imperfect" notice. */
   review_reasons: ColumnType<string[], string[] | undefined, string[]>;
   /** Set when a moderator approves the version. */
   checked_at: Timestamp | null;
