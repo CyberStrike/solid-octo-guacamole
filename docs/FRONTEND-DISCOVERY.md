@@ -17,7 +17,7 @@ fandoms and pseuds in it are invented placeholders.
 | --- | --- |
 | Visual direction | Modern and minimal. The identity is plain HTML with a strong typographic hierarchy: type, spacing and rules do the work, not boxes, shadows or imagery |
 | Warnings | **Hard constraint:** rating and archive warnings show on every work card and work page. They are never collapsed, never behind a hover, and never hidden to save space. Minimalism applies to everything else |
-| JavaScript | Reading, browsing, search and reader settings work fully with JavaScript off; small scripts only enhance them (settings without a reload, saving reading position). Forms with a Turnstile check (sign-in, upload, `/remove`) need JavaScript, because Turnstile can't produce a token without it; with JS off they say so in a `<noscript>` message |
+| JavaScript | Reading, browsing, search and reader settings work fully with JavaScript off; small scripts only enhance them (settings without a reload, saving reading position). Forms with a Turnstile check (sign-in, upload, `/remove`, and the wait list before launch) need JavaScript, because Turnstile can't produce a token without it; with JS off they say so in a `<noscript>` message |
 | Pagination | Server-side pages with real URLs. No infinite scroll |
 | Branding | No AO3 or OTW name, symbols or styling in the UI. Ratings and warnings are text badges, not symbol icons (ARCHITECTURE, opening) |
 | Author identity | No claims, no author accounts, no "my works". Removal and opt-out are a public request form that needs no sign-in (ARCHITECTURE, *Author requests & takedowns*) |
@@ -139,12 +139,15 @@ Reading never requires an account (ARCHITECTURE, *Auth*).
 ## Page inventory
 
 Every page renders without JavaScript, and reading, browsing and search work
-fully. The three forms with a Turnstile check (sign-in, upload, `/remove`)
-need JavaScript and show a `<noscript>` message without it. Elsewhere the
+fully. The forms with a Turnstile check (sign-in, upload, `/remove`, and the
+wait list before launch) need JavaScript and show a `<noscript>` message
+without it. Elsewhere the
 "JS adds" column is progressive enhancement only.
 
 | Page | URL | Who | Without JS | JS adds |
 | --- | --- | --- | --- | --- |
+| Coming soon | `/` while `PRELAUNCH` is on | all | What rarepair is and what opens; `<noscript>` message: joining the wait list needs JavaScript | Email form with Turnstile, "check your email to confirm", error states |
+| Confirm wait list | `/waitlist/confirm?token=…` | all | "Confirm" button (POST form), then "You're on the list"; used, expired or unknown links say so, with a link to `/` | — |
 | Home / browse | `/` | all | Search box, popular fandoms, recently added | — |
 | Search results | `/search?q=…` | all | GET form, paged results, filter form | — |
 | Fandom / tag listing | `/tags/:slug` | all | Paged works, sort and filter as a GET form | — |
@@ -176,8 +179,8 @@ with the architecture as written. These are the resolutions. ARCHITECTURE.md is
 updated to match.
 
 1. **Forms with Turnstile need JS.** Turnstile can't produce a token without
-   JavaScript, and sign-in, upload and `/remove` all require one. So those
-   three forms need JS and show a `<noscript>` message without it, while
+   JavaScript, and sign-in, upload, `/remove` and the wait list before launch
+   all require one. So those forms need JS and show a `<noscript>` message without it, while
    reading, browsing and search stay fully usable with JS off. Uploads are
    direct presigned PUTs to R2 with progress (R2 doesn't accept form POSTs);
    the earlier no-JS multipart path through the Worker was dropped. Turnstile
@@ -317,5 +320,13 @@ handful of displaced readers:
 
 ## Open questions
 
-None right now. Summary clamping, what the home page leads with, and the AO3
-link behaviour are settled in *Decisions so far*.
+Summary clamping, what the home page leads with, and the AO3 link behaviour
+are settled in *Decisions so far*.
+
+- **Coming-soon typography.** The coming-soon design sets the page in
+  Fraunces with IBM Plex Mono labels, but the *Typographic system* allows
+  system fonts only. Either the coming-soon page is an exception, with both
+  fonts self-hosted on `rarepair.fans` and `font-src 'self'` added to its CSP
+  (never Google Fonts, which would send every visitor to a third party), or
+  it uses the system stacks. Until this is settled, it uses the system
+  stacks.
