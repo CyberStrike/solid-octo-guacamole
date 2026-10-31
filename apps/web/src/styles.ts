@@ -145,10 +145,13 @@ footer {
   font-size: var(--text-1);
 }
 
+/* Layout containment makes the chapter the containing block of anything positioned
+   inside it, so no fragment can lay itself over the page. */
 article.chapter {
   font-family: var(--reading);
   line-height: 1.6;
   max-width: 66ch;
+  contain: content;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -161,14 +164,7 @@ article.chapter {
   }
 }
 
-/* The chapter reader (R2). Layout containment makes the chapter the containing block
-   of anything positioned inside it, so no fragment can lay itself over the page. */
-article.chapter {
-  contain: content;
-  overflow-wrap: anywhere;
-}
-
-/* Paint containment clips what overflows the chapter, so wide content fits or scrolls. */
+/* The chapter reader (R2). Long words break through main's overflow-wrap. Paint containment clips what overflows the chapter, so wide content fits or scrolls. */
 article.chapter img {
   max-width: 100%;
   height: auto;
