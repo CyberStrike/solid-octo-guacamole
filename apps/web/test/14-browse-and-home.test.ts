@@ -2,7 +2,7 @@ import { createDb } from "@archive/db";
 import { seedWork } from "@archive/db/seed";
 import { env } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { fetchW } from "./helpers";
+import { fetchW, STRICT, withoutNonce } from "./helpers";
 
 // Work IDs 30000-30999 and these tag names are this file's alone: one database
 // serves every test file in the project, and a listing sees whatever shares its tag.
@@ -47,8 +47,9 @@ const stylesheetOf = async (html: string) => {
 /** The declarations of every rule whose selector names this class. */
 const rulesFor = (css: string, className: string) =>
   [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .filter(([, selector]) => new RegExp(`\\.${className}\\b`).test(selector ?? ""))
-    .map(([, , body]) => body)
+    .flatMap(([, selector = "", body = ""]) =>
+      new RegExp(`\\.${className}\\b`).test(selector) ? [body] : [],
+    )
     .join("\n");
 
 const SYMBOLS = /<img|<svg|\p{Extended_Pictographic}/u;
@@ -130,11 +131,13 @@ describe("14-browse-and-home", () => {
 
     const html = await htmlOf("/tags/fandom/spelled%20out%20fandom");
 
-    const line = lineOf(cardOf(html, 30020), "card-rating") ?? "";
-    expect(line).toBe("<strong>Mature · Graphic Depictions Of Violence</strong>");
+    const card = cardOf(html, 30020);
+    expect(lineOf(card, "card-rating")).toBe(
+      "<strong>Mature · Graphic Depictions Of Violence</strong>",
+    );
     expect(lineOf(cardOf(html, 30021), "card-rating")).toBe("<strong>Not Rated</strong>");
-    expect(cardOf(html, 30020)).not.toMatch(SYMBOLS);
-    expect(cardOf(html, 30020)).not.toMatch(/style=/);
+    expect(card).not.toMatch(SYMBOLS);
+    expect(card).not.toMatch(/style=/);
     expect(rulesFor(await stylesheetOf(html), "card-rating")).not.toMatch(/color|background/);
   });
 
@@ -262,5 +265,122 @@ describe("14-browse-and-home", () => {
     expect(textOf(lineOf(cardOf(html, 30061), "card-stats") ?? "")).toBe(
       "800 words · 1/? chapters · Complete · Updated 2023-11-20",
     );
+  });
+
+  it("Anonymous work card", async () => {
+    await seedWork(db, {
+      ao3WorkId: 30070,
+      anonymous: true,
+      tags: [{ type: "fandom", name: "Anonymous Card Fandom" }],
+    });
+
+    const html = await htmlOf("/tags/fandom/anonymous%20card%20fandom");
+
+    expect(textOf(lineOf(cardOf(html, 30070), "card-byline") ?? "")).toBe("by Anonymous");
+  });
+});
+
+describe("14-browse-and-home tag listing URLs", () => {
+  it("A relationship's / and & stay in one path segment, as different tags", async () => {
+    await seedWork(db, {
+      ao3WorkId: 30080,
+      tags: [{ type: "relationship", name: "Url Kirk/Spock" }],
+    });
+    await seedWork(db, {
+      ao3WorkId: 30081,
+      tags: [{ type: "relationship", name: "Url Kirk & Spock" }],
+    });
+
+    const slash = await htmlOf("/tags/relationship/url%20kirk%2Fspock");
+    const and = await htmlOf("/tags/relationship/url%20kirk%26spock");
+
+    expect(slash).toContain("<h1>Url Kirk/Spock</h1>");
+    expect(cardOf(slash, 30080)).not.toBe("");
+    expect(cardOf(slash, 30081)).toBe("");
+    expect(and).toContain("<h1>Url Kirk &amp; Spock</h1>");
+    expect(cardOf(and, 30081)).not.toBe("");
+    expect(cardOf(and, 30080)).toBe("");
+  });
+
+  it("The heading is the first spelling by code unit", async () => {
+    await seedWork(db, { ao3WorkId: 30090, tags: [{ type: "fandom", name: "url heading" }] });
+    await seedWork(db, { ao3WorkId: 30091, tags: [{ type: "fandom", name: "Url  Heading!" }] });
+
+    const html = await htmlOf("/tags/fandom/url%20heading");
+
+    expect(html.match(/<h1>([^<]*)<\/h1>/g)).toEqual(["<h1>Url  Heading!</h1>"]);
+  });
+
+  it("A tag with no live works lists no works", async () => {
+    await seedWork(db, {
+      ao3WorkId: 30100,
+      status: "removed",
+      tags: [{ type: "freeform", name: "Url Empty Freeform" }],
+    });
+
+    const res = await fetchW("/tags/freeform/url%20empty%20freeform");
+    const html = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(html).toContain("No works");
+    expect(html).not.toContain('class="work-card"');
+  });
+
+  it("An unknown tag type, or a tag nobody has used, is not found", async () => {
+    expect((await fetchW("/tags/genre/harry%20potter")).status).toBe(404);
+    expect((await fetchW("/tags/fandom/url%20never%20seeded")).status).toBe(404);
+  });
+
+  it("A tag listing has the strict policy, no script and no cookie", async () => {
+    const res = await fetchW("/tags/fandom/harry%20potter");
+    const html = await res.text();
+
+    expect(withoutNonce(res.headers.get("content-security-policy"))).toBe(STRICT);
+    expect(res.headers.get("set-cookie")).toBeNull();
+    expect(html).not.toMatch(/<script|<style|style=/i);
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+  });
+});
+
+/**
+ * Every card on the listings with ratings and warnings this file seeded. One
+ * request at a time: the test database serves one connection at a time.
+ */
+const allCards = async () => {
+  const cards: string[] = [];
+  for (const name of [
+    "spelled%20out%20fandom",
+    "long%20warnings%20fandom",
+    "line%20order%20fandom",
+  ]) {
+    cards.push(...(await htmlOf(`/tags/fandom/${name}`)).split(/<li class="work-card">/).slice(1));
+  }
+  return cards;
+};
+
+describe("20-site-chrome-and-legal", () => {
+  it("Ratings and warnings are text, not symbols", async () => {
+    const cards = await allCards();
+
+    expect(cards.length).toBeGreaterThan(0);
+    for (const card of cards) {
+      const line = lineOf(card, "card-rating") ?? "";
+      expect(textOf(line)).toMatch(/^[\w ,·/-]+$/u);
+      expect(line).not.toMatch(SYMBOLS);
+    }
+  });
+});
+
+describe("21-accessibility-and-no-js", () => {
+  it("Colour is never the only signal", async () => {
+    const cards = await allCards();
+    const css = await stylesheetOf(await htmlOf("/tags/fandom/harry%20potter"));
+
+    expect(cards.length).toBeGreaterThan(0);
+    for (const card of cards) {
+      expect(lineOf(card, "card-rating")).toMatch(/^<strong>[^<]+<\/strong>$/);
+      expect(card).not.toMatch(/style=|class="[^"]*(colou?r|red|green|amber)/);
+    }
+    expect(rulesFor(css, "card-rating")).not.toMatch(/color|background/);
   });
 });
