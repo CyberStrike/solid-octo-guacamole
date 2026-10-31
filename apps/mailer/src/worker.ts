@@ -32,8 +32,12 @@ export default {
     // Only Resend for now: the failover provider is still to be chosen.
     const { sender, result } = await deliver(emails, [resendSender(env.RESEND_API_KEY)]);
     const line = { event: "email.send", provider: sender, count: emails.length };
-    if (result.outcome === "sent") console.log({ ...line, outcome: "sent", ids: result.ids });
-    else console.error({ ...line, outcome: result.outcome, status: result.status });
+    if (result.outcome === "sent") {
+      console.log({ ...line, outcome: "sent", ids: result.ids });
+      // A refused email is acked with the rest: retrying a bad address would only fail again.
+      const rejected = result.rejected?.length ?? 0;
+      if (rejected > 0) console.warn({ event: "email.refused", provider: sender, count: rejected });
+    } else console.error({ ...line, outcome: result.outcome, status: result.status });
 
     // Ack and retry per message: a retried message is dead-lettered after max_retries.
     for (const message of valid) {
