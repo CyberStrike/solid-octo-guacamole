@@ -51,8 +51,6 @@ export default defineConfig({
   // needs the plugin's conditions here too. The node project doesn't inherit them.
   ssr: { resolve: { conditions: ["workerd", "worker", "module", "browser"] } },
   test: {
-    testTimeout: 60_000,
-    hookTimeout: 60_000,
     projects: [
       {
         test: {
@@ -94,6 +92,9 @@ export default defineConfig({
           include: ["test/**/*.test.ts"],
           exclude: ["test/**/*.node.test.ts"],
           globalSetup: ["./test/global-setup.ts"],
+          // A project doesn't inherit the root's timeouts. The first request loads Better Auth.
+          testTimeout: 60_000,
+          hookTimeout: 60_000,
         },
       },
     ],
