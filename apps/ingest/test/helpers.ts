@@ -192,14 +192,19 @@ export const token = () => crypto.randomUUID().slice(0, 8);
 export const freshAo3WorkId = () => 100_000_000 + Math.floor(Math.random() * 2_000_000_000);
 
 /**
- * Uploads a synthetic epub of AO3 work `workId` and runs its job up to the save step, with the
- * byline `pseuds` over the epub's own (the synthetic epubs all carry one byline), or the epub's
- * own when none are given. The save step is a stub that writes nothing: it records the id of
- * each upload that reached it, in `saved`. Returns that, the upload's id and row, and the
- * queue's result.
+ * Uploads a synthetic epub of AO3 work `workId` and runs its job, as `ingestUpload` does.
  */
-export async function ingestEpub(workId: number, ...pseuds: string[]) {
-  const id = await pendingUpload(ao3Epub({ workId }));
+export const ingestEpub = (workId: number, ...pseuds: string[]) =>
+  ingestUpload(ao3Epub({ workId }), ...pseuds);
+
+/**
+ * Uploads `epub` and runs its job up to the save step, with the byline `pseuds` over the epub's
+ * own (the synthetic epubs all carry one byline), or the epub's own when none are given. The
+ * save step is a stub that writes nothing: it records the id of each upload that reached it, in
+ * `saved`. Returns that, the upload's id and row, and the queue's result.
+ */
+export async function ingestUpload(epub: Uint8Array, ...pseuds: string[]) {
+  const id = await pendingUpload(epub);
   const saved: string[] = [];
   const process: Steps["process"] = async (bytes) => {
     const work = await processEpub(bytes);
@@ -215,7 +220,7 @@ export async function ingestEpub(workId: number, ...pseuds: string[]) {
   return { id, row: await uploadRow(id), saved, result };
 }
 
-type Ingested = Awaited<ReturnType<typeof ingestEpub>>;
+type Ingested = Awaited<ReturnType<typeof ingestUpload>>;
 
 /** Expects the upload rejected as `opted_out`: final and acked, with no work, never saved. */
 export function expectOptedOut({ row, saved, result }: Ingested) {

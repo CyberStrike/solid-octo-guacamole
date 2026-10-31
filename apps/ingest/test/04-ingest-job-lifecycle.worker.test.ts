@@ -363,13 +363,32 @@ describe("04-ingest-job-lifecycle", () => {
 
   it("Concurrent deliveries claim the lease once", async () => {
     const id = await pendingUpload(ao3Epub({ workId: freshAo3WorkId() }));
+    const first = watchedWorker(holding);
+    const second = watchedWorker(holding);
+
+    // Two invocations started at once, each with its own connection to Postgres; nothing
+    // orders them, and the loser acks at its claim. The test database is one PGlite
+    // session, so the two claims run one after the other: this shows one claim winning,
+    // not a real Postgres's row lock and re-check under READ COMMITTED.
+    const [firstResult, secondResult] = await Promise.all([
+      deliver([{ upload_id: id }], { handler: first.handler }),
+      deliver([{ upload_id: id }], { handler: second.handler }),
+    ]);
+
+    expect(first.parsed.length + second.parsed.length).toBe(1);
+    expect((await uploadRow(id)).status).toBe("processing");
+    expect(firstResult.explicitAcks).toEqual(["msg-0"]);
+    expect(secondResult.explicitAcks).toEqual(["msg-0"]);
+  });
+
+  it("does not reclaim the lease of a job still running", async () => {
+    const id = await pendingUpload(ao3Epub({ workId: freshAo3WorkId() }));
     const gate = gated();
     const first = watchedWorker({ ...holding, process: gate.process });
     const second = watchedWorker();
 
-    // Two invocations in flight at once, each with its own connection to Postgres. The first
-    // is held inside its job while the second runs, so only one sends at a time: the test
-    // database's socket can interleave two clients' queries (vitest.config.ts).
+    // The first invocation is held inside its job while the second runs: the second neither
+    // waits for it nor takes its live lease.
     const running = deliver([{ upload_id: id }], { handler: first.handler });
     await gate.entered;
     const secondResult = await deliver([{ upload_id: id }], { handler: second.handler });
@@ -467,10 +486,9 @@ describe("04-ingest-job-lifecycle", () => {
   it("Consumer concurrency stays bounded under a flood", async () => {
     // The platform cap is max_concurrency in wrangler.jsonc (test/queue-config.node.test.ts).
     // Inside one invocation, a full batch runs one job at a time, and none fails for waiting.
-    // One after another: the test database takes one client's queries at a time.
-    const ids: string[] = [];
-    for (let i = 0; i < 5; i++)
-      ids.push(await pendingUpload(ao3Epub({ workId: freshAo3WorkId() })));
+    const ids = await Promise.all(
+      Array.from({ length: 5 }, () => pendingUpload(ao3Epub({ workId: freshAo3WorkId() }))),
+    );
     const gate = gated();
     const { handler } = watchedWorker({ process: gate.process });
 
