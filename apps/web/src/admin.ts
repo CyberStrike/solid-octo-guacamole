@@ -43,8 +43,9 @@ type AdminContext = Context<AdminEnv>;
  * refusal, never a redirect to sign in, so /admin looks like any URL that doesn't
  * exist (ARCHITECTURE, Decisions so far). Runs after `sessionMiddleware`. The role
  * is read from the database on every request, so a demotion takes effect at once.
- * Every response, the refusal included, is `no-store`: the queues hold contact
- * emails and statements.
+ * Every answer it lets through or gives, the refusal included, is `no-store`: the
+ * queues hold contact emails and statements. One exception: when the session lookup
+ * or the role read fails, `app.onError` answers its 500 instead, with no data in it.
  */
 export const adminGate: MiddlewareHandler<AdminEnv> = async (c, next) => {
   const userId = c.var.session?.user.id;
@@ -94,6 +95,8 @@ export async function showReports(c: AdminContext) {
       "works.ao3_work_id",
     ])
     .where("reports.status", "=", "open")
+    // "This version is wrong" only queues the work in Works to check (ARCHITECTURE, Reports).
+    .where("reports.kind", "<>", "wrong_version")
     .orderBy("reports.created_at")
     .orderBy("reports.id")
     .limit(QUEUE_LIMIT + 1)
@@ -165,9 +168,12 @@ export async function showRequests(c: AdminContext) {
   return c.html(queuePage("Requests", REQUEST_COLUMNS, cells));
 }
 
-/** `GET /admin/works`: Works to check. MOD3 (#47) fills it; for now it is always empty. */
+/**
+ * `GET /admin/works`: Works to check. MOD3 (#47) fills it; until then it says so,
+ * rather than that nothing is waiting.
+ */
 export function showWorksToCheck(c: AdminContext) {
-  return c.html(queuePage("Works to check", WORK_COLUMNS, []));
+  return c.html(queuePage("Works to check", WORK_COLUMNS, [], "This queue is not built yet."));
 }
 
 /**

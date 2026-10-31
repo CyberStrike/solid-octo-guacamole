@@ -69,7 +69,7 @@ app.get(STYLESHEET_PATH, (c) =>
   }),
 );
 
-// no-store on every 404, as on every /admin response: the admin gate refuses with
+// no-store on every 404, as on the /admin pages: the admin gate refuses with
 // this answer, and a header only its refusal sent would point at /admin.
 app.notFound((c) => {
   c.header("Cache-Control", "no-store");

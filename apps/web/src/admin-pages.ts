@@ -28,9 +28,15 @@ export const adminHomePage = () => layout("Moderation", nav);
 
 /**
  * A queue: its table, oldest first, with headings even when empty. `rows` may hold
- * one more than QUEUE_LIMIT, which says the queue has more than it shows.
+ * one more than QUEUE_LIMIT, which says the queue has more than it shows. `empty`
+ * is the line an empty queue shows.
  */
-export function queuePage(title: string, columns: string[], rows: Row[]) {
+export function queuePage(
+  title: string,
+  columns: string[],
+  rows: Row[],
+  empty = "Nothing waiting.",
+) {
   const shown = rows.slice(0, QUEUE_LIMIT);
   const head = columns.map((name) => `<th scope="col">${escapeHtml(name)}</th>`).join("");
   const body = shown
@@ -38,7 +44,7 @@ export function queuePage(title: string, columns: string[], rows: Row[]) {
     .join("\n");
   const note =
     shown.length === 0
-      ? `<p>Nothing waiting.</p>\n`
+      ? `<p>${escapeHtml(empty)}</p>\n`
       : rows.length > QUEUE_LIMIT
         ? `<p>Showing the oldest ${QUEUE_LIMIT}.</p>\n`
         : "";

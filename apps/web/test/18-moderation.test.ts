@@ -56,7 +56,7 @@ beforeAll(async () => {
     .values({
       work_id: workId,
       reporter_id: reporterId,
-      kind: "wrong_version",
+      kind: "mod1-reason",
       body: "mod1-report-seen",
       created_at: "2001-06-01T00:00:00Z",
     })
@@ -122,7 +122,7 @@ describe("18 moderation", () => {
         .values({
           work_id: workId,
           reporter_id: reporterId,
-          kind: "wrong_version",
+          kind: "mod1-reason",
           body: marker("report", date),
           created_at: date,
         })
@@ -271,10 +271,43 @@ describe("18 moderation", () => {
     for (const path of QUEUES) expect(html).toContain(`href="${path}"`);
   });
 
+  it("A wrong-version report waits in Works to check, not in Reports", async () => {
+    // ARCHITECTURE, Reports: "This version is wrong" only queues the work in Works to check.
+    await db
+      .insertInto("reports")
+      .values([
+        {
+          work_id: workId,
+          reporter_id: reporterId,
+          kind: "wrong_version",
+          body: "mod1-wrong-version-details",
+          created_at: "2001-10-01T00:00:00Z",
+        },
+        {
+          work_id: workId,
+          reporter_id: reporterId,
+          kind: "mod1-no-details",
+          body: null,
+          created_at: "2001-10-02T00:00:00Z",
+        },
+      ])
+      .execute();
+    const html = await (await get("/admin/reports", moderator)).text();
+    expect(html).not.toContain("mod1-wrong-version-details");
+    // A report without details is listed with an empty cell.
+    expect(rowWith(html, "mod1-no-details")).toEqual([
+      "2001-10-02T00:00:00.000Z",
+      `mod1-work-title (${WORK})`,
+      "mod1-no-details",
+      "",
+    ]);
+  });
+
   it("Works to check is an empty table for now", async () => {
     const html = await (await get("/admin/works", moderator)).text();
     expect(html).toMatch(/<th scope="col">/);
-    expect(html).toContain("Nothing waiting.");
+    expect(html).toContain("This queue is not built yet.");
+    expect(html).not.toContain("Nothing waiting.");
   });
 
   it("Stored text is escaped", async () => {
