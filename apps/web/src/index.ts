@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { admin } from "./admin";
 import { assetRoute } from "./assets";
 import { confirmSignIn, showConfirm } from "./confirm";
 import type { Bindings } from "./env";
@@ -13,7 +14,9 @@ import {
   wwwToBareDomain,
   type SecurityVariables,
 } from "./security";
+import { sessionMiddleware } from "./session";
 import { STYLESHEET, STYLESHEET_PATH } from "./styles";
+import { requestUpload, sameOriginUpload, showUpload } from "./upload";
 import { joinWaitlist } from "./waitlist";
 import { comingSoonPage } from "./waitlist-pages";
 import { showWork } from "./work-page";
@@ -27,6 +30,9 @@ app.use(strictTransportSecurity);
 app.use(wwwToBareDomain);
 app.use(closedBeforeLaunch);
 app.use(contentSecurityPolicy);
+
+// The moderation area: every /admin URL goes through its gate (admin.ts).
+app.route("/admin", admin);
 
 // The wait list pages' fonts and stylesheet. S1 serves its own stylesheet elsewhere under /assets/.
 app.get("/assets/waitlist/*", assetRoute);
@@ -44,7 +50,9 @@ app.post("/login/confirm", confirmSignIn);
 app.post("/waitlist", joinWaitlist);
 // After launch, a stale link to the form goes home. Before it, nothing is at GET /waitlist.
 app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));
-app.get("/upload", (c) => c.html(turnstilePage("Upload a work", c.get("nonce"))));
+// The session middleware runs on these two routes only, until A4 mounts it on every page.
+app.get("/upload", sessionMiddleware, showUpload);
+app.post("/uploads", sameOriginUpload, sessionMiddleware, requestUpload);
 app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce"))));
 
 // The reader. Closed before launch, like every /works/ page.
@@ -67,7 +75,12 @@ app.get(STYLESHEET_PATH, (c) =>
   }),
 );
 
-app.notFound((c) => c.html(notFoundPage(), 404));
+// no-store on every 404, as on the /admin pages: the admin gate refuses with
+// this answer, and a header only its refusal sent would point at /admin.
+app.notFound((c) => {
+  c.header("Cache-Control", "no-store");
+  return c.html(notFoundPage(), 404);
+});
 // Hono's default logs the whole error, and one from Postgres can quote the row it
 // failed on, a sign-in address included. Log only what kind of error it was.
 app.onError((error, c) => {

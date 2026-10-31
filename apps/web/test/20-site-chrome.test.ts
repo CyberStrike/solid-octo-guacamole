@@ -10,7 +10,8 @@ const fetchW = (input: string, init: RequestInit = {}) =>
 
 // Later tickets add their pages (reader, admin) here.
 const LEGAL = ["/about", "/terms", "/privacy"];
-const APP_PAGES = ["/login", "/upload", "/remove", ...LEGAL, "/no-such-page"];
+// Signed out, /upload redirects to sign in; its page needs a session (02-upload-handshake).
+const APP_PAGES = ["/login", "/remove", ...LEGAL, "/no-such-page"];
 
 const htmlOf = async (path: string) => (await fetchW(path)).text();
 

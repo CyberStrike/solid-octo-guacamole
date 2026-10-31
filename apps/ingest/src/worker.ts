@@ -3,20 +3,22 @@ import { processEpub } from "@archive/epub";
 import type { Kysely } from "kysely";
 import { errorCode, runJob, type JobDeps, type Verdict } from "./job";
 import { parseMessage } from "./message";
+import { saveWork, type SaveBucket } from "./save";
 
 export interface Env {
   HYPERDRIVE: Hyperdrive;
   BUCKET: R2Bucket;
 }
 
-/** The job's steps a test may replace, to fail one stage or to watch it. */
-export type Steps = Pick<JobDeps, "process" | "save">;
+/** What the job and the save use of the bucket. */
+type JobBucket = JobDeps["bucket"] & SaveBucket;
 
-const DEFAULT_STEPS: Steps = {
-  process: processEpub,
-  // Saving the work is I2's (#32). Until then a parsed upload stays `processing`, and its
-  // lease runs out with nothing to redeliver it. Nothing deploys before I2.
-  save: async () => {},
+/**
+ * The job's steps a test may replace, to fail one stage or to watch it. `bucket` wraps the
+ * real bucket, to fail or watch a write.
+ */
+export type Steps = Pick<JobDeps, "process" | "save"> & {
+  bucket: (real: R2Bucket) => JobBucket;
 };
 
 /** The queue handler, with `steps` over the real ones. */
@@ -34,7 +36,13 @@ export function ingestWorker(steps: Partial<Steps> = {}) {
         batch.retryAll();
         return;
       }
-      const deps: JobDeps = { db, bucket: env.BUCKET, ...DEFAULT_STEPS, ...steps };
+      const bucket = steps.bucket ? steps.bucket(env.BUCKET) : env.BUCKET;
+      const deps: JobDeps = {
+        db,
+        bucket,
+        process: steps.process ?? processEpub,
+        save: steps.save ?? ((lease, work, bytes) => saveWork({ db, bucket }, lease, work, bytes)),
+      };
       let invalid = 0;
       try {
         // One job at a time: an invocation holds one epub and its parse in memory, not five.

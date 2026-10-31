@@ -1,6 +1,6 @@
-import { createDb, insertUpload, type Database } from "@archive/db";
+import { createDb, getLiveWork, insertUpload, type Database } from "@archive/db";
 import { seedWork, type SeedWorkOptions } from "@archive/db/seed";
-import { processEpub } from "@archive/epub";
+import { processEpub, type ParsedWork } from "@archive/epub";
 import { createExecutionContext, createMessageBatch, getQueueResult } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { sql, type Kysely } from "kysely";
@@ -192,15 +192,16 @@ export const token = () => crypto.randomUUID().slice(0, 8);
 export const freshAo3WorkId = () => 100_000_000 + Math.floor(Math.random() * 2_000_000_000);
 
 /**
- * Uploads a synthetic epub of AO3 work `workId` and ingests it, as `ingestUpload` does.
+ * Uploads a synthetic epub of AO3 work `workId` and runs its job, as `ingestUpload` does.
  */
 export const ingestEpub = (workId: number, ...pseuds: string[]) =>
   ingestUpload(ao3Epub({ workId }), ...pseuds);
 
 /**
- * Uploads `epub` and ingests it, with the byline `pseuds` over the epub's own (the synthetic
- * epubs all carry one byline), or the epub's own when none are given. Returns the upload's id
- * and row, the queue's result, and `saved`: the id of each upload the job saved.
+ * Uploads `epub` and runs its job up to the save step, with the byline `pseuds` over the epub's
+ * own (the synthetic epubs all carry one byline), or the epub's own when none are given. The
+ * save step is a stub that writes nothing: it records the id of each upload that reached it, in
+ * `saved`. Returns that, the upload's id and row, and the queue's result.
  */
 export async function ingestUpload(epub: Uint8Array, ...pseuds: string[]) {
   const id = await pendingUpload(epub);
@@ -234,8 +235,116 @@ export function expectOptedOut({ row, saved, result }: Ingested) {
   expect(result.retryMessages).toEqual([]);
 }
 
-/** Expects the upload not rejected as `opted_out`: the job went on to save it. */
+/** Expects the upload not rejected as `opted_out`: the job went on to the save step. */
 export function expectNotOptedOut({ id, row, saved }: Ingested) {
   expect(row.status).not.toBe("opted_out");
   expect(saved).toEqual([id]);
+}
+
+/** The bucket step: the real bucket, running `hook` with each key before its `put`. */
+export const beforePut =
+  (hook: (key: string) => Promise<void>): NonNullable<Steps["bucket"]> =>
+  (real) => ({
+    get: real.get.bind(real),
+    put: async (key, value, options) => {
+      await hook(key);
+      return real.put(key, value, options);
+    },
+  });
+
+/** The bucket step: the real bucket, with a `put` of `key` that fails as R2 down would. */
+export const failingPut = (key: string) =>
+  beforePut(async (k) => {
+    if (k === key) throw new Error("injected R2 failure");
+  });
+
+/**
+ * A parsed work, as the processor hands it to the save step, with `overrides`. Synthetic
+ * text, and its own AO3 work ID.
+ */
+export function parsedWork(overrides: Partial<ParsedWork> = {}): ParsedWork {
+  return {
+    ao3WorkId: String(freshAo3WorkId()),
+    title: "Synthetic Work",
+    authors: [{ pseud: "someone", user: "someone" }],
+    rating: "General Audiences",
+    warnings: ["No Archive Warnings Apply"],
+    categories: [],
+    fandoms: ["Test Fandom"],
+    relationships: [],
+    characters: [],
+    freeforms: [],
+    language: "English",
+    series: [],
+    stats: {
+      published: "2020-01-02",
+      updated: null,
+      completed: null,
+      words: 3,
+      chapters: { posted: 1, total: 1 },
+    },
+    summaryHtml: "<p>A synthetic summary.</p>",
+    notesHtml: null,
+    endNotesHtml: null,
+    chapters: [{ n: 1, title: "One", html: "<p>marker-only-chapter text.</p>", words: 3 }],
+    images: [],
+    rawMeta: {},
+    reviewReasons: [],
+    ...overrides,
+  };
+}
+
+/**
+ * What the database holds of a job's save: `works` rows for the AO3 work ID, versions from
+ * the upload, and `tags` rows with any of `tagNames`.
+ */
+export const savedRows = (ao3WorkId: number, uploadId: string, tagNames: string[] = []) =>
+  withDb(async (db) => ({
+    works: await db
+      .selectFrom("works")
+      .select(["id", "status", "current_version_id", "raw_meta"])
+      .where("ao3_work_id", "=", ao3WorkId)
+      .execute(),
+    versions: await db
+      .selectFrom("work_versions")
+      .select("id")
+      .where("upload_id", "=", uploadId)
+      .execute(),
+    tags:
+      tagNames.length === 0
+        ? []
+        : await db.selectFrom("tags").select("name").where("name", "in", tagNames).execute(),
+  }));
+
+/** The work as the reader gets it (`getLiveWork`), or null when it isn't live. */
+export const liveWork = (ao3WorkId: number) => withDb((db) => getLiveWork(db, ao3WorkId));
+
+/**
+ * The bucket step, watched: before each `put` it records the key and whether the `works` row
+ * for `ao3WorkId` existed yet, reading through its own connection. Call `close()` after.
+ */
+export function watchedPuts(ao3WorkId: number) {
+  const probe = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 });
+  const puts: { key: string; workExisted: boolean }[] = [];
+  const bucket = beforePut(async (key) => {
+    const row = await probe
+      .selectFrom("works")
+      .select("id")
+      .where("ao3_work_id", "=", ao3WorkId)
+      .executeTakeFirst();
+    puts.push({ key, workExisted: row !== undefined });
+  });
+  return { bucket, puts, close: () => probe.destroy() };
+}
+
+/** The keys in the bucket under `prefix`, sorted. */
+export async function bucketKeys(prefix: string): Promise<string[]> {
+  const listed = await env.BUCKET.list({ prefix });
+  return listed.objects.map((o) => o.key).sort();
+}
+
+/** The text of the object at `key`, or null. */
+export async function bucketText(key: string): Promise<string | null> {
+  const object = await env.BUCKET.get(key);
+  return object === null ? null : object.text();
 }

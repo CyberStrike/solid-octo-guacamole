@@ -4,6 +4,7 @@ import type { Kysely } from "kysely";
 import { MAX_RETRIES } from "./config";
 import { claimLease, endLease, type Lease, type Outcome, type Stage } from "./lease";
 import { onRejectList } from "./lists";
+import { LeaseLost, SaveRejected } from "./save";
 
 /** What a job needs from outside: the request's Kysely, the bucket and the two steps. */
 export interface JobDeps {
@@ -11,8 +12,12 @@ export interface JobDeps {
   bucket: Pick<R2Bucket, "get">;
   /** The epub processor: bytes in, a parsed work out, or an `EpubError`. */
   process: (bytes: Uint8Array) => Promise<ParsedWork>;
-  /** Saves the parsed work (R2 fragments, the Postgres transaction, `originals/`). */
-  save: (upload: Lease, work: ParsedWork) => Promise<void>;
+  /**
+   * Saves the parsed work from the upload's `bytes` (R2 fragments, `originals/`, the Postgres
+   * transaction). Throws `SaveRejected` for a file that can't be saved, and `LeaseLost` when
+   * another job has taken the upload over.
+   */
+  save: (upload: Lease, work: ParsedWork, bytes: Uint8Array) => Promise<void>;
 }
 
 /** What the queue does with the message: `ack` it, or `retry` it. */
@@ -33,6 +38,8 @@ export async function runJob(deps: JobDeps, uploadId: string, attempt: number): 
   try {
     outcome = await run(deps, lease, (next) => (stage = next));
   } catch (error) {
+    // The job that took the upload over records the outcome: this one writes nothing.
+    if (error instanceof LeaseLost) return "ack";
     const final = attempt > MAX_RETRIES;
     await endLease(
       deps.db,
@@ -88,8 +95,13 @@ async function run(
     return { status: "opted_out", failure: { stage: "process", error: "opted_out" } };
   }
   enter("save");
-  // Until I2 (#32), saving leaves the upload `processing`.
-  await deps.save(lease, work);
+  try {
+    // A saved work's upload is `live` already: it goes live in the work's transaction.
+    await deps.save(lease, work, bytes);
+  } catch (error) {
+    if (!(error instanceof SaveRejected)) throw error;
+    return { status: "parse_failed", failure: { stage: "save", error: error.code } };
+  }
   return null;
 }
 
