@@ -13,7 +13,9 @@ import {
   wwwToBareDomain,
   type SecurityVariables,
 } from "./security";
+import { sessionMiddleware } from "./session";
 import { STYLESHEET, STYLESHEET_PATH } from "./styles";
+import { requestUpload, sameOriginUpload, showUpload } from "./upload";
 import { joinWaitlist } from "./waitlist";
 import { comingSoonPage } from "./waitlist-pages";
 import { showWork } from "./work-page";
@@ -44,7 +46,9 @@ app.post("/login/confirm", confirmSignIn);
 app.post("/waitlist", joinWaitlist);
 // After launch, a stale link to the form goes home. Before it, nothing is at GET /waitlist.
 app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));
-app.get("/upload", (c) => c.html(turnstilePage("Upload a work", c.get("nonce"))));
+// The session middleware runs on these two routes only, until A4 mounts it on every page.
+app.get("/upload", sessionMiddleware, showUpload);
+app.post("/uploads", sameOriginUpload, sessionMiddleware, requestUpload);
 app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce"))));
 
 // The reader. Closed before launch, like every /works/ page.
