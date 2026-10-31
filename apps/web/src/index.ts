@@ -7,6 +7,7 @@ import type { Bindings } from "./env";
 import { showTagListing } from "./listing";
 import { requestSignIn, showSignIn } from "./login";
 import { jumpToChapter, showChapter } from "./reader";
+import { sameOriginOnly, showReportForm, submitReport } from "./report";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
 import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
 import {
@@ -35,8 +36,9 @@ app.use(strictTransportSecurity);
 app.use(wwwToBareDomain);
 app.use(closedBeforeLaunch);
 app.use(contentSecurityPolicy);
-// Before the session, so a cross-site upload request is refused without a lookup.
+// Before the session, so a cross-site upload or report is refused without a lookup.
 app.post("/uploads", sameOriginUpload);
+app.post("/works/:id/report", sameOriginOnly);
 // The session, once, for every page; routes read c.var.session and never mount it
 // again. Static files skip it, and the lookup's database connection with it. Then
 // an account that hasn't accepted the terms is sent to accept them.
@@ -76,6 +78,9 @@ app.get("/terms", (c) => c.html(termsPage()));
 app.get("/privacy", (c) => c.html(privacyPage()));
 
 app.get("/works/:id", showWork);
+// Signed in only.
+app.get("/works/:id/report", showReportForm);
+app.post("/works/:id/report", submitReport);
 app.get("/tags/:type/:name", showTagListing);
 
 // The URL carries a hash of the content, so the response never changes under it.
