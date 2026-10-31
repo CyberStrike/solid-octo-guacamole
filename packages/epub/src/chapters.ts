@@ -59,7 +59,12 @@ function firstReaching(nodes: readonly Node[], lo: number): number {
 }
 
 /** Calls `f` for each of `nodes` that overlaps [lo, hi), without visiting the others. */
-function eachInRange(nodes: readonly Node[], lo: number, hi: number, f: (n: Node) => void): void {
+function eachInRange<N extends Node>(
+  nodes: readonly N[],
+  lo: number,
+  hi: number,
+  f: (n: N) => void,
+): void {
   for (let i = firstReaching(nodes, lo); i < nodes.length && nodes[i]!.pos < hi; i++) f(nodes[i]!);
 }
 
@@ -94,6 +99,7 @@ function takeLeadingHeading(nodes: Node[]): string | null {
     n.children.forEach(visit);
   };
   nodes.forEach(visit);
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- visit sets heading, unseen by TS
   if (!heading) return null;
   const h: ElementNode = heading;
   const siblings = h.parent ? h.parent.children : nodes;
@@ -164,9 +170,7 @@ function startsFromHeadings(regions: ElementNode[]): Start[] | null {
 function rangeContent(scopes: ElementNode[], lo: number, hi: number): Node[] {
   const out: Node[] = [];
   eachInRange(scopes, lo, hi, (scope) => {
-    eachInRange((scope as ElementNode).children, lo, hi, (child) =>
-      out.push(cloneRange(child, lo, hi, null)),
-    );
+    eachInRange(scope.children, lo, hi, (child) => out.push(cloneRange(child, lo, hi, null)));
   });
   return out;
 }

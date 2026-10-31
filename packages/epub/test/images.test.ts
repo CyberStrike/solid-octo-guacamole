@@ -88,6 +88,7 @@ describe("images", () => {
   it("passes an onImage failure through unchanged, not as a parse failure", async () => {
     const boom = new Error("upload failed");
     const err = await processEpub(withPng(), { onImage: async () => Promise.reject(boom) }).catch(
+      // oxlint-disable-next-line deslop/no-unknown-parameters -- a rejection reason is unknown by contract
       (e: unknown) => e,
     );
     expect(err).toBe(boom);

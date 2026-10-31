@@ -183,6 +183,7 @@ export function unzipEpub(bytes: Uint8Array): Map<string, Uint8Array> {
     try {
       file.start();
     } catch (e) {
+      // SAFETY: fflate throws Error objects; anything else would only read as "undefined" here.
       fail(new EpubError("not_epub", `Cannot read entry ${name}: ${(e as Error).message}`));
     }
   });
@@ -191,14 +192,20 @@ export function unzipEpub(bytes: Uint8Array): Map<string, Uint8Array> {
   try {
     // In bounded chunks: a single push of the whole archive would inflate an
     // entry with a falsified size in one allocation, before `ondata` runs.
+    // The Unzip callbacks above set failure, which TS can't see, so it reads every check of
+    // failure from here on as always false.
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- set by the callbacks
     for (let at = 0; at < bytes.length && !failure; at += PUSH_BYTES) {
       const end = Math.min(at + PUSH_BYTES, bytes.length);
       unzip.push(bytes.subarray(at, end), end === bytes.length);
     }
   } catch (e) {
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- set by the callbacks
     if (!failure)
+      // SAFETY: fflate throws Error objects; anything else would only read as "undefined" here.
       throw new EpubError("not_epub", `Unreadable zip: ${(e as Error).message}`, { cause: e });
   }
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- set by the callbacks
   if (failure) throw failure;
   if (pending > 0) throw new EpubError("not_epub", "Truncated zip");
   // The index and the local headers must describe the same entries, or other

@@ -19,9 +19,11 @@ export async function expectEpubError(
 ): Promise<void> {
   const err = await promise.then(
     () => null,
+    // oxlint-disable-next-line deslop/no-unknown-parameters -- a rejection reason is unknown by contract
     (e: unknown) => e,
   );
   expect(err).toBeInstanceOf(EpubError);
+  // SAFETY: the line above fails the test unless err is an EpubError.
   expect((err as EpubError).code).toBe(code);
 }
 
@@ -33,7 +35,7 @@ export function zipEntries(
   const z: Zippable = {};
   if (mimetype !== null) z["mimetype"] = [strToU8(mimetype), { level: 0 }];
   for (const [name, data] of Object.entries(entries))
-    z[name] = typeof data === "string" ? strToU8(data) : data;
+    z[name] = data instanceof Uint8Array ? data : strToU8(data);
   return zipSync(z);
 }
 
@@ -160,6 +162,7 @@ export function ao3Epub(spec: Ao3Spec = {}): Uint8Array {
   </navMap>
 </ncx>`;
 
+  // oxlint-disable-next-line deslop/no-known-value-widening -- chapter and extra files are added by name below
   const entries: Record<string, string | Uint8Array> = {
     "META-INF/container.xml": `<?xml version="1.0"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">

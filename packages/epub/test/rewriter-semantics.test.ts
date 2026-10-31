@@ -29,17 +29,17 @@ async function events(html: string): Promise<string[]> {
   return out;
 }
 
-/** Compact shape of a tree: tag(children) with text as quoted strings. */
-function shape(node: Node): string {
+/** Compact outline of a tree: tag(children) with text as quoted strings. */
+function outline(node: Node): string {
   if (node.type === "text") return JSON.stringify(node.raw);
-  return `${node.tag}(${node.children.map(shape).join(",")})`;
+  return `${node.tag}(${node.children.map(outline).join(",")})`;
 }
 
 describe("HTMLRewriter as a tokenizer", () => {
   it("reports text and attribute values raw, without decoding entities", async () => {
-    const ev = await events(`<p title="a &amp; b &#x3c;">x &amp; y &#x3c; z</p>`);
-    expect(ev.join("")).toContain(`[["title","a &amp; b &#x3c;"]]`);
-    expect(ev.join("")).toContain("x &amp; y &#x3c; z");
+    const ev = (await events(`<p title="a &amp; b &#x3c;">x &amp; y &#x3c; z</p>`)).join("");
+    expect(ev).toContain(`[["title","a &amp; b &#x3c;"]]`);
+    expect(ev).toContain("x &amp; y &#x3c; z");
   });
 
   it("lowercases tag names", async () => {
@@ -67,17 +67,17 @@ describe("parseHtml", () => {
       `<div a="1"></div><br/><a id='x'></a>`,
     );
     const root = await parseHtml("<div><div/>inner</div>after");
-    expect(shape(root)).toBe(`#root(div(div(),"inner"),"after")`);
+    expect(outline(root)).toBe(`#root(div(div(),"inner"),"after")`);
   });
 
   it("closes unclosed elements on a mismatched end tag and at EOF", async () => {
     const root = await parseHtml("<div><span><b>text</div>tail<p>open");
-    expect(shape(root)).toBe(`#root(div(span(b("text"))),"tail",p("open"))`);
+    expect(outline(root)).toBe(`#root(div(span(b("text"))),"tail",p("open"))`);
   });
 
   it("closes an open <p> when a block starts, like an HTML parser", async () => {
     const root = await parseHtml("<p>a<p>b</p>c");
-    expect(shape(root)).toBe(`#root(p("a"),p("b"),"c")`);
+    expect(outline(root)).toBe(`#root(p("a"),p("b"),"c")`);
   });
 
   it("rejects nesting past the depth cap instead of flattening it", async () => {
@@ -103,7 +103,7 @@ describe("parseHtml", () => {
       `<script>var s = ""; alert(1)</script><div></div>`,
     );
     const root = await parseHtml(`<style>p { x: "<style/>" } <p>inside</p></style><p>after</p>`);
-    expect(shape(root)).toBe(
+    expect(outline(root)).toBe(
       `#root(style(${JSON.stringify(`p { x: "" } <p>inside</p>`)}),p("after"))`,
     );
   });
@@ -118,8 +118,9 @@ describe("parseHtml", () => {
 
   it("keeps raw text inside script for the serializer to drop", async () => {
     const root = await parseHtml(`<script>if (a < b) alert("x")</script>`);
+    // SAFETY: the input's only node is the script element; the next line checks its tag.
     const script = root.children[0] as ElementNode;
     expect(script.tag).toBe("script");
-    expect(shape(script)).toContain("alert");
+    expect(outline(script)).toContain("alert");
   });
 });

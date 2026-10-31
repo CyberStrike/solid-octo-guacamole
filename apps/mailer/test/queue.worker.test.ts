@@ -29,7 +29,8 @@ function stubResend(respond: (emails: unknown[]) => Response) {
   const calls: { url: string; emails: unknown[] }[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
-    const emails = JSON.parse(String(init?.body)) as unknown[];
+    // SAFETY: the Resend sender posts its batch as a JSON string.
+    const emails: unknown[] = JSON.parse(init?.body as string);
     calls.push({ url, emails });
     return respond(emails);
   });
@@ -62,6 +63,7 @@ function captureLogs() {
   const lines: string[] = [];
   for (const level of ["log", "info", "warn", "error", "debug"] as const) {
     vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+      // oxlint-disable-next-line deslop/no-runtime-typeof -- console takes any value; strings print bare
       lines.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
     });
   }
@@ -184,6 +186,7 @@ describe("mailer failures", () => {
       },
     ]);
 
+    // SAFETY: each email the mailer renders carries a text body.
     const [sent] = calls[0]!.emails as { text: string }[];
     expect(sent!.text).not.toContain("\nInjected line");
     expect(sent!.text).toContain("https://rarepair.fans/login/confirm?token=xInjected%20line");

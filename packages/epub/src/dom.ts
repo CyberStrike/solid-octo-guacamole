@@ -216,6 +216,7 @@ export async function parseHtml(
   await rewriter
     .transform(new Response(expandSelfClosing(html)))
     .body?.pipeTo(new WritableStream());
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- the handlers set failure, unseen by TS
   if (failure) throw failure;
   return root;
 }
