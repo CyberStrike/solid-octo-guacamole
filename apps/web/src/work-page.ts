@@ -13,6 +13,18 @@ type WorkContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>
 
 type Tag = LiveWork["tags"][number];
 
+// The tag list's hidden labels: the type is announced, never shown by colour
+// (FRONTEND-DISCOVERY, Components, Tag list).
+const TAG_LABELS: Record<Tag["type"], string> = {
+  rating: "Rating",
+  warning: "Warning",
+  category: "Category",
+  fandom: "Fandom",
+  relationship: "Relationship",
+  character: "Character",
+  freeform: "Additional tag",
+};
+
 const tagLink = (tag: Tag) =>
   `<a href="${tagHref(tag.type, tag.name_norm)}">${escapeHtml(tag.name)}</a>`;
 
@@ -36,9 +48,11 @@ export function workPage(live: LiveWork): string {
 <p class="rating-warnings">${ratingLine}</p>
 <p class="fandoms">${ofType("fandom").map(tagLink).join(", ")}</p>
 <section class="summary">${work.summary_html ?? ""}</section>
-<ul class="tags">${listed.map((tag) => `<li>${tagLink(tag)}</li>`).join("")}</ul>
+<p class="tags">${listed.map((tag) => `<span class="visually-hidden">${TAG_LABELS[tag.type]}: </span>${tagLink(tag)}`).join(", ")}</p>
 <p class="stats">${stats.join(" · ")}</p>
-<ol class="chapters">${chapters.map((ch) => `<li>${escapeHtml(ch.title)}</li>`).join("")}</ol>`,
+<ol class="chapters">${chapters.map((ch) => `<li>${escapeHtml(ch.title)}</li>`).join("")}</ol>
+<p class="unofficial">rarepair is an unofficial stopgap, not the original archive: this copy is here while the original is offline.</p>
+<p class="original"><a href="https://archiveofourown.org/works/${work.ao3_work_id}">The original work</a>, where the credit belongs. The link works again once the original archive is back.</p>`,
   );
 }
 

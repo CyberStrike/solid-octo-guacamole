@@ -160,6 +160,34 @@ article.chapter {
     transition: none;
   }
 }
+
+/* work page */
+
+.authors,
+.rating-warnings {
+  font-size: var(--text-3);
+}
+
+.rating-warnings {
+  font-weight: 600;
+}
+
+.tags {
+  font-size: var(--text-1);
+}
+
+/* Read by screen readers, not shown: a tag's type, for one. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 `;
 
 // FNV-1a, enough to give each version of the stylesheet its own URL.
