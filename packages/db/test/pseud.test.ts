@@ -8,6 +8,10 @@ const NO_BREAK_SPACE = ch(0xa0);
 const IDEOGRAPHIC_SPACE = ch(0x3000);
 const NEXT_LINE = ch(0x85);
 const BYTE_ORDER_MARK = ch(0xfeff);
+/** "J" and a combining caron, which has no precomposed capital. */
+const J_CARON_UPPER = `J${ch(0x30c)}`;
+/** Its lowercase, precomposed (U+01F0). */
+const J_CARON = ch(0x1f0);
 
 describe("16 removal and opt-out", () => {
   it("Opt-out matches a pseud that differs only in case", () => {
@@ -43,6 +47,13 @@ describe("normalizePseud", () => {
     expect(normalizeTagName("freeform", "Moon-Child!!")).toBe("moon child");
   });
 
+  it("Lowercasing leaves the pseud in NFKC", () => {
+    // "J" with a combining caron has no precomposed capital, so NFKC leaves it
+    // decomposed, but its lowercase composes to U+01F0.
+    expect(normalizePseud(J_CARON_UPPER)).toBe(J_CARON);
+    expect(normalizePseud(J_CARON)).toBe(J_CARON);
+  });
+
   it("Lowercasing is not full case folding", () => {
     expect(normalizePseud("STRASSE")).toBe("strasse");
     expect(normalizePseud(`Stra${ch(0xdf)}e`)).toBe(`stra${ch(0xdf)}e`);
@@ -56,6 +67,20 @@ describe("normalizePseud", () => {
   it("Normalizing twice changes nothing", () => {
     const once = normalizePseud(`  ${FULLWIDTH_M}oon${NO_BREAK_SPACE}CHILD_ `);
     expect(once).toBe("moon child_");
-    expect(normalizePseud(once)).toBe(once);
+    for (const input of [
+      "Moon Child",
+      "  Moon   Child ",
+      "Moon_Child",
+      "Moon-Child!!",
+      `${FULLWIDTH_M}oon${NO_BREAK_SPACE}Child`,
+      `${NEXT_LINE}Moon${BYTE_ORDER_MARK}Child`,
+      J_CARON_UPPER,
+      J_CARON,
+      `Stra${ch(0xdf)}e`,
+      " \t ",
+    ]) {
+      const normalized = normalizePseud(input);
+      expect(normalizePseud(normalized), JSON.stringify(input)).toBe(normalized);
+    }
   });
 });
