@@ -199,7 +199,7 @@ describe("13-reader-settings-and-position", () => {
     expect(form.method).toBe("post");
     expect(form.hidden).toBe(false);
     // A control for each of the four settings, the current value selected.
-    expect(Object.keys(form.selects).toSorted()).toEqual(["face", "leading", "size", "theme"]);
+    expect(Object.keys(form.selects).sort()).toEqual(["face", "leading", "size", "theme"]);
     expect(form.selects.size?.selected).toBe("l");
     const themeField = Object.entries(form.selects).find(([, s]) => s.values.includes("sepia"));
     expect(themeField).toBeDefined();
@@ -294,6 +294,30 @@ describe("13-reader-settings-and-position", () => {
     expect(await script.text()).toContain("document.cookie");
     // Only the current hash is served.
     expect((await fetchW("/assets/reader-settings.00000000.js")).status).toBe(404);
+  });
+
+  it("Reduced motion turns off smooth scrolling", async () => {
+    // Nothing scrolls smoothly in the first place, and the reduced-motion block stays.
+    // The settings script never scrolls (reader-settings.node.test.ts).
+    const css = await stylesheetOf(await pageWith(CHAPTER, "size=xl&leading=relaxed"));
+    expect(css).not.toMatch(/scroll-behavior:\s*smooth/);
+    const block =
+      css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\}\s*\}/)?.[0] ?? "";
+    expect(block).toMatch(/scroll-behavior:\s*auto/);
+  });
+
+  it("Reading column measure", async () => {
+    // The default spacing and measure hold beside the size rule; only a chosen spacing
+    // changes the line height, and nothing changes the measure.
+    const css = await stylesheetOf(await pageWith(CHAPTER));
+    const chapter = rulesFor(css, "article.chapter").join("\n");
+    expect(chapter).toMatch(/line-height:\s*1\.6;/);
+    expect(chapter).toMatch(/max-width:\s*66ch;/);
+    expect(chapter).toMatch(/font-size:\s*var\(--reading-size\);/);
+    expect(css.match(/max-width:\s*66ch/g)?.length).toBe(2);
+    expect(rulesFor(css, "header").join("\n") + rulesFor(css, "main").join("\n")).toMatch(
+      /margin:\s*0 auto;/,
+    );
   });
 
   it("Settings work for signed-out readers", async () => {

@@ -33,7 +33,7 @@ function fakePage(dataset: Record<string, string> = {}) {
     querySelectorAll: (selector: string) => (selector === "form.reader-settings" ? [form] : []),
   };
   // The script's own source, run as the browser runs it, against this page.
-  // oxlint-disable-next-line no-new-func -- the test runs the served script's source, as a browser would
+  // oxlint-disable-next-line typescript/no-implied-eval -- the test runs the served script's source, as a browser would
   new Function("document", SETTINGS_SCRIPT)(document);
   const change = (name: string, value: string) =>
     listeners.forEach((listener) => listener({ target: { name, value } }));
@@ -47,14 +47,21 @@ describe("the settings script", () => {
     expect(page.form.hidden).toBe(false);
     page.change("size", "xl");
     expect(page.dataset).toEqual({ theme: "dark", size: "xl" });
-    expect(page.writes).toEqual([settingsCookie({ theme: "dark", size: "xl" })]);
+    // The same cookie, attributes and all, as the form's POST sets (settingsCookie), or
+    // the browser would keep two.
+    const written =
+      "__Host-reader=theme=dark&size=xl; Max-Age=31536000; Path=/; SameSite=Lax; Secure";
+    expect(page.writes).toEqual([written]);
+    expect(settingsCookie({ theme: "dark", size: "xl" })).toBe(written);
   });
 
   it("drops the theme for the device's choice, and ignores other values", () => {
     const page = fakePage({ theme: "sepia", face: "sans" });
     page.change("theme", "");
     expect(page.dataset).toEqual({ face: "sans" });
-    expect(page.writes).toEqual([settingsCookie({ face: "sans" })]);
+    expect(page.writes).toEqual([
+      "__Host-reader=face=sans; Max-Age=31536000; Path=/; SameSite=Lax; Secure",
+    ]);
     page.change("size", "huge");
     page.change("next", "/elsewhere");
     page.change("__proto__", "x");
@@ -63,6 +70,8 @@ describe("the settings script", () => {
   });
 
   it("never sets a style, writes markup or scrolls", () => {
+    // The served source is the behaviour here: no API that could do any of these appears in it.
+    // oxlint-disable-next-line deslop/no-poor-substring-tests -- the property is an absence over the whole served source
     expect(SETTINGS_SCRIPT).not.toMatch(/\.style\b|innerHTML|outerHTML|insertAdjacent|scroll/i);
   });
 });

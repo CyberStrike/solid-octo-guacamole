@@ -14,6 +14,7 @@ import {
   SETTING_NAMES,
   SETTINGS_COOKIE,
   SETTINGS_SCRIPT_PATH,
+  setSetting,
   settingsCookie,
   type SettingName,
   type Settings,
@@ -147,8 +148,7 @@ export async function saveSettings(c: SettingsContext) {
   const settings = parseSettings(getCookie(c, SETTINGS_COOKIE));
   for (const name of SETTING_NAMES) {
     const value = form.get(name);
-    // SAFETY: isSettingValue has checked the value is in this setting's list.
-    if (isSettingValue(name, value)) (settings as Record<string, string>)[name] = value;
+    if (isSettingValue(name, value)) setSetting(settings, name, value);
     // "Match my device": no theme.
     else if (name === "theme" && value === "") delete settings.theme;
   }

@@ -26,8 +26,20 @@ export const SETTING_NAMES = Object.keys(SETTINGS) as SettingName[];
 export const isSettingValue = <K extends SettingName>(
   name: K,
   value: string | null | undefined,
-): value is (typeof SETTINGS)[K][number] =>
-  (SETTINGS[name] as readonly string[]).includes(value ?? "");
+): value is NonNullable<Settings[K]> => {
+  // SAFETY: widening the list's literal types to string only lets includes take any string.
+  const list = SETTINGS[name] as readonly string[];
+  return list.includes(value ?? "");
+};
+
+/** Sets one setting to a value its list allows. */
+export const setSetting = <K extends SettingName>(
+  settings: Settings,
+  name: K,
+  value: NonNullable<Settings[K]>,
+) => {
+  settings[name] = value;
+};
 
 /**
  * The settings cookie's name. `__Host-`: Secure, Path=/ and no Domain, so it never
@@ -48,8 +60,7 @@ export function parseSettings(value: string | undefined): Settings {
   const fields = new URLSearchParams(value);
   for (const name of SETTING_NAMES) {
     const field = fields.get(name);
-    // SAFETY: isSettingValue has checked the value is in this setting's list.
-    if (isSettingValue(name, field)) (settings as Record<string, string>)[name] = field;
+    if (isSettingValue(name, field)) setSetting(settings, name, field);
   }
   return settings;
 }
