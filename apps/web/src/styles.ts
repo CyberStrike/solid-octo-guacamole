@@ -173,12 +173,13 @@ article.chapter {
   border-bottom: 1px solid var(--rule);
 }
 
-.work-card h2 {
+/* By the card's own lines, never a summary's elements. */
+.card-title {
   margin: 0;
   font-size: var(--text-3);
 }
 
-.work-card p {
+.work-card > p {
   margin: var(--space) 0;
 }
 
@@ -198,6 +199,7 @@ article.chapter {
   -webkit-line-clamp: 3;
   line-clamp: 3;
   overflow: hidden;
+  contain: content;
 }
 
 .card-summary > * {

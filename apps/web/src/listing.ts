@@ -23,8 +23,9 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
   const name = c.req.param("name");
   if (type === undefined || name === undefined || !isTagType(type)) return c.notFound();
   const nameNorm = normalizeTagName(type, name);
-  // A name of only punctuation folds to nothing, which names no tag.
-  if (nameNorm === "") return c.notFound();
+  // A name of only punctuation folds to nothing, which names no tag. Nor does
+  // one with a NUL, which Postgres refuses as a parameter.
+  if (nameNorm === "" || nameNorm.includes("\0")) return c.notFound();
   // One query, on one connection.
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   try {
@@ -126,7 +127,8 @@ function workCard({ work, authors, tags }: ListedWork): string {
   const rating = [work.rating || "Not Rated", warnings.join(", ")].filter(Boolean);
   // No byline is shown as an anonymous one is.
   const byline = authors.map((a) => a.pseud).join(", ") || "Anonymous";
-  return `<li class="work-card">
+  // The article keeps a summary's stray <li> from closing the card's own.
+  return `<li><article class="work-card">
 <h2 class="card-title"><a href="${href}">${escapeHtml(work.title)}</a></h2>
 <p class="card-byline">by ${escapeHtml(byline)}</p>
 <p class="card-rating"><strong>${escapeHtml(rating.join(" · "))}</strong></p>
@@ -134,5 +136,5 @@ ${line("card-fandoms", tagLinks(ofType("fandom")))}
 ${summary(work.summary_html, href, work.title)}
 ${line("card-tags", cardTags(ofType("relationship"), ofType("character"), ofType("freeform").length))}
 <p class="card-stats">${stats(work)}</p>
-</li>`;
+</article></li>`;
 }

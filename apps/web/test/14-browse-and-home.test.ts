@@ -20,9 +20,9 @@ const htmlOf = async (path: string) => {
 /** Each card's inner HTML, in page order. */
 const cardsOf = (html: string) =>
   html
-    .split(/<li class="work-card">/)
+    .split(/<li><article class="work-card">/)
     .slice(1)
-    .map((card) => card.slice(0, card.indexOf("</li>")));
+    .map((card) => card.slice(0, card.indexOf("</article></li>")));
 
 /** The card that links to this work, or "" when the page has none. */
 const cardOf = (html: string, ao3WorkId: number) =>
@@ -390,13 +390,38 @@ describe("14-browse-and-home tag listing URLs", () => {
         `<h1>${decodeURIComponent(name)}</h1>`,
       ]);
       expect(html).toContain("No works");
-      expect(html).not.toContain('class="work-card"');
+      expect(html).not.toContain("work-card");
     }
   });
 
   it("An unknown tag type, or a name with nothing left once folded, is not found", async () => {
     expect((await fetchW("/tags/genre/harry%20potter")).status).toBe(404);
     expect((await fetchW("/tags/fandom/%21%21%21")).status).toBe(404);
+    // No tag can hold a NUL, and Postgres refuses one in a parameter.
+    expect((await fetchW("/tags/fandom/a%00b")).status).toBe(404);
+  });
+
+  it("A summary's markup stays inside its card", async () => {
+    // A bare list item, as the sanitizer can leave one: inside only a div, it would
+    // close the card's own list item and stand in the list as a card of its own.
+    const summary = '<li><h2><a href="https://elsewhere.example/">Not a card</a></h2></li>';
+    await seedWork(db, {
+      ao3WorkId: 30110,
+      summary,
+      tags: [{ type: "fandom", name: "Contained Summary Fandom" }],
+    });
+
+    const html = await htmlOf("/tags/fandom/contained%20summary%20fandom");
+
+    // An article between the two list items stops the parser closing the outer one.
+    expect(html).toContain(
+      `<li><article class="work-card">\n<h2 class="card-title"><a href="/works/30110">`,
+    );
+    expect(lineOf(cardOf(html, 30110), "card-summary")).toBe(summary);
+    const css = await stylesheetOf(html);
+    expect(rulesFor(css, "card-summary")).toMatch(/contain:\s*content/);
+    // Card styles name the card's own lines, so a summary's h2 or p doesn't pass for one.
+    expect(css).not.toMatch(/\.work-card (h2|p)\b/);
   });
 
   it("A tag listing has the strict policy, no script and no cookie", async () => {

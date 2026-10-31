@@ -57,7 +57,8 @@ app.notFound((c) => c.html(notFoundPage(), 404));
 // Hono's default logs the whole error, and one from Postgres can quote the row it
 // failed on, a sign-in address included. Log only what kind of error it was.
 app.onError((error, c) => {
-  console.error(`${c.req.method} ${c.req.path}: ${error.name}`);
+  // The path is decoded, so a control character in it could start a forged line.
+  console.error(`${c.req.method} ${c.req.path.replace(/\p{Cc}/gu, "?")}: ${error.name}`);
   return c.text("Internal Server Error", 500);
 });
 
