@@ -108,6 +108,7 @@ h2 {
   font-size: var(--text-3);
 }
 
+.banner a,
 footer a {
   display: inline-block;
   min-height: 24px;
