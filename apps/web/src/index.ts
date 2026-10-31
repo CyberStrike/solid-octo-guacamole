@@ -25,6 +25,7 @@ import { STYLESHEET, STYLESHEET_PATH } from "./styles";
 import { acceptTerms, showTerms, termsGate, WELCOME_TERMS } from "./terms";
 import { requestUpload, sameOriginUpload, showUpload } from "./upload";
 import { joinWaitlist } from "./waitlist";
+import { confirmWaitlist, showWaitlistConfirm } from "./waitlist-confirm";
 import { comingSoonPage } from "./waitlist-pages";
 import { showWork } from "./work-page";
 
@@ -70,6 +71,8 @@ app.post("/login/confirm", confirmSignIn);
 app.get(WELCOME_TERMS, requireSignIn, showTerms);
 app.post(WELCOME_TERMS, acceptTerms);
 app.post("/waitlist", joinWaitlist);
+app.get("/waitlist/confirm", showWaitlistConfirm);
+app.post("/waitlist/confirm", confirmWaitlist);
 // After launch, a stale link to the form goes home. Before it, nothing is at GET /waitlist.
 app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));
 app.get("/upload", showUpload);
