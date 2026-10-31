@@ -12,8 +12,11 @@ describe("22-waitlist", () => {
     expect(await home.text()).not.toMatch(/cf-turnstile|wait list|woff2/i);
 
     // Pages that redirect before launch are served as they are.
+    // Signed out, /upload goes to sign in, not to the coming-soon page.
+    const upload = await fetchW("/upload");
+    expect(upload.status).toBe(302);
+    expect(upload.headers.get("location")).toBe("/login?next=%2Fupload");
     const pages: [string, number][] = [
-      ["/upload", 200],
       ["/remove", 200],
       ["/no-such-page", 404],
       ["/works/1/chapters/2", 404],

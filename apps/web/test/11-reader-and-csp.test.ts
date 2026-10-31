@@ -30,7 +30,8 @@ describe("11-reader-and-csp", () => {
   });
 
   it("Turnstile pages allow only the Turnstile challenge frame", async () => {
-    for (const path of ["/login", "/upload", "/remove"]) {
+    // Signed out, /upload redirects to sign in: 02-upload-handshake checks the signed-in page.
+    for (const path of ["/login", "/remove"]) {
       const res = await fetchW(path);
       const csp = res.headers.get("content-security-policy");
       expect(res.status).toBe(200);
@@ -119,7 +120,8 @@ describe("11-reader-and-csp", () => {
   });
 
   it("Page cannot be framed", async () => {
-    for (const path of ["/", "/login", "/upload", "/remove"]) {
+    // Signed out, /upload is a redirect, with no page to frame.
+    for (const path of ["/", "/login", "/remove"]) {
       const directives = (await fetchW(path)).headers.get("content-security-policy")?.split("; ");
       expect(directives).toContain("frame-ancestors 'none'");
     }

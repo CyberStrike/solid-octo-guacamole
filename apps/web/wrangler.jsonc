@@ -55,7 +55,18 @@
     // always-passes test sitekey: replace it with the real one before launch. Cloudflare
     // refuses its tokens under a real secret key, so until then those forms fail closed.
     "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+    // The bucket presigned upload URLs PUT into, under uploads/ (src/presign.ts).
+    "R2_BUCKET": "rarepair",
   },
-  // Set with `wrangler secret put`.
-  "secrets": { "required": ["BETTER_AUTH_SECRET", "TURNSTILE_SECRET_KEY"] },
+  // Set with `wrangler secret put`. The R2 ones sign upload URLs: an R2 API token with Object
+  // Read and Write on the rarepair bucket only, and the account id, kept out of this public repo.
+  "secrets": {
+    "required": [
+      "BETTER_AUTH_SECRET",
+      "TURNSTILE_SECRET_KEY",
+      "R2_ACCOUNT_ID",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
+    ],
+  },
 }

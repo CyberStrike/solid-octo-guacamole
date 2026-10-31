@@ -143,6 +143,25 @@ export const signInPage = (nonce: string, form: SignInForm) =>
     `<script src="${TURNSTILE_API}" nonce="${escapeHtml(nonce)}" async defer></script>`,
   );
 
+/**
+ * The upload page, signed in. Like the sign-in form it starts `hidden` and a nonced
+ * script shows it. It is no form: the page's script asks `POST /uploads` for a URL and
+ * PUTs the file to R2 itself, so without JavaScript nothing on it can send a file.
+ */
+export const uploadPage = (nonce: string, siteKey: string) =>
+  layout(
+    "Upload a work",
+    `<noscript><p>Uploading needs JavaScript, for its anti-spam check and to send the file. Reading works without it.</p></noscript>
+<div id="upload" hidden>
+<label for="file">The work's EPUB file, 25 MB at most</label>
+<input id="file" type="file" name="file" accept=".epub,application/epub+zip">
+<div class="cf-turnstile" data-sitekey="${escapeHtml(siteKey)}"></div>
+<button type="button">Upload</button>
+</div>
+<script nonce="${escapeHtml(nonce)}">document.getElementById("upload").hidden = false;</script>`,
+    `<script src="${TURNSTILE_API}" nonce="${escapeHtml(nonce)}" async defer></script>`,
+  );
+
 /** After a sign-in request: what happens next. */
 export const checkEmailPage = () =>
   layout(

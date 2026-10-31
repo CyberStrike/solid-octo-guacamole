@@ -96,23 +96,17 @@ describe("02-upload-handshake", () => {
     expect(url.searchParams.get("X-Amz-Date")).toBe(DATETIME);
     expect(url.searchParams.get("X-Amz-Expires")).toBe("600");
     // And the expiry is signed: a URL edited to last longer no longer matches.
-    expect(url.searchParams.get("X-Amz-Signature")).toBe(
-      expectedSignature(PUT.key, "application/epub+zip", "600"),
-    );
-    expect(url.searchParams.get("X-Amz-Signature")).not.toBe(
-      expectedSignature(PUT.key, "application/epub+zip", "86400"),
-    );
+    const signature = url.searchParams.get("X-Amz-Signature");
+    expect(signature).toBe(expectedSignature(PUT.key, "application/epub+zip", "600"));
+    expect(signature).not.toBe(expectedSignature(PUT.key, "application/epub+zip", "86400"));
   });
 
   it("Each key gets its own signature", async () => {
     const other = { ...PUT, key: "uploads/00000000-0000-4000-8000-000000000002" };
     const url = new URL(await presignPut(other));
     expect(url.pathname).toBe("/rarepair/uploads/00000000-0000-4000-8000-000000000002");
-    expect(url.searchParams.get("X-Amz-Signature")).toBe(
-      expectedSignature(other.key, "application/epub+zip"),
-    );
-    expect(url.searchParams.get("X-Amz-Signature")).not.toBe(
-      expectedSignature(PUT.key, "application/epub+zip"),
-    );
+    const signature = url.searchParams.get("X-Amz-Signature");
+    expect(signature).toBe(expectedSignature(other.key, "application/epub+zip"));
+    expect(signature).not.toBe(expectedSignature(PUT.key, "application/epub+zip"));
   });
 });
