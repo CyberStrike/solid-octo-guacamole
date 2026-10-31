@@ -1,6 +1,11 @@
 // The tag matching rule (ARCHITECTURE, Tags). Pure: no Node or Workers import,
 // so ingest, the web Worker and the seed helper can all load it.
-import type { TagType } from "./schema";
+import { TAG_TYPES, type TagType } from "./schema";
+
+/** Whether a string, such as a URL segment, names a tag type. */
+export function isTagType(type: string): type is TagType {
+  return TAG_TYPES.some((t) => t === type);
+}
 
 const FOLDED = /[\p{P}\s]+/gu;
 /** In a relationship tag, `/` (romantic) and `&` (platonic) mean different things. */

@@ -75,14 +75,17 @@ export interface RateLimitTable {
 
 export type WorkStatus = "processing" | "live" | "hidden" | "removed";
 export type HiddenCause = "removal_request" | "reports" | "moderator";
-export type TagType =
-  | "fandom"
-  | "relationship"
-  | "character"
-  | "freeform"
-  | "warning"
-  | "category"
-  | "rating";
+/** Every tag type, as the `tags.type` check allows. */
+export const TAG_TYPES = [
+  "fandom",
+  "relationship",
+  "character",
+  "freeform",
+  "warning",
+  "category",
+  "rating",
+] as const;
+export type TagType = (typeof TAG_TYPES)[number];
 /** The pipeline's statuses, then the rejection codes (ARCHITECTURE, Ingestion pipeline). */
 export type UploadStatus =
   | "pending"
