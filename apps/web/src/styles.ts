@@ -211,6 +211,47 @@ article.chapter {
 .card-stats {
   font-size: var(--text-1);
 }
+
+/* work page */
+
+.authors,
+.rating-warnings {
+  font-size: var(--text-3);
+}
+
+.rating-warnings {
+  font-weight: 600;
+}
+
+.tags {
+  font-size: var(--text-1);
+}
+
+.stats {
+  font-size: var(--text-1);
+  color: var(--muted);
+}
+
+/* any page */
+
+/* A word longer than the line, such as a tag or a URL, breaks rather than scrolling sideways. */
+main {
+  overflow-wrap: anywhere;
+}
+
+/* Text for screen readers only, such as a tag's type. */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 `;
 
 // FNV-1a, enough to give each version of the stylesheet its own URL.

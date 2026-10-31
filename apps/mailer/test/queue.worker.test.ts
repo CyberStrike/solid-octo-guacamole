@@ -58,6 +58,58 @@ describe("01-auth-magic-link", () => {
   });
 });
 
+const waitlistConfirm = (n: number) => ({
+  kind: "waitlist-confirm",
+  to: `joiner${n}@example.test`,
+  url: `https://rarepair.fans/waitlist/confirm?token=join-${n}`,
+});
+
+describe("22-waitlist", () => {
+  it("A wait list confirmation email goes through Resend with its link", async () => {
+    const calls = stubResend(accepted);
+
+    const result = await consume([waitlistConfirm(1)]);
+
+    expect(calls).toHaveLength(1);
+    // SAFETY: each email the mailer renders carries these fields.
+    const [sent] = calls[0]!.emails as { to: string; subject: string; text: string }[];
+    expect(sent!.to).toBe("joiner1@example.test");
+    expect(sent!.subject).toBe("Confirm your place on the rarepair wait list");
+    expect(sent!.text).toContain("https://rarepair.fans/waitlist/confirm?token=join-1");
+    expect(result.explicitAcks).toEqual(["msg-0"]);
+    expect(result.retryMessages).toEqual([]);
+  });
+
+  it("A wait list email linking anywhere but /waitlist/confirm is not sent", async () => {
+    const calls = stubResend(accepted);
+    const link = (url: string) => ({ ...waitlistConfirm(2), url });
+
+    const result = await consume([
+      waitlistConfirm(1),
+      link("https://rarepair.fans/login/confirm?token=x"),
+      { ...signIn(3), url: "https://rarepair.fans/waitlist/confirm?token=x" },
+      link("https://evil.example/waitlist/confirm?token=x"),
+      link("https://www.rarepair.fans/waitlist/confirm?token=x"),
+      link("http://rarepair.fans/waitlist/confirm?token=x"),
+      link("https://evil.example@rarepair.fans/waitlist/confirm?token=x"),
+      link("https://rarepair.fans/waitlist/confirm?token=x#more"),
+      link("https://rarepair.fans/waitlist/confirm/x?token=x"),
+      link("https://rarepair.fans/waitlist/confirmx?token=x"),
+      link("https://rarepair.fans/waitlist/confirm"),
+    ]);
+
+    expect(calls).toHaveLength(1);
+    // SAFETY: each email the mailer renders carries these fields.
+    const sent = calls[0]!.emails as { to: string; text: string }[];
+    expect(sent).toHaveLength(1);
+    // The one sent is the valid one.
+    expect(sent[0]!.to).toBe("joiner1@example.test");
+    expect(sent[0]!.text).toContain("token=join-1");
+    expect(result.explicitAcks).toHaveLength(11);
+    expect(result.retryMessages).toEqual([]);
+  });
+});
+
 // Everything the Worker wrote to the console during one queue run, as text.
 function captureLogs() {
   const lines: string[] = [];
@@ -102,6 +154,22 @@ describe("mailer logs", () => {
     expect(text).not.toMatch(/@example\.test/);
     expect(text).not.toMatch(/https?:\/\//);
     expect(text).not.toContain("link-1");
+  });
+
+  it("never logs an address or a link for a wait list email, sent or refused", async () => {
+    stubResend(accepted);
+    const logs = captureLogs();
+
+    await consume([
+      waitlistConfirm(1),
+      { ...waitlistConfirm(2), url: "https://rarepair.fans/login/confirm?token=join-2" },
+    ]);
+
+    const text = logs.join("\n");
+    expect(logs.length).toBeGreaterThan(0);
+    expect(text).not.toMatch(/@example\.test/);
+    expect(text).not.toMatch(/https?:\/\//);
+    expect(text).not.toMatch(/join-\d/);
   });
 
   it("never logs an address or a link when the provider cannot be reached", async () => {

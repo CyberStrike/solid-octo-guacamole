@@ -1,4 +1,6 @@
 import { env, exports } from "cloudflare:workers";
+import { inspect } from "node:util";
+import { vi } from "vitest";
 import { parseMessage, type EmailMessage } from "../../mailer/src/message";
 
 // Shared by the workerd tests. (11-reader-and-csp and 20-site-chrome keep their own
@@ -58,15 +60,25 @@ const LOGIN_HEADERS = {
   "sec-fetch-site": "same-origin",
 };
 
-/** The sign-in form's POST, as a browser on rarepair.fans submits it. */
+/**
+ * A client address under 10.0.0.0/8, new for each sign-in request, so that only a test
+ * that sets `cf-connecting-ip` itself meets the per-IP limit. Random rather than counted:
+ * every test file of a project shares one limiter.
+ */
+export const freshIp = () => `10.${crypto.getRandomValues(new Uint8Array(3)).join(".")}`;
+
+/** The sign-in form's POST, as a browser on rarepair.fans submits it, from a fresh IP. */
 export const loginRequest = (fields: Record<string, string>) =>
   new Request(`${BASE}/login`, {
     method: "POST",
-    headers: LOGIN_HEADERS,
+    headers: { ...LOGIN_HEADERS, "cf-connecting-ip": freshIp() },
     body: new URLSearchParams(fields).toString(),
   });
 
-/** Submits the sign-in form to the Worker; `headers` are added over a browser's. */
+/**
+ * Submits the sign-in form to the Worker from a fresh IP; `headers` are added over a
+ * browser's, so a test can set its own `cf-connecting-ip`.
+ */
 export function postLogin(
   fields: Record<string, string>,
   {
@@ -75,5 +87,41 @@ export function postLogin(
     body = new URLSearchParams(fields).toString(),
   }: { url?: string; headers?: Record<string, string>; body?: BodyInit } = {},
 ) {
-  return fetchW(url, { method: "POST", headers: { ...LOGIN_HEADERS, ...headers }, body });
+  return fetchW(url, {
+    method: "POST",
+    headers: { ...LOGIN_HEADERS, "cf-connecting-ip": freshIp(), ...headers },
+    body,
+  });
+}
+
+export { LOGIN_EMAIL_LIMIT, LOGIN_IP_LIMIT } from "./limits";
+
+/**
+ * Waits, if need be, for a window of `periodSeconds` with at least 20 seconds left in it, time
+ * enough to fill a limit and wait on its emails. The local limiter's windows are fixed and
+ * aligned to the clock, so a test that fills one and then expects a 429 must not straddle
+ * the boundary.
+ */
+export async function windowHeadroom(periodSeconds: number) {
+  const left = periodSeconds * 1000 - (Date.now() % (periodSeconds * 1000));
+  if (left < 20_000) await new Promise((resolve) => setTimeout(resolve, left + 100));
+}
+
+/**
+ * Captures every console line while `run` runs, as a log would show it: inspect prints an
+ * error's stack, cause and own fields, at any depth. Returns the lines.
+ */
+export async function consoleDuring(run: () => Promise<void>): Promise<string[]> {
+  const logged: string[] = [];
+  const spies = (["error", "warn", "log", "info", "debug"] as const).map((level) =>
+    vi.spyOn(console, level).mockImplementation((...args) => {
+      logged.push(args.map((arg) => inspect(arg, { depth: Infinity })).join(" "));
+    }),
+  );
+  try {
+    await run();
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+  return logged;
 }

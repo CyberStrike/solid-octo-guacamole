@@ -4,12 +4,13 @@ import type { Context } from "hono";
 import { makeAuth } from "./auth";
 import type { Bindings } from "./env";
 import { checkEmailPage, forbiddenPage, signInPage } from "./pages";
+import { emailKey, ipKey, isLimited, LOGIN_WINDOW_SECONDS, tooManyRequests } from "./rate-limit";
 import type { SecurityVariables } from "./security";
 import { isSameOrigin, safeNext } from "./signin";
 import { verifyTurnstile } from "./turnstile";
 
 // The longest address an email can be sent to (RFC 5321), as apps/mailer checks.
-const MAX_EMAIL = 254;
+export const MAX_EMAIL = 254;
 
 type LoginContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
 
@@ -24,7 +25,8 @@ export const showSignIn = (c: LoginContext) =>
 
 // The sign-in form at its largest, every character percent-encoded at its widest:
 // a 254-character address and a 512-character next (up to 9 bytes each, as
-// UTF-8) and a 2048-character token (3 each) come to about 13 KB.
+// UTF-8) and a 2048-character token (3 each) come to about 13 KB. The wait list
+// form, the same without `next`, is smaller.
 const MAX_BODY = 16 * 1024;
 
 /**
@@ -32,7 +34,7 @@ const MAX_BODY = 16 * 1024;
  * bytes, which stops being read there, or breaks off. Anything else, such as a
  * multipart body, has no fields and is never read.
  */
-async function readForm(request: Request): Promise<URLSearchParams | null> {
+export async function readForm(request: Request): Promise<URLSearchParams | null> {
   const type = request.headers.get("content-type") ?? "";
   if (!type.toLowerCase().startsWith("application/x-www-form-urlencoded")) {
     return new URLSearchParams();
@@ -69,6 +71,11 @@ async function readForm(request: Request): Promise<URLSearchParams | null> {
  */
 export async function requestSignIn(c: LoginContext) {
   if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
+  const clientIp = c.req.header("cf-connecting-ip") ?? null;
+  // Before the body is read or Turnstile is asked, so a flood costs neither.
+  if (await isLimited(c.env.LOGIN_IP_LIMIT, await ipKey("login", clientIp))) {
+    return tooManyRequests(LOGIN_WINDOW_SECONDS);
+  }
 
   const form = await readForm(c.req.raw);
   if (form === null) {
@@ -97,7 +104,7 @@ export async function requestSignIn(c: LoginContext) {
   const turnstile = await verifyTurnstile(form.get("cf-turnstile-response"), {
     secret: c.env.TURNSTILE_SECRET_KEY,
     hostname: new URL(c.req.url).hostname,
-    remoteIp: c.req.header("cf-connecting-ip") ?? null,
+    remoteIp: clientIp,
   });
   if (turnstile === "failed") {
     return formAgain(400, "The anti-spam check did not pass. Please try again.");
@@ -110,7 +117,14 @@ export async function requestSignIn(c: LoginContext) {
   }
 
   // The mailer sends to no address longer than this, so no token is made for one.
-  if (email.length > MAX_EMAIL) return formAgain(400, "Enter a valid email address.");
+  // Nor for none, which would otherwise share one limit with every other empty form.
+  if (email.length > MAX_EMAIL || email.trim() === "") {
+    return formAgain(400, "Enter a valid email address.");
+  }
+  // After Turnstile, so only a solved check can spend an address's limit.
+  if (await isLimited(c.env.LOGIN_EMAIL_LIMIT, await emailKey("login", email))) {
+    return tooManyRequests(LOGIN_WINDOW_SECONDS);
+  }
 
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
   try {

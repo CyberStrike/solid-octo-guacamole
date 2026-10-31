@@ -35,4 +35,5 @@ export type {
   OptoutTable,
   RequesterBlockTable,
   RequestKind,
+  WaitlistTable,
 } from "./schema";
