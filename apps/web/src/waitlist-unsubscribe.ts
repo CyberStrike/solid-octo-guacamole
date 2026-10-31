@@ -36,7 +36,7 @@ export function showWaitlistUnsubscribe(c: UnsubscribeContext) {
  * read from the URL alone, because a mail provider's one-click request (RFC 8058) posts
  * to the exact URL in the `List-Unsubscribe` header, with a fixed body that is ignored.
  * There is deliberately no Origin check (mail providers send none; ARCHITECTURE, Wait
- * list), no cookie and no redirect. One statement deletes by hash; a token with no row
+ * list), no need for a cookie and no redirect. One statement deletes by hash; a token with no row
  * (already used, purged, never issued) gets the same 200, so the answer says nothing
  * about who is on the list.
  */

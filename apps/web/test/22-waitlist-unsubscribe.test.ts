@@ -158,6 +158,20 @@ describe("22-waitlist", () => {
     expect(await rowCount(email)).toBe(1);
   });
 
+  it("A confirmation token does not unsubscribe: only the unsubscribe token's hash is looked up", async () => {
+    const email = `confirming-${crypto.randomUUID().slice(0, 8)}@example.test`;
+    const confirmToken = newToken();
+    await db
+      .insertInto("waitlist")
+      .values({ email, confirm_token_hash: await hashToken(confirmToken) })
+      .execute();
+
+    const res = await providerPost(confirmToken);
+
+    expect(res.status).toBe(200);
+    expect(await rowCount(email)).toBe(1);
+  });
+
   it("Nothing in the logs shows the address or the token", async () => {
     const { email, token } = await mailedAddress("logs");
 

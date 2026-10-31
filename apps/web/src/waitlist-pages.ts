@@ -132,9 +132,9 @@ export const waitlistUnsubscribedPage = () =>
     `<p>Your address has been removed from the wait list. We won't email you again.</p>`,
   );
 
-/** An unsubscribe link with no token, or one we never issued. Draft copy. */
+/** An unsubscribe link with no token, or a token of a shape we never issue. Draft copy. */
 export const waitlistUnsubscribeRefusedPage = () =>
   waitlistPage(
     "That link doesn't work",
-    `<p>That unsubscribe link is incomplete or was never valid. Use the link in the email as it was sent.</p>`,
+    `<p>That unsubscribe link is incomplete or damaged. Use the link in the email as it was sent.</p>`,
   );

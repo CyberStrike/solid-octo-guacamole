@@ -10,8 +10,11 @@ import { fetchW } from "./helpers";
 const db = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 });
 afterAll(() => db.destroy());
 
-// 43 base64url characters, as issued.
-const TOKEN = "prelaunchUnsubscribeToken0123456789ABCDEFGH";
+// 43 base64url characters, as issued, fresh each run: the hash column is unique.
+const TOKEN = btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32))))
+  .replaceAll("+", "-")
+  .replaceAll("/", "_")
+  .replace(/=+$/, "");
 
 describe("22-waitlist", () => {
   it("The unsubscribe link works with PRELAUNCH on", async () => {
