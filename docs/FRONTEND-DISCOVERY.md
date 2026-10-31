@@ -139,12 +139,15 @@ Reading never requires an account (ARCHITECTURE, *Auth*).
 ## Page inventory
 
 Every page renders without JavaScript, and reading, browsing and search work
-fully. The three forms with a Turnstile check (sign-in, upload, `/remove`)
-need JavaScript and show a `<noscript>` message without it. Elsewhere the
+fully. The forms with a Turnstile check (sign-in, upload, `/remove`, and the
+wait list before launch) need JavaScript and show a `<noscript>` message
+without it. Elsewhere the
 "JS adds" column is progressive enhancement only.
 
 | Page | URL | Who | Without JS | JS adds |
 | --- | --- | --- | --- | --- |
+| Coming soon | `/` while `PRELAUNCH` is on | all | What rarepair is and what opens; `<noscript>` message: joining the wait list needs JavaScript | Email form with Turnstile, "check your email to confirm", error states |
+| Confirm wait list | `/waitlist/confirm?token=…` | all | "Confirm" button (POST form), then "You're on the list"; used, expired or unknown links say so, with a link to `/` | — |
 | Home / browse | `/` | all | Search box, popular fandoms, recently added | — |
 | Search results | `/search?q=…` | all | GET form, paged results, filter form | — |
 | Fandom / tag listing | `/tags/:slug` | all | Paged works, sort and filter as a GET form | — |
@@ -317,5 +320,13 @@ handful of displaced readers:
 
 ## Open questions
 
-None right now. Summary clamping, what the home page leads with, and the AO3
-link behaviour are settled in *Decisions so far*.
+Summary clamping, what the home page leads with, and the AO3 link behaviour
+are settled in *Decisions so far*.
+
+- **Coming-soon typography.** The coming-soon design sets the page in
+  Fraunces with IBM Plex Mono labels, but the *Typographic system* allows
+  system fonts only. Either the coming-soon page is an exception, with both
+  fonts self-hosted on `rarepair.fans` and `font-src 'self'` added to its CSP
+  (never Google Fonts, which would send every visitor to a third party), or
+  it uses the system stacks. Until this is settled, it uses the system
+  stacks.
