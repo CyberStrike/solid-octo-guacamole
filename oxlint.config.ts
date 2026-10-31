@@ -37,8 +37,6 @@ export default defineConfig({
         "deslop/no-runtime-typeof": "off",
         // XmlNode and OrderedNode are the parser's own open records; no schema exists to derive.
         "deslop/no-unsafe-dictionary-type": "off",
-        // Each assertion widens parser output to those records, which every reader rechecks.
-        "deslop/require-safety-comment-for-type-assertion": "off",
       },
     },
     {
