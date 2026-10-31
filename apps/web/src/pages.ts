@@ -5,10 +5,13 @@
 import { TURNSTILE_ORIGIN } from "./security";
 import { STYLESHEET_PATH } from "./styles";
 
-const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
+export const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
-/** Text made safe to put in an HTML element or attribute. */
-const escapeHtml = (text: string) =>
+/**
+ * Text made safe for element content or a quoted attribute value. Not for a URL
+ * attribute (a javascript: URL passes through), an unquoted attribute or a script.
+ */
+export const escapeHtml = (text: string) =>
   text
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -19,8 +22,8 @@ const escapeHtml = (text: string) =>
 /**
  * A whole HTML document: skip link, temporary banner, header, one chrome h1 made
  * from the title, the body inside main, then the footer. The title is escaped.
- * The body and head are trusted markup from this file, never escaped; put no
- * user text in them without escaping it first.
+ * The body and head are trusted markup from the caller (this file or
+ * waitlist-pages.ts), never escaped; every caller escapes any value it puts in them.
  */
 export const layout = (title: string, body: string, head = "") => `<!doctype html>
 <html lang="en">
