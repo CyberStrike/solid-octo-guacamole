@@ -266,6 +266,28 @@ describe("22-waitlist launch send script", () => {
     expect(again).toHaveLength(2);
   });
 
+  it("The launch send emails each confirmed address once: a batch size outside 1 to 100 is clamped", async () => {
+    await seed(3);
+    const small = queueStub();
+    await launchSend(options(small.stub, { batchSize: 0 }));
+    expect(small.pushed.map((p) => p.messages.length)).toEqual([1, 1, 1]);
+    await t.db.deleteFrom("waitlist").execute();
+    await seed(101);
+    const large = queueStub();
+    await launchSend(options(large.stub, { batchSize: 1000 }));
+    expect(large.pushed.map((p) => p.messages.length)).toEqual([100, 1]);
+  });
+
+  it("Secrets only from the environment: a malformed connection string is refused without quoting it", async () => {
+    const bad = "postgres://user:not-a-password@host:notaport/db";
+    const result = await launchSend({ ...options(queueStub().stub), connectionString: bad });
+    expect(result).toEqual({
+      queued: 0,
+      remaining: null,
+      error: "DATABASE_URL is not a valid connection string",
+    });
+  });
+
   it("The launch send script resumes where it stopped", async () => {
     // More confirmed addresses than one batch, and a run that stopped partway: the second
     // batch's push fails.

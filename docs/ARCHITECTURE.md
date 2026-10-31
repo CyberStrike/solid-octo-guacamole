@@ -700,17 +700,26 @@ markup: its inline `style` attributes become stylesheet rules, because
   batch's `notified_at` empty again, because the database rolls the claim
   back. A failed push stops the run with a non-zero exit, and the operator
   reruns it. The script prints how many confirmed addresses are still
-  waiting after each batch and at the end, and exits 0 only when none is. One
-  gap stays, and it errs towards a second email, never a lost one: a push
-  that Cloudflare accepted but whose answer never arrived (a timeout), or a
-  failure of the commit itself, is rolled back and queued again by the next
-  run, so those up to 100 addresses get two launch emails (delivery is at
-  least once) and only the second email's unsubscribe link works.
+  waiting after each batch and at the end, and exits 0 only when none is.
+  Delivery is at least once, never lost: when Cloudflare accepted a push but
+  the script can't know it (a timeout, an abort, an error status or an
+  unreadable reply after the enqueue, a kill between the push and the commit,
+  or a failed commit), the claim is rolled back and the next run queues those
+  up to 100 addresses again, so they get two launch emails and only the
+  second one's unsubscribe link works. The claimed rows stay locked while
+  the push runs, up to its 30 second limit, so a one-click unsubscribe for
+  one of them waits that long. If the machine sleeps or the network drops
+  mid-batch, the database may hold the open transaction until it notices
+  the dead connection; a rerun in that time skips those rows, reports them
+  as still waiting and exits non-zero, and is run again once they free.
   The mailer sends at the configured rate, so the emails, and the visits
   they bring, arrive over hours. A launch email that both providers refuse
   is dead-lettered to `email-bulk-dlq`, which the web Worker consumes: it
   clears that address's `notified_at`, so a rerun of the script queues it
-  again (rerun it after the queue has drained, and again after a day). An
+  again (rerun it after the queue has drained, and again after a day). The
+  new claim stores a new token hash over the old one, since only the hash is
+  kept and a raw token can't be recovered from it: that is safe here because
+  a dead-lettered email was never sent. An
   `email-bulk` message is a JSON object `{ "kind": "waitlist-launch", "to":
   <address as stored in waitlist.email>, "url":
   "https://rarepair.fans/waitlist/unsubscribe?token=<base64url token>" }`.

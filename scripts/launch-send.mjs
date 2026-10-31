@@ -23,7 +23,7 @@ import pg from "pg";
 const SITE = "https://rarepair.fans";
 // The queue API's per-call cap on messages (Cloudflare Queues limits).
 const BATCH_SIZE = 100;
-// A push that takes longer is treated as failed. See "ambiguous push" in ARCHITECTURE.
+// A push that takes longer is treated as failed. The outcome is then unknown: ARCHITECTURE, Wait list, The launch send.
 const PUSH_TIMEOUT_MS = 30_000;
 
 // apps/web's newToken: 32 random bytes, base64url, no padding.
@@ -92,7 +92,16 @@ export async function launchSend({
   log = console.log,
   signal,
 }) {
-  const client = new pg.Client({ connectionString, connectionTimeoutMillis: 15_000 });
+  // The queue takes at most 100 messages a call.
+  const size = Math.min(Math.max(1, Math.floor(batchSize)), BATCH_SIZE);
+  /** @type {pg.Client} */
+  let client;
+  try {
+    client = new pg.Client({ connectionString, connectionTimeoutMillis: 15_000 });
+  } catch {
+    // The constructor throws on a malformed URL, and its message can quote the URL.
+    return { queued: 0, remaining: null, error: "DATABASE_URL is not a valid connection string" };
+  }
   // A dropped connection is reported by the statement that was using it; without a listener the
   // client would also throw it unhandled.
   client.on("error", () => {});
@@ -101,7 +110,7 @@ export async function launchSend({
   try {
     await client.connect();
     while (error === null && !signal?.aborted) {
-      const tokens = Array.from({ length: batchSize }, newToken);
+      const tokens = Array.from({ length: size }, newToken);
       // The claim, the push and the commit are one transaction: if the push fails, or the process
       // or its connection dies at any point before the commit, the database rolls the claim back
       // and the rows wait again. The rows stay locked meanwhile, so `skip locked` keeps a second
@@ -110,28 +119,33 @@ export async function launchSend({
       let committed = false;
       let count = 0;
       try {
-        const claimed = await client.query(CLAIM, [tokens.map(hashToken), batchSize]);
+        const claimed = await client.query(CLAIM, [tokens.map(hashToken), size]);
         const byHash = new Map(tokens.map((token) => [hashToken(token), token]));
         const rows = claimed.rows.map((row) => ({
           to: row.email,
           token: byHash.get(row.unsubscribe_token_hash),
         }));
         if (rows.length === 0) break;
-        if (rows.some((row) => row.token === undefined)) throw new Error("claim mismatch");
         count = rows.length;
-        error = await push({
-          messages: rows.map(({ to, token }) => ({
-            body: {
-              kind: "waitlist-launch",
-              to,
-              url: `${SITE}/waitlist/unsubscribe?token=${token}`,
-            },
-            content_type: "json",
-          })),
-        });
+        error = rows.some((row) => row.token === undefined)
+          ? "a claimed row did not match its token, nothing was queued"
+          : await push({
+              messages: rows.map(({ to, token }) => ({
+                body: {
+                  kind: "waitlist-launch",
+                  to,
+                  url: `${SITE}/waitlist/unsubscribe?token=${token}`,
+                },
+                content_type: "json",
+              })),
+            });
         if (error === null) {
-          await client.query("commit");
-          committed = true;
+          try {
+            await client.query("commit");
+            committed = true;
+          } catch (caught) {
+            error = `commit failed (${codeOf(caught)}) after the push was accepted: up to ${count} addresses will be queued again by the next run`;
+          }
         }
       } finally {
         // Whatever stopped it, even a throw, the batch's rows go back to waiting. If this fails,
@@ -236,7 +250,11 @@ async function main() {
   if (error === null && remaining === 0) return 0;
   // Not 0 while anything waits: a run that ended with rows held by another run, or interrupted
   // between batches, has not finished the list.
-  console.error(`launch-send: stopped: ${error ?? "addresses are still waiting, run it again"}`);
+  const why =
+    remaining === null
+      ? "could not count the addresses still waiting, check and run it again"
+      : "addresses are still waiting, run it again";
+  console.error(`launch-send: stopped: ${error ?? why}`);
   return 1;
 }
 
