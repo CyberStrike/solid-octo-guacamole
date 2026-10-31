@@ -109,3 +109,32 @@ export const waitlistUnavailablePage = () =>
     "Something went wrong",
     `<p>We couldn't send your confirmation email just now, so nothing was changed. Please <a href="/">try again</a> in a minute.</p>`,
   );
+
+/**
+ * The unsubscribe link's page: only a button. Opening the link deletes nothing, so a mail
+ * scanner's prefetch can't unsubscribe anyone. The form posts to the same URL, token in
+ * the query, as a mail provider's one-click request does. Draft copy, for the operator
+ * to proof.
+ */
+export const waitlistUnsubscribePage = (token: string) =>
+  waitlistPage(
+    "Unsubscribe",
+    `<form class="waitlist" method="post" action="/waitlist/unsubscribe?token=${escapeHtml(token)}">
+<p>Press the button to take your address off the wait list.</p>
+<button type="submit">Unsubscribe</button>
+</form>`,
+  );
+
+/** After an unsubscribe, whether or not a row was there. It never shows the address. Draft copy. */
+export const waitlistUnsubscribedPage = () =>
+  waitlistPage(
+    "You're unsubscribed",
+    `<p>Your address has been removed from the wait list. We won't email you again.</p>`,
+  );
+
+/** An unsubscribe link with no token, or one we never issued. Draft copy. */
+export const waitlistUnsubscribeRefusedPage = () =>
+  waitlistPage(
+    "That link doesn't work",
+    `<p>That unsubscribe link is incomplete or was never valid. Use the link in the email as it was sent.</p>`,
+  );

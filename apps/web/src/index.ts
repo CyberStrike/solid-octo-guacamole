@@ -28,6 +28,7 @@ import { requestUpload, sameOriginUpload, showUpload } from "./upload";
 import { joinWaitlist } from "./waitlist";
 import { confirmWaitlist, showWaitlistConfirm } from "./waitlist-confirm";
 import { comingSoonPage } from "./waitlist-pages";
+import { showWaitlistUnsubscribe, unsubscribeWaitlist } from "./waitlist-unsubscribe";
 import { showWork } from "./work-page";
 
 const app = new Hono<{
@@ -74,6 +75,8 @@ app.post(WELCOME_TERMS, acceptTerms);
 app.post("/waitlist", joinWaitlist);
 app.get("/waitlist/confirm", showWaitlistConfirm);
 app.post("/waitlist/confirm", confirmWaitlist);
+app.get("/waitlist/unsubscribe", showWaitlistUnsubscribe);
+app.post("/waitlist/unsubscribe", unsubscribeWaitlist);
 // After launch, a stale link to the form goes home. Before it, nothing is at GET /waitlist.
 app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));
 app.get("/upload", showUpload);
