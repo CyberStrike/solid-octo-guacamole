@@ -39,15 +39,29 @@ function run(args = [], { fail = "", wrangler = stub } = {}) {
 
 // The scenarios' THEN, as a rule: everything under uploads/ is deleted 604800 s (7 days) after
 // it was written.
-const expiresUploadsAfter7Days = {
-  rules: [
-    {
-      id: "expire-uploads",
-      enabled: true,
-      conditions: { prefix: "uploads/" },
-      deleteObjectsTransition: { condition: { type: "Age", maxAge: 604800 } },
-    },
-  ],
+const expireUploads = {
+  id: "expire-uploads",
+  enabled: true,
+  conditions: { prefix: "uploads/" },
+  deleteObjectsTransition: { condition: { type: "Age", maxAge: 604800 } },
+};
+
+// The rule R2 gives a new bucket, which a lifecycle set would otherwise delete: abort incomplete
+// multipart uploads, on every prefix, 7 days after they start.
+const defaultMultipartAbort = {
+  id: "Default Multipart Abort Rule",
+  enabled: true,
+  conditions: { prefix: "" },
+  abortMultipartUploadsTransition: { condition: { type: "Age", maxAge: 604800 } },
+};
+
+// The keys of a rule that only aborts incomplete multipart uploads: no delete or transition.
+const abortOnly = ["abortMultipartUploadsTransition", "conditions", "enabled", "id"];
+
+const appliedLifecycle = () => {
+  const { code, calls } = run();
+  assert.equal(code, 0);
+  return fileFor(calls, "r2 bucket lifecycle set rarepair");
 };
 
 const fileFor = (calls, command) =>
@@ -55,9 +69,11 @@ const fileFor = (calls, command) =>
 
 await test("02-upload-handshake", async (t) => {
   await t.test("Confirm is never called", () => {
-    const { code, calls } = run();
-    assert.equal(code, 0);
-    assert.deepEqual(fileFor(calls, "r2 bucket lifecycle set rarepair"), expiresUploadsAfter7Days);
+    const { rules } = appliedLifecycle();
+    assert.deepEqual(
+      rules.find((rule) => rule.id === "expire-uploads"),
+      expireUploads,
+    );
   });
 });
 
@@ -115,11 +131,31 @@ await test("A dry run", async (t) => {
       "wrangler r2 bucket lifecycle list rarepair",
     ]);
   });
+});
 
-  await t.test("Expires nothing outside uploads/", () => {
-    const { lifecycle } = JSON.parse(run(["--dry-run"]).stdout);
-    assert.equal(lifecycle.rules.length, 1);
-    assert.equal(lifecycle.rules[0].conditions.prefix, "uploads/");
+await test("The bucket's lifecycle rules", async (t) => {
+  const { rules } = appliedLifecycle();
+
+  await t.test("Keep R2's default multipart abort rule", () => {
+    assert.deepEqual(rules, [expireUploads, defaultMultipartAbort]);
+  });
+
+  await t.test("Only expire-uploads deletes objects", () => {
+    const deleting = rules.filter((rule) => Object.keys(rule).some((k) => !abortOnly.includes(k)));
+    assert.deepEqual(
+      deleting.map((rule) => rule.id),
+      ["expire-uploads"],
+    );
+  });
+
+  await t.test("Every other rule only aborts incomplete multipart uploads", () => {
+    const others = rules.filter((rule) => rule.id !== "expire-uploads");
+    for (const rule of others) assert.deepEqual(Object.keys(rule).toSorted(), abortOnly);
+  });
+
+  await t.test("expire-uploads expires exactly uploads/", () => {
+    const rule = rules.find((r) => r.id === "expire-uploads");
+    assert.equal(rule?.conditions.prefix, "uploads/");
   });
 });
 
@@ -166,8 +202,10 @@ await test("The installed wrangler", async (t) => {
 
 await test("19-surge-controls-and-quotas", async (t) => {
   await t.test("Abandoned uploads expire", () => {
-    const { code, calls } = run();
-    assert.equal(code, 0);
-    assert.deepEqual(fileFor(calls, "r2 bucket lifecycle set rarepair"), expiresUploadsAfter7Days);
+    const { rules } = appliedLifecycle();
+    assert.deepEqual(
+      rules.find((rule) => rule.id === "expire-uploads"),
+      expireUploads,
+    );
   });
 });

@@ -19,6 +19,12 @@
 // rule set, so a rule added any other way (the dashboard, `wrangler r2 bucket lifecycle add`) is
 // deleted by the next run: add it to corsRules or lifecycleRules instead.
 //
+// The only rule that deletes objects is expire-uploads, on exactly uploads/. Every other lifecycle
+// rule only aborts incomplete multipart uploads. The second rule, "Default Multipart Abort Rule",
+// mirrors the one Cloudflare gives every new bucket (abort after 7 days, every prefix). It must be
+// kept: without it, `lifecycle set` removes the default, and an unfinished multipart upload keeps
+// its parts, and their storage bill, for good.
+//
 // --dry-run prints both rule sets, the wrangler commands and the wrangler it would run, and calls
 // nothing.
 // R2_BUCKET_RULES_WRANGLER, when set, is the wrangler script to run in place of the installed
@@ -59,6 +65,13 @@ export function lifecycleRules() {
         enabled: true,
         conditions: { prefix: "uploads/" },
         deleteObjectsTransition: { condition: { type: "Age", maxAge: 7 * DAY } },
+      },
+      // Cloudflare's default for new buckets, kept: lifecycle set would delete it.
+      {
+        id: "Default Multipart Abort Rule",
+        enabled: true,
+        conditions: { prefix: "" },
+        abortMultipartUploadsTransition: { condition: { type: "Age", maxAge: 7 * DAY } },
       },
     ],
   };
