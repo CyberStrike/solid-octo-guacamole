@@ -34,24 +34,31 @@ export async function showChapter(c: ReaderContext) {
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }
-  const chapter = live?.chapters.find((ch) => ch.n === n);
+  const at = live?.chapters.findIndex((ch) => ch.n === n) ?? -1;
+  const chapter = live?.chapters[at];
   if (!live || !chapter) return c.notFound();
 
-  // Chapter HTML comes only from a fragment the sanitizer wrote, under works/: never
-  // an upload or an original, whatever the row says.
-  if (!chapter.r2_key.startsWith("works/")) return unavailable(c);
-  let object: R2ObjectBody | null;
+  // Chapter HTML comes only from a fragment the sanitizer wrote, under works/ and this
+  // version's own prefix: never an upload, an original or an image, whatever the row says.
+  const key = chapter.r2_key;
+  if (!key.startsWith("works/") || !key.startsWith(live.version.r2_prefix)) {
+    return unavailable(c);
+  }
+  // The fragment is trusted markup only because the sanitizer wrote it; it goes in unescaped.
+  let fragment: string;
   try {
-    object = await c.env.BUCKET.get(chapter.r2_key);
+    const object = await c.env.BUCKET.get(key);
+    if (!object) return unavailable(c);
+    fragment = await object.text();
   } catch {
     return unavailable(c);
   }
-  if (!object) return unavailable(c);
-  // The fragment is trusted markup only because the sanitizer wrote it; it goes in unescaped.
-  const fragment = await object.text();
 
+  // Previous and next are the neighbours in the version's chapter list.
   const options = chapterOptions(n, live.chapters);
-  const nav = (end: "top" | "bottom") => chapterNav(id, n, live.chapters.length, options, end);
+  const prev = live.chapters[at - 1]?.n ?? null;
+  const next = live.chapters[at + 1]?.n ?? null;
+  const nav = (end: "top" | "bottom") => chapterNav(id, prev, next, options, end);
   // The slim top bar is the reader's only chrome of its own: the work title, which is
   // the page's one h1, and the settings link. It scrolls away with the page.
   const bar = `<div class="reader-bar"><h1>${escapeHtml(live.work.title)}</h1><a href="/settings/reader">Reader settings</a></div>`;
@@ -97,16 +104,22 @@ const chapterOptions = (n: number, chapters: { n: number; title: string }[]) =>
  * first chapter and no next link on the last. The select's form is a plain GET, so
  * it works without JavaScript.
  */
-function chapterNav(id: number, n: number, last: number, options: string, end: "top" | "bottom") {
+function chapterNav(
+  id: number,
+  prev: number | null,
+  next: number | null,
+  options: string,
+  end: "top" | "bottom",
+) {
   const label = end === "top" ? "Chapters" : "Chapters, end of page";
   return `<nav class="chapter-nav" aria-label="${label}">
-${n > 1 ? `<a rel="prev" href="${chapterUrl(id, n - 1)}">Previous chapter</a>` : ""}
+${prev === null ? "" : `<a rel="prev" href="${chapterUrl(id, prev)}">Previous chapter</a>`}
 <form method="get" action="${chaptersUrl(id)}">
 <label for="chapter-${end}">Chapter</label>
 <select id="chapter-${end}" name="n">${options}</select>
 <button type="submit">Go</button>
 </form>
-${n < last ? `<a rel="next" href="${chapterUrl(id, n + 1)}">Next chapter</a>` : ""}
+${next === null ? "" : `<a rel="next" href="${chapterUrl(id, next)}">Next chapter</a>`}
 </nav>`;
 }
 

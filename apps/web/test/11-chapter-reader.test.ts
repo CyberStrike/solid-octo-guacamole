@@ -85,6 +85,16 @@ const rulesFor = (css: string, selector: string) =>
     selectors.split(",").some((s) => s.trim() === selector) ? [body] : [],
   );
 
+/**
+ * Every rule, at-rule bodies included, whose selector mentions `name`, as
+ * "selector { declarations }". Innermost blocks only, so a rule inside @media is its own.
+ */
+const rulesMentioning = (css: string, name: string) =>
+  [...css.replaceAll(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap(
+    ([, selector = "", body = ""]) =>
+      selector.includes(name) ? [`${selector.trim()} {${body}}`] : [],
+  );
+
 describe("11-reader-and-csp", () => {
   it("Chapter renders inline in the page", async () => {
     const res = await fetchW(chapterUrl(W, 2));
@@ -191,7 +201,9 @@ describe("11-reader-and-csp", () => {
     // It comes before the chapter and its nav, and it scrolls away: nothing pins it.
     expect(main.indexOf('class="reader-bar"')).toBeLessThan(main.indexOf("<nav"));
     const css = await stylesheetOf(html);
-    expect(rulesFor(css, ".reader-bar").join("\n")).not.toMatch(/position:\s*(sticky|fixed)/);
+    const barRules = rulesMentioning(css, "reader-bar");
+    expect(barRules.length).toBeGreaterThan(0);
+    for (const rule of barRules) expect(rule).not.toMatch(/position:\s*(sticky|fixed)/);
   });
 
   it("Chapter number out of range", async () => {
@@ -226,10 +238,11 @@ describe("11-reader-and-csp", () => {
     const css = await stylesheetOf(html);
     expect(css).not.toMatch(/user-select:\s*none/);
     expect(css).not.toMatch(/@media print/);
-    for (const selector of ["article.chapter", ".chapter", "article"]) {
-      expect(rulesFor(css, selector).join("\n"), selector).not.toMatch(
-        /display:\s*none|visibility:\s*hidden|content-visibility/,
-      );
+    // Every rule that could reach the chapter, in or out of an at-rule.
+    const chapterRules = [...rulesMentioning(css, "chapter"), ...rulesMentioning(css, "article")];
+    expect(chapterRules.length).toBeGreaterThan(0);
+    for (const rule of chapterRules) {
+      expect(rule).not.toMatch(/display:\s*none|visibility:\s*hidden|content-visibility/);
     }
   });
 
