@@ -8,6 +8,12 @@ const NO_BREAK_SPACE = ch(0xa0);
 const IDEOGRAPHIC_SPACE = ch(0x3000);
 const NEXT_LINE = ch(0x85);
 const BYTE_ORDER_MARK = ch(0xfeff);
+const ZERO_WIDTH_SPACE = ch(0x200b);
+const ZERO_WIDTH_JOINER = ch(0x200d);
+const WORD_JOINER = ch(0x2060);
+const SOFT_HYPHEN = ch(0xad);
+/** Combining grapheme joiner: invisible, and it keeps combining marks from reordering. */
+const GRAPHEME_JOINER = ch(0x34f);
 /** "J" and a combining caron, which has no precomposed capital. */
 const J_CARON_UPPER = `J${ch(0x30c)}`;
 /** Its lowercase, precomposed (U+01F0). */
@@ -39,7 +45,27 @@ describe("normalizePseud", () => {
     expect(normalizePseud(`Moon${IDEOGRAPHIC_SPACE}Child`)).toBe("moon child");
     // Unicode whitespace, though not in JavaScript's `\s`.
     expect(normalizePseud(`${NEXT_LINE}Moon${NEXT_LINE}Child${NEXT_LINE}`)).toBe("moon child");
-    expect(normalizePseud(`Moon${BYTE_ORDER_MARK}Child`)).toBe("moon child");
+  });
+
+  it("Invisible characters are dropped, so zero-width variants match the plain pseud", () => {
+    for (const invisible of [
+      ZERO_WIDTH_SPACE,
+      ZERO_WIDTH_JOINER,
+      WORD_JOINER,
+      SOFT_HYPHEN,
+      BYTE_ORDER_MARK,
+    ]) {
+      const name = invisible.codePointAt(0)!.toString(16);
+      expect(normalizePseud(`Moon${invisible} Child`), name).toBe("moon child");
+      expect(normalizePseud(`${invisible}Moon Ch${invisible}ild${invisible}`), name).toBe(
+        "moon child",
+      );
+      expect(normalizePseud(`Moon${invisible}Child`), name).toBe("moonchild");
+    }
+  });
+
+  it("A pseud of only invisible characters is blank", () => {
+    expect(normalizePseud(`${ZERO_WIDTH_SPACE}${WORD_JOINER} ${BYTE_ORDER_MARK}`)).toBe("");
   });
 
   it("Punctuation is kept, unlike in a tag's name_norm", () => {
@@ -80,6 +106,9 @@ describe("normalizePseud", () => {
       " \t ",
       // Dotted capital I and a combining grave below: lowercasing puts the marks out of order.
       `${ch(0x130)}${ch(0x316)}`,
+      `Moon${ZERO_WIDTH_SPACE} Child${WORD_JOINER}`,
+      // An acute above, then a grave below: dropping the joiner between them leaves them out of order.
+      `a${ch(0x301)}${GRAPHEME_JOINER}${ch(0x316)}`,
     ]) {
       const normalized = normalizePseud(input);
       expect(normalizePseud(normalized), JSON.stringify(input)).toBe(normalized);
