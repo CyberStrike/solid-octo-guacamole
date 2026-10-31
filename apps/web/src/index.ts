@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { assetRoute } from "./assets";
-import { notFoundPage, turnstilePage } from "./pages";
 import type { Bindings } from "./env";
+import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
 import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
 import {
   contentSecurityPolicy,
@@ -9,6 +9,7 @@ import {
   wwwToBareDomain,
   type SecurityVariables,
 } from "./security";
+import { STYLESHEET, STYLESHEET_PATH } from "./styles";
 import { comingSoonPage } from "./waitlist-pages";
 
 const app = new Hono<{ Bindings: Bindings; Variables: SecurityVariables }>();
@@ -33,6 +34,19 @@ app.get("/", (c) =>
 app.get("/login", (c) => c.html(turnstilePage("Sign in", c.get("nonce"))));
 app.get("/upload", (c) => c.html(turnstilePage("Upload a work", c.get("nonce"))));
 app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce"))));
+
+app.get("/about", (c) => c.html(aboutPage()));
+app.get("/terms", (c) => c.html(termsPage()));
+app.get("/privacy", (c) => c.html(privacyPage()));
+
+// The URL carries a hash of the content, so the response never changes under it.
+app.get(STYLESHEET_PATH, (c) =>
+  c.body(STYLESHEET, 200, {
+    "Content-Type": "text/css; charset=utf-8",
+    "Cache-Control": "public, max-age=31536000, immutable",
+    "X-Content-Type-Options": "nosniff",
+  }),
+);
 
 app.notFound((c) => c.html(notFoundPage(), 404));
 
