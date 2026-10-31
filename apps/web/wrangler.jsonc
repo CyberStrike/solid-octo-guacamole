@@ -22,4 +22,15 @@
       "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
     },
   ],
+  // Sign-in emails, sent by apps/mailer.
+  "queues": {
+    "producers": [{ "binding": "EMAIL", "queue": "email" }],
+  },
+  "vars": {
+    // Cloudflare's always-pass test site key until the widget is created. Cloudflare refuses its
+    // tokens under a real secret key, so until then sign-in fails closed.
+    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+  },
+  // Set with `wrangler secret put`.
+  "secrets": { "required": ["BETTER_AUTH_SECRET", "TURNSTILE_SECRET_KEY"] },
 }
