@@ -2,7 +2,7 @@ import { createDb } from "@archive/db";
 import { putFragments, seedWork } from "@archive/db/seed";
 import { env } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { fetchW } from "./helpers";
+import { STRICT, fetchW, nonceOf, withoutNonce } from "./helpers";
 
 // Every work here has an AO3 work ID in 22000-22099 and tags named r5-..., so no other
 // test file sharing the database sees them.
@@ -261,6 +261,39 @@ describe("13-reader-settings-and-position", () => {
     expect(res.headers.getSetCookie()).toContain(
       "__Host-reader=theme=dark&size=xl; Max-Age=31536000; Path=/; SameSite=Lax; Secure",
     );
+  });
+
+  it("Settings apply live with JS", async () => {
+    // The browser half (the attribute flips, the cookie is written) runs the script's
+    // source in reader-settings.node.test.ts, and in a browser is a live check. Here:
+    // both pages load the script with the page's nonce, from a cached, hashed URL.
+    let src = "";
+    for (const path of [CHAPTER, "/settings/reader"]) {
+      const res = await fetchW(path, { headers: { cookie: "__Host-reader=size=l" } });
+      expect(res.status, path).toBe(200);
+      const csp = res.headers.get("content-security-policy");
+      expect(withoutNonce(csp), path).toBe(STRICT);
+      const html = await res.text();
+      const tag = html.match(/<script src="([^"]+)" nonce="([^"]+)" defer><\/script>/);
+      expect(tag, path).not.toBeNull();
+      expect(tag?.[1]).toMatch(/^\/assets\/reader-settings\.[0-9a-f]{8}\.js$/);
+      expect(tag?.[2], path).toBe(nonceOf(csp));
+      src = tag?.[1] ?? "";
+      // The controls it changes: on the chapter, a form in the reader bar, hidden until the
+      // script shows it, with the current values selected.
+      const form = settingsForm(html);
+      expect(form.selects.size?.selected, path).toBe("l");
+      expect(form.hidden, path).toBe(path === CHAPTER);
+    }
+    const script = await fetchW(src);
+    expect(script.status).toBe(200);
+    expect(script.headers.get("content-type")).toMatch(/^text\/javascript/);
+    expect(script.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect(script.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(script.headers.get("set-cookie")).toBeNull();
+    expect(await script.text()).toContain("document.cookie");
+    // Only the current hash is served.
+    expect((await fetchW("/assets/reader-settings.00000000.js")).status).toBe(404);
   });
 
   it("Settings work for signed-out readers", async () => {

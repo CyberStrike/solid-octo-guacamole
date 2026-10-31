@@ -64,6 +64,10 @@ const aroundArticle = (html: string) => {
   return { top: html.slice(0, start), bottom: html.slice(end) };
 };
 
+/** The chapter navs' markup, without the reader bar's settings controls (R5). */
+const navsOf = (html: string) =>
+  (html.match(/<nav class="chapter-nav"[\s\S]*?<\/nav>/g) ?? []).join("\n");
+
 /** The text of every link to `href`. */
 const linksTo = (html: string, href: string) =>
   [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)].flatMap(([, attrs = "", text = ""]) =>
@@ -115,8 +119,10 @@ describe("11-reader-and-csp", () => {
     expect(three).toContain('<h2 class="chapter-title">Chapter 3</h2>');
     expect(three).toContain('<option value="3" selected>3. Chapter 3</option>');
     expect(html).not.toMatch(/<iframe/i);
-    // No client-side epub engine: the page runs no script at all yet.
-    expect(html).not.toMatch(/<script/i);
+    // No client-side epub engine: the page's one script is the reader settings (R5).
+    expect(html.match(/<script\b[^>]*>/gi)).toEqual([
+      expect.stringMatching(/^<script src="\/assets\/reader-settings\.[0-9a-f]+\.js" nonce="/),
+    ]);
   });
 
   it("Script that gets past the sanitizer does not run", async () => {
@@ -131,8 +137,13 @@ describe("11-reader-and-csp", () => {
     expect(nonce).toBeTruthy();
     const html = await res.text();
     expect(articleOf(html)).toContain("<script>window.INJECTED = 1</script>");
-    expect(html.match(/<script\b[^>]*>/g)).toEqual(["<script>"]);
-    expect(html).not.toContain(`nonce="${nonce}"`);
+    // The injected script has no nonce; the page's nonce is only on its own settings script (R5).
+    expect(html.match(/<script\b[^>]*>/g)).toEqual([
+      expect.stringMatching(/^<script src="\/assets\/reader-settings\./),
+      "<script>",
+    ]);
+    expect(html.split(`nonce="${nonce}"`)).toHaveLength(2);
+    expect(articleOf(html)).not.toContain("nonce=");
   });
 
   it("Chapter content is contained", async () => {
@@ -150,7 +161,7 @@ describe("11-reader-and-csp", () => {
     for (const [end, html] of Object.entries({ top, bottom })) {
       expect(linksTo(html, chapterUrl(W, 2)), end).toEqual([expect.stringMatching(/previous/i)]);
       expect(linksTo(html, chapterUrl(W, 4)), end).toEqual([expect.stringMatching(/next/i)]);
-      const selects = html.match(/<select\b[\s\S]*?<\/select>/g) ?? [];
+      const selects = navsOf(html).match(/<select\b[\s\S]*?<\/select>/g) ?? [];
       expect(selects, end).toHaveLength(1);
       const select = selects[0] ?? "";
       const options = [...select.matchAll(/<option value="(\d+)"/g)].map(([, n]) => n);
@@ -161,7 +172,7 @@ describe("11-reader-and-csp", () => {
 
   it("Chapter select works without JS", async () => {
     const html = await htmlOf(chapterUrl(W, 3));
-    const forms = [...html.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/g)].flatMap(
+    const forms = [...navsOf(html).matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/g)].flatMap(
       ([, attrs = "", inner = ""]) => (inner.includes("<select") ? [{ attrs, inner }] : []),
     );
     expect(forms).toHaveLength(2);
@@ -210,7 +221,10 @@ describe("11-reader-and-csp", () => {
     const bar = main.match(/<div class="reader-bar">([\s\S]*?)<\/div>/)?.[1] ?? "";
     // The work title is the page's one h1, in the bar, escaped; the settings link beside it.
     expect(bar).toContain(`<h1>${TITLE_ESCAPED}</h1>`);
-    expect(bar).toMatch(/<a href="\/settings\/reader">[^<]+<\/a>/);
+    // The link comes back to this chapter when the settings are saved (R5).
+    expect(bar).toMatch(
+      /<a href="\/settings\/reader\?next=%2Fworks%2F20001%2Fchapters%2F3">[^<]+<\/a>/,
+    );
     expect(html.match(/<h1\b/g)).toHaveLength(1);
     expect(html).not.toContain("<b>reader</b>");
     // It comes before the chapter and its nav, and it scrolls away: nothing pins it.
@@ -295,7 +309,7 @@ describe("11-reader-and-csp", () => {
     expect(html).not.toMatch(/rel="prev"|>Previous/i);
     expect(linksTo(html, chapterUrl(W, 0))).toEqual([]);
     expect(linksTo(html, chapterUrl(W, 2))).toHaveLength(2);
-    expect(html.match(/<select\b/g)).toHaveLength(2);
+    expect(navsOf(html).match(/<select\b/g)).toHaveLength(2);
   });
 
   it("Last chapter has no next link", async () => {
@@ -303,7 +317,7 @@ describe("11-reader-and-csp", () => {
     expect(html).not.toMatch(/rel="next"|>Next/i);
     expect(linksTo(html, chapterUrl(W, 6))).toEqual([]);
     expect(linksTo(html, chapterUrl(W, 4))).toHaveLength(2);
-    expect(html.match(/<select\b/g)).toHaveLength(2);
+    expect(navsOf(html).match(/<select\b/g)).toHaveLength(2);
   });
 });
 
@@ -326,7 +340,7 @@ describe("chapter reader", () => {
     await putFragments(env.BUCKET, one.fragments);
     const html = await htmlOf(chapterUrl(20004, 1));
     expect(html).not.toMatch(/rel="prev"|rel="next"/);
-    const selects = html.match(/<select\b[\s\S]*?<\/select>/g) ?? [];
+    const selects = navsOf(html).match(/<select\b[\s\S]*?<\/select>/g) ?? [];
     expect(selects).toHaveLength(2);
     for (const select of selects) expect(select.match(/<option\b/g)).toHaveLength(1);
   });

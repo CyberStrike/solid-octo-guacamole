@@ -4,8 +4,11 @@
 import { createDb, getLiveWork } from "@archive/db";
 import type { Context } from "hono";
 import type { Bindings } from "./env";
+import { getCookie } from "hono/cookie";
 import { escapeHtml, layout } from "./pages";
+import { parseSettings, SETTINGS_COOKIE, type Settings } from "./reader-settings";
 import type { SecurityVariables } from "./security";
+import { barSettings, settingsScriptTag } from "./settings";
 
 type ReaderContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
 
@@ -59,10 +62,8 @@ export async function showChapter(c: ReaderContext) {
   const prev = live.chapters[at - 1]?.n ?? null;
   const next = live.chapters[at + 1]?.n ?? null;
   const nav = (end: "top" | "bottom") => chapterNav(id, prev, next, options, end);
-  // The slim top bar: the work title, which is the page's one h1, and the settings
-  // link. It scrolls away with the page.
   const workTitle = live.work.title.trim() || "Untitled work";
-  const bar = `<div class="reader-bar"><h1>${escapeHtml(workTitle)}</h1><a href="/settings/reader">Reader settings</a></div>`;
+  const bar = readerBar(workTitle, chapterUrl(id, n), parseSettings(getCookie(c, SETTINGS_COOKIE)));
   // The processor takes the chapter's heading out of the fragment and keeps it as its
   // title, so the page shows it, as chrome, above the text.
   return c.html(
@@ -72,11 +73,19 @@ export async function showChapter(c: ReaderContext) {
 <h2 class="chapter-title">${escapeHtml(chapterTitle(chapter))}</h2>
 <article class="chapter">${fragment}</article>
 ${nav("bottom")}`,
-      "",
+      settingsScriptTag(c.get("nonce")),
       bar,
     ),
   );
 }
+
+/**
+ * The slim top bar every reading page shares: the work title, which is the page's one
+ * h1, and the reader settings, coming back to `returnTo`. It scrolls away with the
+ * page. The page's head needs `settingsScriptTag` for the live controls.
+ */
+export const readerBar = (workTitle: string, returnTo: string, settings: Settings) =>
+  `<div class="reader-bar"><h1>${escapeHtml(workTitle)}</h1>${barSettings(returnTo, settings)}</div>`;
 
 /**
  * The chapter select's target: `/works/:id/chapters?n=5` goes to chapter 5. The

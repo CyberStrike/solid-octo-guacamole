@@ -408,7 +408,7 @@ html[data-face="sans"] {
 `;
 
 // FNV-1a, enough to give each version of the stylesheet its own URL.
-const fnv1a = (text: string) => {
+export const fnv1a = (text: string) => {
   let hash = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     hash = Math.imul(hash ^ text.charCodeAt(i), 0x01000193);

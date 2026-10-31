@@ -7,7 +7,65 @@ import {
   parseSettings,
   settingsCookie,
 } from "../src/reader-settings";
+import { SETTINGS_SCRIPT } from "../src/reader-settings";
 import { STYLESHEET } from "../src/styles";
+
+type Listener = (event: { target: { name: string; value: string } }) => void;
+
+/**
+ * Just enough of a page for the settings script: <html>'s dataset, a cookie jar that
+ * records each write, and one settings form, hidden, whose change listeners it keeps.
+ */
+function fakePage(dataset: Record<string, string> = {}) {
+  const writes: string[] = [];
+  const listeners: Listener[] = [];
+  const form = {
+    hidden: true,
+    addEventListener(type: string, listener: Listener) {
+      if (type === "change") listeners.push(listener);
+    },
+  };
+  const document = {
+    documentElement: { dataset },
+    set cookie(value: string) {
+      writes.push(value);
+    },
+    querySelectorAll: (selector: string) => (selector === "form.reader-settings" ? [form] : []),
+  };
+  // The script's own source, run as the browser runs it, against this page.
+  // oxlint-disable-next-line no-new-func -- the test runs the served script's source, as a browser would
+  new Function("document", SETTINGS_SCRIPT)(document);
+  const change = (name: string, value: string) =>
+    listeners.forEach((listener) => listener({ target: { name, value } }));
+  return { dataset, writes, form, change };
+}
+
+describe("the settings script", () => {
+  it("Settings apply live with JS", () => {
+    const page = fakePage({ theme: "dark" });
+    // The controls are hidden until the script runs.
+    expect(page.form.hidden).toBe(false);
+    page.change("size", "xl");
+    expect(page.dataset).toEqual({ theme: "dark", size: "xl" });
+    expect(page.writes).toEqual([settingsCookie({ theme: "dark", size: "xl" })]);
+  });
+
+  it("drops the theme for the device's choice, and ignores other values", () => {
+    const page = fakePage({ theme: "sepia", face: "sans" });
+    page.change("theme", "");
+    expect(page.dataset).toEqual({ face: "sans" });
+    expect(page.writes).toEqual([settingsCookie({ face: "sans" })]);
+    page.change("size", "huge");
+    page.change("next", "/elsewhere");
+    page.change("__proto__", "x");
+    expect(page.dataset).toEqual({ face: "sans" });
+    expect(page.writes).toHaveLength(1);
+  });
+
+  it("never sets a style, writes markup or scrolls", () => {
+    expect(SETTINGS_SCRIPT).not.toMatch(/\.style\b|innerHTML|outerHTML|insertAdjacent|scroll/i);
+  });
+});
 
 /** WCAG 2 relative luminance of a #rrggbb colour. */
 const luminance = (hex: string) => {

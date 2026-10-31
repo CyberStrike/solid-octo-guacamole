@@ -7,6 +7,7 @@ import { requestSignIn, showSignIn } from "./login";
 import { jumpToChapter, showChapter } from "./reader";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
 import { pageState } from "./page-state";
+import { SETTINGS_SCRIPT, SETTINGS_SCRIPT_PATH } from "./reader-settings";
 import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
 import {
   contentSecurityPolicy,
@@ -70,6 +71,15 @@ app.get("/tags/:type/:name", showTagListing);
 app.get(STYLESHEET_PATH, (c) =>
   c.body(STYLESHEET, 200, {
     "Content-Type": "text/css; charset=utf-8",
+    "Cache-Control": "public, max-age=31536000, immutable",
+    "X-Content-Type-Options": "nosniff",
+  }),
+);
+
+// The reader settings script, likewise hashed. Loaded with the page's nonce.
+app.get(SETTINGS_SCRIPT_PATH, (c) =>
+  c.body(SETTINGS_SCRIPT, 200, {
+    "Content-Type": "text/javascript; charset=utf-8",
     "Cache-Control": "public, max-age=31536000, immutable",
     "X-Content-Type-Options": "nosniff",
   }),

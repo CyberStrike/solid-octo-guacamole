@@ -13,6 +13,7 @@ import {
   parseSettings,
   SETTING_NAMES,
   SETTINGS_COOKIE,
+  SETTINGS_SCRIPT_PATH,
   settingsCookie,
   type SettingName,
   type Settings,
@@ -91,7 +92,7 @@ export const settingsControls = (idPrefix: string, settings: Settings) =>
   }).join("\n");
 
 /** The settings page: the form, posting back here, with `next` to return to. */
-const settingsPage = (settings: Settings, next: string) =>
+const settingsPage = (settings: Settings, next: string, nonce: string) =>
   layout(
     "Reader settings",
     `<form class="reader-settings" method="post" action="${SETTINGS_PATH}">
@@ -100,7 +101,27 @@ ${settingsControls("settings-", settings)}
 <button type="submit">Save settings</button>
 </form>
 <p><a href="${escapeHtml(next)}">Back</a></p>`,
+    settingsScriptTag(nonce),
   );
+
+/**
+ * The settings script, for a page's head. It carries the page's nonce, which
+ * `'strict-dynamic'` trusts wherever the file is served from (ARCHITECTURE, Reading).
+ */
+export const settingsScriptTag = (nonce: string) =>
+  `<script src="${SETTINGS_SCRIPT_PATH}" nonce="${escapeHtml(nonce)}" defer></script>`;
+
+/**
+ * The reader's settings in a reader bar: the link to this page, coming back to
+ * `returnTo`, and the controls as a form the settings script shows. Without
+ * JavaScript the form stays hidden and the link is all there is.
+ */
+export const barSettings = (returnTo: string, settings: Settings) =>
+  `<a href="${SETTINGS_PATH}?next=${escapeHtml(encodeURIComponent(returnTo))}">Reader settings</a>
+<form class="reader-settings" method="post" action="${SETTINGS_PATH}" aria-label="Reader settings" hidden>
+${settingsControls("bar-", settings)}
+<input type="hidden" name="next" value="${escapeHtml(returnTo)}">
+</form>`;
 
 /** `GET /settings/reader`: the form, showing the reader's current settings. */
 export const showSettings = (c: SettingsContext) =>
@@ -108,6 +129,7 @@ export const showSettings = (c: SettingsContext) =>
     settingsPage(
       parseSettings(getCookie(c, SETTINGS_COOKIE)),
       safeNext(c.req.query("next") ?? null),
+      c.get("nonce"),
     ),
   );
 

@@ -3,6 +3,8 @@
 // Pure, so it runs in Node: the routes are in settings.ts and the middleware that
 // writes the attributes in page-state.ts.
 
+import { fnv1a } from "./styles";
+
 /** Each setting and the values it may take, in the order they are written. */
 export const SETTINGS = {
   theme: ["light", "dark", "sepia"],
@@ -78,6 +80,38 @@ export const htmlAttributes = (settings: Settings) =>
   dataAttributes(settings)
     .map(([name, value]) => ` ${name}="${value}"`)
     .join("");
+
+/**
+ * The settings script, served from SETTINGS_SCRIPT_PATH and loaded with the page's
+ * nonce. It shows the reader bar's hidden settings form, and on any change flips that
+ * attribute on <html> and writes the same cookie the form's POST sets, so the next page
+ * the server renders agrees. It sets no style, writes no markup and never scrolls.
+ */
+export const SETTINGS_SCRIPT = `"use strict";
+(() => {
+  const LISTS = ${JSON.stringify(SETTINGS)};
+  const NAMES = ${JSON.stringify(SETTING_NAMES)};
+  const COOKIE = ${JSON.stringify(SETTINGS_COOKIE)};
+  const ATTRIBUTES = ${JSON.stringify(SETTINGS_COOKIE_ATTRIBUTES)};
+  const data = document.documentElement.dataset;
+  const allowed = (name, value) =>
+    Object.prototype.hasOwnProperty.call(LISTS, name) && LISTS[name].includes(value);
+  for (const form of document.querySelectorAll("form.reader-settings")) {
+    form.hidden = false;
+    form.addEventListener("change", (event) => {
+      const { name, value } = event.target;
+      if (allowed(name, value)) data[name] = value;
+      else if (name === "theme" && value === "") delete data.theme;
+      else return;
+      const fields = NAMES.filter((n) => allowed(n, data[n])).map((n) => n + "=" + data[n]);
+      document.cookie = COOKIE + "=" + fields.join("&") + ATTRIBUTES;
+    });
+  }
+})();
+`;
+
+/** The script's URL carries a hash of it, so the response never changes under it. */
+export const SETTINGS_SCRIPT_PATH = `/assets/reader-settings.${fnv1a(SETTINGS_SCRIPT)}.js`;
 
 /**
  * The one-shot flash cookie: a code from FLASHES, never copy or markup, so a forged
