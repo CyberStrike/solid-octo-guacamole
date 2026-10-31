@@ -73,7 +73,7 @@ header { display: grid; gap: 10px; border-bottom: 2px solid var(--ink); padding-
 .now { font-size: 15px; max-width: 72ch; }
 .tally { display: flex; flex-wrap: wrap; gap: 8px; }
 
-.pill { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; max-width: 100%; line-height: 1.3; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border-radius: 12px; font-size: 12px; font-weight: 500; max-width: 100%; line-height: 1.3; }
 .pill::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .s-merged { color: var(--merged); background: var(--merged-bg); }
 .s-running { color: var(--running); background: var(--running-bg); }
@@ -247,7 +247,7 @@ const span = (from, to) => {
 
 const LABELS = { merged: "Merged", running: "Building", building: "Building", gating: "In gate", review: "In review", ready: "Ready", waiting: "Waiting", blocked: "Blocked", open: "Open", closed: "Closed", done: "Done", queued: "Queued", idle: "Idle", finished: "Finished", failed: "Failed" };
 const TONE = { building: "running", running: "running", gating: "review", review: "review", idle: "waiting", finished: "merged", failed: "blocked", done: "merged", closed: "merged" };
-const pill = (s, text) => `<span class="pill s-${TONE[s] || s}" title="${esc(text || LABELS[s] || s)}">${esc(text || LABELS[s] || s)}</span>`;
+const pill = (s, text) => `<span class="pill s-${TONE[s] || s}" ${text ? ` title="${esc(text)}"` : ""}>${esc(text || LABELS[s] || s)}</span>`;
 const isDone = (s) => s === "merged" || s === "closed" || s === "done";
 // An agent row written with an item's done word is finished too, so it never sticks on the board.
 const agentDone = (s) => s === "finished" || isDone(s);
@@ -281,7 +281,7 @@ function renderHeader() {
   document.getElementById("tally").innerHTML = order.filter((s) => counts[s]).map((s) => pill(s, `${counts[s]} ${LABELS[s].toLowerCase()}`)).join("");
 }
 
-const RUNNING_STEP = { explorer: "Exploring", consultant: "Consulting", gate: "Gating" };
+const RUNNING_STEP = { explorer: "Exploring", consultant: "Consulting", gate: "Merging main" };
 const KINDS = { explorer: "Explorer", builder: "Builder", consultant: "Consultant", gate: "Merge gate", reviewer: "Reviewer" };
 
 function renderAgents() {
