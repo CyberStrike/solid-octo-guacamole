@@ -88,7 +88,12 @@ app.get(STYLESHEET_PATH, (c) =>
   }),
 );
 
-app.notFound((c) => c.html(notFoundPage(), 404));
+// no-store on every 404, as on every /admin response: the admin gate refuses with
+// this answer, and a header only its refusal sent would point at /admin.
+app.notFound((c) => {
+  c.header("Cache-Control", "no-store");
+  return c.html(notFoundPage(), 404);
+});
 // Hono's default logs the whole error, and one from Postgres can quote the row it
 // failed on, a sign-in address included. Log only what kind of error it was.
 app.onError((error, c) => {

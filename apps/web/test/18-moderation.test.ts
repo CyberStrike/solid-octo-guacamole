@@ -306,6 +306,8 @@ const ADMIN_REQUESTS = [
 async function notFoundBody() {
   const res = await get("/mod1-no-such-page");
   expect(res.status).toBe(404);
+  // As every refusal is: a header only /admin sent would point at it.
+  expect(res.headers.get("cache-control")).toBe("no-store");
   return res.text();
 }
 

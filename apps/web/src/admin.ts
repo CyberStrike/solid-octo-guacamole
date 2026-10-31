@@ -69,12 +69,8 @@ export const adminGate: MiddlewareHandler<AdminEnv> = async (c, next) => {
   }
 };
 
-/** The not-found answer `app.notFound` gives, kept out of caches. */
-function refuse(c: AdminContext) {
-  // c.notFound's response is built on this context, so it keeps the header.
-  c.header("Cache-Control", "no-store");
-  return c.notFound();
-}
+/** The answer any unknown URL gets from `app.notFound`, which is `no-store` too. */
+const refuse = (c: AdminContext) => c.notFound();
 
 const iso = (date: Date) => date.toISOString();
 
