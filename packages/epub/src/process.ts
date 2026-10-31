@@ -129,7 +129,8 @@ async function run(
     },
     resolveChapterLink(href, fromFile) {
       const target = resolveHref(dirOf(fromFile), href);
-      if (!target) return null;
+      // `#` and an empty href name no target: only a file or an anchor does.
+      if (!target || (target.path === "" && target.anchor === null)) return null;
       const n = split.chapterFor(target.path || fromFile, target.anchor);
       if (n === null || n === current) return null;
       return `/works/${ao3WorkId}/chapters/${n}`;

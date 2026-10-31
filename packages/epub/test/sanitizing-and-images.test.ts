@@ -409,3 +409,28 @@ describe("07-sanitizing-and-images", () => {
     expect(c3).toContain("marker-c3-a");
   });
 });
+
+describe("chapter links", () => {
+  it("links to a file without an anchor go to the first chapter the file holds", async () => {
+    const work = await processEpub(
+      threeChapters({
+        c1: `<a href="Three%20Parts_split_002.xhtml">to-file-2</a>`,
+        c3: `<a href="Three%20Parts_split_001.xhtml">to-file-1</a>`,
+      }),
+    );
+    expect(work.chapters[0]!.html).toContain(`<a href="/works/1000001/chapters/3">to-file-2</a>`);
+    expect(work.chapters[2]!.html).toContain(`<a href="/works/1000001/chapters/2">to-file-1</a>`);
+  });
+
+  it("an anchor-only link resolves in its own file, and an empty or bare # link stays text", async () => {
+    const work = await processEpub(
+      threeChapters({
+        c2: `<a href="#in-c1">back-one</a> <a href="#">bare-hash</a> <a href="">empty-href</a>`,
+      }),
+    );
+    const c2 = work.chapters[1]!.html;
+    expect(c2).toContain(`<a href="/works/1000001/chapters/1">back-one</a>`);
+    expect(c2).toContain("bare-hash empty-href");
+    expect(c2.match(/<a /g)).toHaveLength(1);
+  });
+});

@@ -214,20 +214,43 @@ function* perFile(
   }
 }
 
-/** Finds the element with id `anchor` in spine file `path`, indexing each file once. */
-function targets(docs: SpineDoc[]): (path: string, anchor: string) => ElementNode | null {
+/** Position of the first text or image under `scopes`, or null if they hold none. */
+function firstContent(scopes: readonly Node[]): number | null {
+  for (const n of scopes) {
+    if (n.type === "text") {
+      if (!isBlankText(n)) return n.pos;
+    } else if (n.tag === "img") {
+      return n.pos;
+    } else {
+      const inner = firstContent(n.children);
+      if (inner !== null) return inner;
+    }
+  }
+  return null;
+}
+
+/**
+ * Where a link into spine file `path` lands: the element with id `anchor`, or
+ * the file's first content in `scopesOf(doc)` when there is no anchor.
+ */
+function targets(
+  docs: SpineDoc[],
+  scopesOf: (doc: SpineDoc) => ElementNode[],
+): (path: string, anchor: string | null) => number | null {
   const byPath = new Map(docs.map((d) => [d.path, d]));
   const ids = new Map<SpineDoc, Map<string, ElementNode>>();
   return (path, anchor) => {
     const doc = byPath.get(path);
     if (!doc) return null;
+    if (anchor === null) return firstContent(scopesOf(doc));
     if (!ids.has(doc)) ids.set(doc, idIndex(doc.root));
-    return ids.get(doc)!.get(anchor) ?? null;
+    return ids.get(doc)!.get(anchor)?.pos ?? null;
   };
 }
 
 function split(
   docs: SpineDoc[],
+  perDoc: Map<SpineDoc, ElementNode[]>,
   regions: ElementNode[],
   starts: Start[],
   method: "toc" | "headings",
@@ -238,7 +261,7 @@ function split(
       "content_before_first_chapter: text in #chapters before the first chapter start",
     );
   }
-  const target = targets(docs);
+  const target = targets(docs, (doc) => perDoc.get(doc)!);
   // Chapter i holds the #chapters content from starts[i - 1] up to starts[i].
   const chapterAt = (pos: number): number | null => {
     const region = regions[firstReaching(regions, pos)];
@@ -257,8 +280,8 @@ function split(
     method,
     reviewReasons,
     chapterFor(path, anchor) {
-      const el = anchor === null ? null : target(path, anchor);
-      return el ? chapterAt(el.pos) : null;
+      const pos = target(path, anchor);
+      return pos === null ? null : chapterAt(pos);
     },
   };
 }
@@ -281,9 +304,9 @@ export function splitChapters(docs: SpineDoc[], navPoints: NavPoint[]): ChapterS
     }
 
     const toc = startsFromToc(docs, perDoc, navPoints);
-    if (toc) return split(docs, regions, toc, "toc", reviewReasons);
+    if (toc) return split(docs, perDoc, regions, toc, "toc", reviewReasons);
     const headings = startsFromHeadings(regions);
-    if (headings) return split(docs, regions, headings, "headings", reviewReasons);
+    if (headings) return split(docs, perDoc, regions, headings, "headings", reviewReasons);
   }
 
   // Last resort: one chapter per spine file that has content.
