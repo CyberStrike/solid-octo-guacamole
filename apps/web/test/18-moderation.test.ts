@@ -32,6 +32,9 @@ async function signIn(email: string, role: string | null): Promise<string> {
   return res.headers.getSetCookie()[0]!.split(";")[0]!;
 }
 
+// ARCHITECTURE, Hosts: on every response.
+const HSTS = "max-age=31536000; includeSubDomains";
+
 const QUEUES = ["/admin/reports", "/admin/takedowns", "/admin/requests", "/admin/works"];
 
 let moderator: string;
@@ -91,6 +94,7 @@ describe("18 moderation", () => {
       expect(res.status, path).toBe(200);
       expect(res.headers.get("content-type"), path).toMatch(/^text\/html/);
       expect(res.headers.get("cache-control"), path).toBe("no-store");
+      expect(res.headers.get("strict-transport-security"), path).toBe(HSTS);
       const html = await res.text();
       expect(html, path).toMatch(/<table[\s>]/);
       expect(html, path).not.toMatch(/<script/i);
@@ -312,5 +316,6 @@ async function expectRefused(res: Response, notFound: string, what: string) {
   expect(res.status, what).toBe(404);
   expect(res.headers.get("location"), what).toBeNull();
   expect(res.headers.get("cache-control"), what).toBe("no-store");
+  expect(res.headers.get("strict-transport-security"), what).toBe(HSTS);
   expect(await res.text(), what).toBe(notFound);
 }
