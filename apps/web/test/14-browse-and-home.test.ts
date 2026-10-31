@@ -235,4 +235,32 @@ describe("14-browse-and-home", () => {
       "Tags R1/X, Tags R2/X, Tags R3/X, +2 more · Tags C1, Tags C2, Tags C3, +1 more · 1 other tag",
     );
   });
+
+  it("Card stats line", async () => {
+    await seedWork(db, {
+      ao3WorkId: 30060,
+      chapters: [{ words: 1200 }, { words: 1300 }, { words: 2000 }],
+      chapterTotal: 5,
+      complete: false,
+      updatedAt: "2024-03-05T00:00:00Z",
+      tags: [{ type: "fandom", name: "Stats Line Fandom" }],
+    });
+    // The total unknown, and a finished work.
+    await seedWork(db, {
+      ao3WorkId: 30061,
+      chapters: [{ words: 800 }],
+      complete: true,
+      updatedAt: "2023-11-20T00:00:00Z",
+      tags: [{ type: "fandom", name: "Stats Line Fandom" }],
+    });
+
+    const html = await htmlOf("/tags/fandom/stats%20line%20fandom");
+
+    expect(textOf(lineOf(cardOf(html, 30060), "card-stats") ?? "")).toBe(
+      "4,500 words · 3/5 chapters · In progress · Updated 2024-03-05",
+    );
+    expect(textOf(lineOf(cardOf(html, 30061), "card-stats") ?? "")).toBe(
+      "800 words · 1/? chapters · Complete · Updated 2023-11-20",
+    );
+  });
 });

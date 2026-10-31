@@ -85,6 +85,17 @@ const summary = (html: string | null, href: string) =>
     ? `<div class="card-summary">${html}</div>\n<p class="card-more"><a href="${href}">more</a></p>`
     : "";
 
+/** Words, chapters as posted/total ("?" when the total is unknown), completion, last updated. */
+const stats = (work: ListedWork["work"]) =>
+  [
+    work.words === null ? "" : `${work.words.toLocaleString("en-US")} words`,
+    `${work.chapters_count}/${work.chapters_total ?? "?"} chapters`,
+    work.complete ? "Complete" : "In progress",
+    work.updated_at === null ? "" : `Updated ${work.updated_at.toISOString().slice(0, 10)}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
 /** The six lines, in order: title and author, rating and warnings, fandoms, summary, tags, stats. */
 function workCard({ work, authors, tags }: ListedWork): string {
   const href = `/works/${work.ao3_work_id}`;
@@ -99,6 +110,6 @@ function workCard({ work, authors, tags }: ListedWork): string {
 <p class="card-fandoms">${tagLinks(ofType("fandom"))}</p>
 ${summary(work.summary_html, href)}
 <p class="card-tags">${cardTags(ofType("relationship"), ofType("character"), ofType("freeform").length)}</p>
-<p class="card-stats">${work.words?.toLocaleString("en-US") ?? "?"} words</p>
+<p class="card-stats">${stats(work)}</p>
 </li>`;
 }
