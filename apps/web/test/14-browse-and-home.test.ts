@@ -342,20 +342,14 @@ describe("14-browse-and-home tag listing URLs", () => {
   });
 });
 
-/**
- * Every card on the listings with ratings and warnings this file seeded. One
- * request at a time: the test database serves one connection at a time.
- */
+/** Every card on the listings with ratings and warnings this file seeded. */
 const allCards = async () => {
-  const cards: string[] = [];
-  for (const name of [
-    "spelled%20out%20fandom",
-    "long%20warnings%20fandom",
-    "line%20order%20fandom",
-  ]) {
-    cards.push(...(await htmlOf(`/tags/fandom/${name}`)).split(/<li class="work-card">/).slice(1));
-  }
-  return cards;
+  const pages = await Promise.all(
+    ["spelled%20out%20fandom", "long%20warnings%20fandom", "line%20order%20fandom"].map((n) =>
+      htmlOf(`/tags/fandom/${n}`),
+    ),
+  );
+  return pages.flatMap((html) => html.split(/<li class="work-card">/).slice(1));
 };
 
 describe("20-site-chrome-and-legal", () => {

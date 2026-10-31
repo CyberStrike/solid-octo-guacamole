@@ -32,7 +32,7 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
   if (type === undefined || name === undefined || !isTagType(type)) return c.notFound();
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   try {
-    // One after the other, on one connection.
+    // The heading first: a tag nobody has used is not found.
     const heading = await getTagName(db, type, name);
     if (heading === null) return c.notFound();
     return c.html(tagListingPage(heading, await listLiveWorksByTag(db, type, name)));
