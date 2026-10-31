@@ -759,6 +759,60 @@ describe("14-browse-and-home listing form", () => {
       "&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;&amp;x=1",
     );
   });
+
+  it("A listing names its canonical URL, with its sort and filters", async () => {
+    const canonicalOf = async (path: string) =>
+      (await htmlOf(path)).match(/<link rel="canonical" href="([^"]*)">/g);
+
+    // The tag's folded name, the choices that aren't defaults, and no page 1.
+    expect(
+      await canonicalOf(
+        "/tags/fandom/Sorted%20Listing%20Fandom?sort=words&rating=&complete=yes&tag=&tag_type=freeform&page=1",
+      ),
+    ).toEqual([`<link rel="canonical" href="${SORTED}?sort=words&amp;complete=yes">`]);
+    expect(await canonicalOf(`${PAGED}?page=2`)).toEqual([
+      `<link rel="canonical" href="${PAGED}?page=2">`,
+    ]);
+  });
+});
+
+/**
+ * The listing's cache header, on the listing and its variants, and on nothing that isn't one.
+ * `private`: a page may carry one reader's cookies' effects, so no shared cache keeps it.
+ */
+async function expectShortListingCache() {
+  for (const path of [
+    SORTED,
+    `${SORTED}?sort=words&rating=Explicit`,
+    `${SORTED}?rating=General+Audiences`,
+    `${PAGED}?page=3`,
+    "/tags/freeform/url%20never%20seeded",
+  ]) {
+    const res = await fetchW(path);
+    expect(res.status, path).toBe(200);
+    expect(res.headers.get("cache-control"), path).toBe(
+      "private, max-age=60, stale-while-revalidate=60",
+    );
+    expect(res.headers.get("set-cookie"), path).toBeNull();
+    expect(withoutNonce(res.headers.get("content-security-policy")), path).toBe(STRICT);
+  }
+  for (const path of [`${PAGED}?page=4`, "/tags/genre/x", "/tags/fandom/%21%21%21"]) {
+    const res = await fetchW(path);
+    expect(res.status, path).toBe(404);
+    expect(res.headers.get("cache-control") ?? "", path).not.toMatch(/max-age/);
+  }
+}
+
+describe("14-browse-and-home listing cache", () => {
+  it("Listings are briefly cached", async () => {
+    await expectShortListingCache();
+  });
+});
+
+describe("19-surge-controls-and-quotas", () => {
+  it("Listings use a short cache", async () => {
+    await expectShortListingCache();
+  });
 });
 
 /** Every card on the listings with ratings and warnings this file seeded. */

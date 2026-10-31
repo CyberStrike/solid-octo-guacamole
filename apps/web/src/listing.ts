@@ -22,6 +22,14 @@ const WORDS = new Intl.NumberFormat("en-US");
 /** Works per page. */
 const PAGE_SIZE = 20;
 
+/**
+ * A listing's short cache (14 and 19, "Listings are briefly cached"), on a 200 only.
+ * `private`, so a page that shows anything of one reader's cookies stays in their
+ * browser. With hidden and removed works, that means a browser can show a work's
+ * card for up to two minutes after it leaves, beyond Hyperdrive's own cache (#233).
+ */
+const CACHED = { "Cache-Control": "private, max-age=60, stale-while-revalidate=60" };
+
 /** The pages either side of the current one that the pager links, besides the first and last. */
 const PAGES_AROUND = 2;
 
@@ -88,7 +96,8 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
   const type = c.req.param("type");
   const name = c.req.param("name");
   if (type === undefined || name === undefined || !isTagType(type)) return c.notFound();
-  if (tagNameKeys(type, name).length === 0) return c.notFound();
+  const [nameNorm] = tagNameKeys(type, name);
+  if (nameNorm === undefined) return c.notFound();
   const page = pageOf(c.req.query("page"));
   const query = queryOf(c.req.query());
   // A few queries, one after another, on one connection.
@@ -100,7 +109,11 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
       // A fixed heading: a tag only hidden or removed works use reads like one
       // nobody has used, and the page repeats nothing from its URL.
       return page === 1
-        ? c.html(layout("No works with this tag", "<p>No works have this tag yet.</p>"))
+        ? c.html(
+            layout("No works with this tag", "<p>No works have this tag yet.</p>"),
+            200,
+            CACHED,
+          )
         : c.notFound();
     }
     const { works, total } = await listLiveWorksByTag(db, type, name, {
@@ -115,11 +128,17 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
       works.length === 0
         ? "<p>No works match these filters.</p>"
         : `<ol class="work-list" role="list">\n${works.map(workCard).join("\n")}\n</ol>`;
+    // Spellings of the tag share one canonical page: its folded name, with no redirect,
+    // since folding a folded name again can change it.
+    const canonical = `<link rel="canonical" href="${listingHref(type, nameNorm, paramsOf(query, page))}">`;
     return c.html(
       layout(
         heading,
         `${filterForm(listingHref(type, name, []), query)}\n${list}\n${pager(href, page, last)}`,
+        canonical,
       ),
+      200,
+      CACHED,
     );
   } finally {
     c.executionCtx.waitUntil(db.destroy());
