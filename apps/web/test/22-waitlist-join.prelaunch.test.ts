@@ -36,6 +36,8 @@ const FORM_HEADERS = {
   "sec-fetch-site": "same-origin",
 };
 
+const HSTS = "max-age=31536000; includeSubDomains";
+
 /** Submits the wait list form; `headers` are added over a browser's. */
 const postWaitlist = (fields: Record<string, string>, headers: Record<string, string> = {}) =>
   fetchW("/waitlist", {
@@ -82,6 +84,9 @@ describe("22-waitlist", () => {
     const before = Date.now();
     const res = await join(typed);
     expect(res.status).toBe(200);
+    expect(res.headers.get("strict-transport-security")).toBe(HSTS);
+    // Joining sets no cookie.
+    expect(res.headers.get("set-cookie")).toBeNull();
     const html = await res.text();
     expect(html).toContain("<h1>Check your email to confirm</h1>");
     expect(html).toMatch(/7 days/);
@@ -200,10 +205,9 @@ describe("22-waitlist", () => {
       const email = fresh(`no-turnstile-${name}`);
       const res = await postWaitlist({ email, ...fields });
       expect(res.status, name).toBe(status);
-      const csp = res.headers.get("content-security-policy");
       const html = await res.text();
-      expectFormAgain(html, csp);
-      nonces.add(nonceOf(csp) ?? "");
+      expectFormAgain(res, html);
+      nonces.add(nonceOf(res.headers.get("content-security-policy")) ?? "");
       // What was typed comes back.
       expect(html).toContain(`value="${email}"`);
       expect(await rowOf(email)).toBeUndefined();
@@ -238,9 +242,8 @@ describe("22-waitlist", () => {
     for (const email of refused) {
       const res = await postWaitlist({ email, "cf-turnstile-response": PASSING_TOKEN });
       expect(res.status, JSON.stringify(email)).toBe(400);
-      const csp = res.headers.get("content-security-policy");
       const html = await res.text();
-      expectFormAgain(html, csp);
+      expectFormAgain(res, html);
       expect(html).toContain("Enter a valid email address.");
     }
     // No field is missing a check: with no address at all, it's refused the same way.
@@ -274,6 +277,7 @@ describe("22-waitlist", () => {
       const email = fresh("cross-site");
       const res = await join(email, headers);
       expect(res.status, JSON.stringify(headers)).toBe(403);
+      expect(res.headers.get("strict-transport-security")).toBe(HSTS);
       const html = await res.text();
       // Wait list wording, back to the form, not to sign-in.
       expect(html).toContain('<a href="/">');
@@ -449,7 +453,9 @@ describe("22-waitlist privacy", () => {
  * The coming-soon form shown again with an error: its widget, its scripts under the
  * response's nonce, its noscript message, and the Turnstile frame allowed (#181).
  */
-function expectFormAgain(html: string, csp: string | null) {
+function expectFormAgain(res: Response, html: string) {
+  expect(res.headers.get("strict-transport-security")).toBe(HSTS);
+  const csp = res.headers.get("content-security-policy");
   expect(withoutNonce(csp)).toBe(TURNSTILE);
   const nonce = nonceOf(csp);
   expect(html).toContain('<p role="alert">');
