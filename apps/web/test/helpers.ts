@@ -1,4 +1,6 @@
 import { env, exports } from "cloudflare:workers";
+import { inspect } from "node:util";
+import { vi } from "vitest";
 import { parseMessage, type EmailMessage } from "../../mailer/src/message";
 
 // Shared by the workerd tests. (11-reader-and-csp and 20-site-chrome keep their own
@@ -95,14 +97,33 @@ export function postLogin(
 // The sign-in limits (wrangler.jsonc): requests per IP and per email address in a window.
 export const LOGIN_IP_LIMIT = 10;
 export const LOGIN_EMAIL_LIMIT = 3;
-export const LOGIN_WINDOW_SECONDS = 60;
 
 /**
- * Waits, if need be, for a window with at least 15 seconds left in it. The local limiter's
- * windows are fixed and aligned to the clock, so a test that fills one and then expects a
- * 429 must not straddle the boundary.
+ * Waits, if need be, for a window of `periodSeconds` with at least 15 seconds left in it, time
+ * enough to fill a limit and wait on its emails. The local limiter's windows are fixed and
+ * aligned to the clock, so a test that fills one and then expects a 429 must not straddle
+ * the boundary.
  */
-export async function windowHeadroom() {
-  const left = LOGIN_WINDOW_SECONDS * 1000 - (Date.now() % (LOGIN_WINDOW_SECONDS * 1000));
+export async function windowHeadroom(periodSeconds: number) {
+  const left = periodSeconds * 1000 - (Date.now() % (periodSeconds * 1000));
   if (left < 15_000) await new Promise((resolve) => setTimeout(resolve, left + 100));
+}
+
+/**
+ * Captures every console line while `run` runs, as a log would show it: inspect prints an
+ * error's stack, cause and own fields, at any depth. Returns the lines.
+ */
+export async function consoleDuring(run: () => Promise<void>): Promise<string[]> {
+  const logged: string[] = [];
+  const spies = (["error", "warn", "log", "info", "debug"] as const).map((level) =>
+    vi.spyOn(console, level).mockImplementation((...args) => {
+      logged.push(args.map((arg) => inspect(arg, { depth: Infinity })).join(" "));
+    }),
+  );
+  try {
+    await run();
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+  return logged;
 }

@@ -1,17 +1,17 @@
 import { createDb } from "@archive/db";
 import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import { inspect } from "node:util";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import type { EmailMessage } from "../../mailer/src/message";
 import app from "../src/index";
+import { LOGIN_WINDOW_SECONDS } from "../src/rate-limit";
 import {
+  consoleDuring,
   deliveredEmails,
   emailsTo,
   fetchW,
   LOGIN_EMAIL_LIMIT,
   LOGIN_IP_LIMIT,
-  LOGIN_WINDOW_SECONDS,
   loginRequest,
   nonceOf,
   PASSING_TOKEN,
@@ -67,6 +67,15 @@ async function fillIpLimit(ip: string) {
     );
     expect(res.status).toBe(400);
   }
+}
+
+/** Shows a response is the 429 for a limited sign-in, and returns its page. */
+async function expectTooManyRequests(res: Response): Promise<string> {
+  expect(res.status).toBe(429);
+  expect(res.headers.get("retry-after")).toBe(String(LOGIN_WINDOW_SECONDS));
+  const html = await res.text();
+  expect(html).toContain(`Please try again in ${LOGIN_WINDOW_SECONDS} seconds.`);
+  return html;
 }
 
 describe("01-auth-magic-link", () => {
@@ -296,7 +305,7 @@ describe("01-auth-magic-link", () => {
   });
 
   it("Login requests are rate-limited per IP", async () => {
-    await windowHeadroom();
+    await windowHeadroom(LOGIN_WINDOW_SECONDS);
     const ip = "203.0.113.1";
     await fillIpLimit(ip);
 
@@ -306,9 +315,7 @@ describe("01-auth-magic-link", () => {
       { email: "per-ip@example.test", "cf-turnstile-response": PASSING_TOKEN },
       { headers: { "cf-connecting-ip": ip } },
     );
-    expect(res.status).toBe(429);
-    expect(res.headers.get("retry-after")).toBe("60");
-    expect(await res.text()).toContain("Please try again in 60 seconds.");
+    await expectTooManyRequests(res);
     await expectNothingCreated("per-ip@example.test", before);
 
     // A cross-site request from it is still refused as one, before the limit is asked.
@@ -326,7 +333,7 @@ describe("01-auth-magic-link", () => {
   });
 
   it("Login requests are rate-limited per email", async () => {
-    await windowHeadroom();
+    await windowHeadroom(LOGIN_WINDOW_SECONDS);
     const email = "per-email@example.test";
     // The limit's worth of links, each asked for from another IP (postLogin's fresh one).
     for (let i = 0; i < LOGIN_EMAIL_LIMIT; i++) {
@@ -341,9 +348,7 @@ describe("01-auth-magic-link", () => {
       email: " PER-EMAIL@example.test ",
       "cf-turnstile-response": PASSING_TOKEN,
     });
-    expect(res.status).toBe(429);
-    expect(res.headers.get("retry-after")).toBe("60");
-    expect(await res.text()).toContain("Please try again in 60 seconds.");
+    await expectTooManyRequests(res);
     expect(await verificationIds()).toEqual(before);
     // Nothing more queued: a later request's email has arrived, and still only those.
     await queuedFor(email);
@@ -351,7 +356,7 @@ describe("01-auth-magic-link", () => {
   });
 
   it("Sign-in requests Turnstile refuses don't count against the address", async () => {
-    await windowHeadroom();
+    // No wait for headroom: a new window could only let the last request through.
     const email = "per-email-unsolved@example.test";
     for (let i = 0; i < LOGIN_EMAIL_LIMIT; i++) {
       const res = await postLogin({ email, "cf-turnstile-response": "a-failing-token" });
@@ -374,7 +379,7 @@ describe("19-surge-controls-and-quotas", () => {
   });
 
   it("Login is throttled per IP", async () => {
-    await windowHeadroom();
+    await windowHeadroom(LOGIN_WINDOW_SECONDS);
     const ip = "203.0.113.2";
     await fillIpLimit(ip);
     const res = await postLogin(
@@ -382,14 +387,9 @@ describe("19-surge-controls-and-quotas", () => {
       { headers: { "cf-connecting-ip": ip } },
     );
 
-    expect(res.status).toBe(429);
-    // Whole seconds, and the page says the same wait.
-    const retryAfter = res.headers.get("retry-after");
-    expect(retryAfter).toMatch(/^\d+$/);
-    expect(retryAfter).toBe(String(LOGIN_WINDOW_SECONDS));
-    const html = await res.text();
+    // Retry-After in whole seconds, and the page says the same wait.
+    const html = await expectTooManyRequests(res);
     expect(html).toContain("<h1>Too many requests</h1>");
-    expect(html).toContain(`Please try again in ${retryAfter} seconds.`);
     // A plain page: no form and no script, under the same CSP as every page, never cached.
     expect(html).not.toMatch(/<form|<script/);
     expect(res.headers.get("content-type")).toMatch(/^text\/html/);
@@ -414,71 +414,50 @@ describe("Sign-in failures", () => {
       metrics: async () => ({ backlogCount: 0, backlogBytes: 0 }),
     };
     const refusing = { ...env, EMAIL: queue };
-    // Every console line, as a log would show it: inspect prints an error's stack,
-    // cause and own fields, at any depth.
-    const logged: string[] = [];
-    const spies = (["error", "warn", "log", "info", "debug"] as const).map((level) =>
-      vi.spyOn(console, level).mockImplementation((...args) => {
-        logged.push(args.map((arg) => inspect(arg, { depth: Infinity })).join(" "));
-      }),
-    );
-    try {
+    let status = 0;
+    const logged = await consoleDuring(async () => {
       const ctx = createExecutionContext();
       const request = loginRequest({
         email: "logged-nowhere@example.test",
         "cf-turnstile-response": PASSING_TOKEN,
       });
-      const res = await app.fetch(request, refusing, ctx);
+      status = (await app.fetch(request, refusing, ctx)).status;
       await waitOnExecutionContext(ctx);
-      // It failed where the error names the address.
-      expect(sends).toBe(1);
-      expect(res.status).toBe(500);
-      expect(logged.length).toBeGreaterThan(0);
-      expect(logged.join("\n")).not.toContain("logged-nowhere");
-    } finally {
-      for (const spy of spies) spy.mockRestore();
-    }
+    });
+    // It failed where the error names the address.
+    expect(sends).toBe(1);
+    expect(status).toBe(500);
+    expect(logged.length).toBeGreaterThan(0);
+    expect(logged.join("\n")).not.toContain("logged-nowhere");
   });
 
   it("A failing rate limiter lets sign-in through and logs no address, IP or key", async () => {
     // Both limits fail with an error naming what they were asked about.
+    const keys: string[] = [];
     const failing: RateLimit = {
       limit: async ({ key }) => {
+        keys.push(key);
         throw new Error(`limiter refused ${key}`);
       },
     };
-    const keys: string[] = [];
-    const recording: RateLimit = {
-      limit: async ({ key }) => {
-        keys.push(key);
-        return failing.limit({ key });
-      },
-    };
-    const broken = { ...env, LOGIN_IP_LIMIT: recording, LOGIN_EMAIL_LIMIT: recording };
-    const logged: string[] = [];
-    const spies = (["error", "warn", "log", "info", "debug"] as const).map((level) =>
-      vi.spyOn(console, level).mockImplementation((...args) => {
-        logged.push(args.map((arg) => inspect(arg, { depth: Infinity })).join(" "));
-      }),
-    );
-    try {
+    const broken = { ...env, LOGIN_IP_LIMIT: failing, LOGIN_EMAIL_LIMIT: failing };
+    const request = loginRequest({
+      email: "limiter-down@example.test",
+      "cf-turnstile-response": PASSING_TOKEN,
+    });
+    const ip = request.headers.get("cf-connecting-ip") ?? "no client address";
+    let status = 0;
+    const logged = await consoleDuring(async () => {
       const ctx = createExecutionContext();
-      const request = loginRequest({
-        email: "limiter-down@example.test",
-        "cf-turnstile-response": PASSING_TOKEN,
-      });
-      const ip = request.headers.get("cf-connecting-ip") ?? "no client address";
-      const res = await app.fetch(request, broken, ctx);
+      status = (await app.fetch(request, broken, ctx)).status;
       await waitOnExecutionContext(ctx);
+    });
 
-      // Turnstile still guards the form, so the link is sent.
-      expect(res.status).toBe(200);
-      expect(await emailsTo("limiter-down@example.test")).toHaveLength(1);
-      expect(logged.length).toBeGreaterThan(0);
-      const log = logged.join("\n");
-      for (const secret of ["limiter-down", ip, ...keys]) expect(log).not.toContain(secret);
-    } finally {
-      for (const spy of spies) spy.mockRestore();
-    }
+    // Turnstile still guards the form, so the link is sent.
+    expect(status).toBe(200);
+    expect(await emailsTo("limiter-down@example.test")).toHaveLength(1);
+    expect(logged.length).toBeGreaterThan(0);
+    const log = logged.join("\n");
+    for (const secret of ["limiter-down", ip, ...keys]) expect(log).not.toContain(secret);
   });
 });
