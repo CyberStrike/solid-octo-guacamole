@@ -47,6 +47,20 @@ const chapterUrl = (id: number, n: number | string) => `/works/${id}/chapters/${
 const articleOf = (html: string) =>
   html.match(/<article class="chapter">([\s\S]*)<\/article>/)?.[1] ?? null;
 
+/** The page before the chapter's article and after it. */
+const aroundArticle = (html: string) => {
+  const start = html.indexOf('<article class="chapter">');
+  const end = html.lastIndexOf("</article>");
+  expect(start).toBeGreaterThan(-1);
+  return { top: html.slice(0, start), bottom: html.slice(end) };
+};
+
+/** The text of every link to `href`. */
+const linksTo = (html: string, href: string) =>
+  [...html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)]
+    .filter(([, attrs]) => attrs.includes(`href="${href}"`))
+    .map(([, , text]) => text);
+
 const htmlOf = async (path: string) => (await fetchW(path)).text();
 
 /** The stylesheet a page links to. */
@@ -96,5 +110,34 @@ describe("11-reader-and-csp", () => {
     // block of its fixed and absolute descendants. Layout itself is a live check.
     const css = await stylesheetOf(await htmlOf(chapterUrl(W, 2)));
     expect(rulesFor(css, "article.chapter").join("\n")).toMatch(/(^|[;\s])contain:\s*content;/);
+  });
+
+  it("Chapter nav at both ends", async () => {
+    const { top, bottom } = aroundArticle(await htmlOf(chapterUrl(W, 3)));
+    for (const [end, html] of Object.entries({ top, bottom })) {
+      expect(linksTo(html, chapterUrl(W, 2)), end).toEqual([expect.stringMatching(/previous/i)]);
+      expect(linksTo(html, chapterUrl(W, 4)), end).toEqual([expect.stringMatching(/next/i)]);
+      const selects = html.match(/<select\b[\s\S]*?<\/select>/g) ?? [];
+      expect(selects, end).toHaveLength(1);
+      const options = [...selects[0].matchAll(/<option value="(\d+)"/g)].map(([, n]) => n);
+      expect(options, end).toEqual(["1", "2", "3", "4", "5"]);
+      expect(selects[0], end).toMatch(/<option value="3" selected>/);
+    }
+  });
+
+  it("First chapter has no previous link", async () => {
+    const html = await htmlOf(chapterUrl(W, 1));
+    expect(html).not.toMatch(/rel="prev"|>Previous/i);
+    expect(linksTo(html, chapterUrl(W, 0))).toEqual([]);
+    expect(linksTo(html, chapterUrl(W, 2))).toHaveLength(2);
+    expect(html.match(/<select\b/g)).toHaveLength(2);
+  });
+
+  it("Last chapter has no next link", async () => {
+    const html = await htmlOf(chapterUrl(W, 5));
+    expect(html).not.toMatch(/rel="next"|>Next/i);
+    expect(linksTo(html, chapterUrl(W, 6))).toEqual([]);
+    expect(linksTo(html, chapterUrl(W, 4))).toHaveLength(2);
+    expect(html.match(/<select\b/g)).toHaveLength(2);
   });
 });

@@ -4,7 +4,7 @@
 import { createDb, getLiveWork } from "@archive/db";
 import type { Context } from "hono";
 import type { Bindings } from "./env";
-import { layout } from "./pages";
+import { escapeHtml, layout } from "./pages";
 import type { SecurityVariables } from "./security";
 
 type ReaderContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
@@ -49,7 +49,48 @@ export async function showChapter(c: ReaderContext) {
   // The fragment is trusted markup only because the sanitizer wrote it; it goes in unescaped.
   const fragment = await object.text();
 
-  return c.html(layout(live.work.title, `<article class="chapter">${fragment}</article>`));
+  const nav = (end: "top" | "bottom") => chapterNav(id, n, live.chapters, end);
+  return c.html(
+    layout(
+      live.work.title,
+      `${nav("top")}
+<article class="chapter">${fragment}</article>
+${nav("bottom")}`,
+    ),
+  );
+}
+
+/** A chapter's URL, from numbers only. */
+const chapterUrl = (id: number, n: number) => `/works/${id}/chapters/${n}`;
+
+/**
+ * Previous, a select of every chapter, and next. There is no previous link on the
+ * first chapter and no next link on the last. The select's form is a plain GET, so
+ * it works without JavaScript.
+ */
+function chapterNav(
+  id: number,
+  n: number,
+  chapters: { n: number; title: string }[],
+  end: "top" | "bottom",
+) {
+  const last = chapters.length;
+  const options = chapters
+    .map(
+      (ch) =>
+        `<option value="${ch.n}"${ch.n === n ? " selected" : ""}>${ch.n}. ${escapeHtml(ch.title)}</option>`,
+    )
+    .join("");
+  const label = end === "top" ? "Chapters" : "Chapters, end of page";
+  return `<nav class="chapter-nav" aria-label="${label}">
+${n > 1 ? `<a rel="prev" href="${chapterUrl(id, n - 1)}">Previous chapter</a>` : ""}
+<form method="get" action="/works/${id}/chapters">
+<label for="chapter-${end}">Chapter</label>
+<select id="chapter-${end}" name="n">${options}</select>
+<button type="submit">Go</button>
+</form>
+${n < last ? `<a rel="next" href="${chapterUrl(id, n + 1)}">Next chapter</a>` : ""}
+</nav>`;
 }
 
 /** A chapter whose fragment can't be read: empty, uncached, and no detail. */
