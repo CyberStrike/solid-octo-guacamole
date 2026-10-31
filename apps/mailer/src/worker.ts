@@ -1,6 +1,7 @@
 import { deliver } from "./deliver";
+import { parseMessage } from "./message";
 import { pace, bulkIntervalMs } from "./pace";
-import { BULK_QUEUE, parseForQueue } from "./queues";
+import { acceptedOn, BULK_QUEUE } from "./queues";
 import { render } from "./render";
 import { resendSender } from "./resend";
 import type { OutgoingEmail } from "./sender";
@@ -17,7 +18,7 @@ export default {
     const valid: Message[] = [];
     const emails: OutgoingEmail[] = [];
     for (const message of batch.messages) {
-      const parsed = parseForQueue(batch.queue, message.body);
+      const parsed = acceptedOn(batch.queue, parseMessage(message.body));
       if (parsed === null) {
         message.ack();
         continue;

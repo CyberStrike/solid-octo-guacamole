@@ -33,9 +33,21 @@
   // Chapter fragments, which the reader reads under works/ only. The same bucket
   // apps/content serves images and originals from.
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "rarepair" }],
-  // Sign-in emails, sent by apps/mailer.
+  // Sign-in emails, sent by apps/mailer. This Worker also consumes email-bulk-dlq, where a launch
+  // email both providers refused lands: src/launch-dead-letter.ts clears its address's
+  // notified_at so the launch send queues it again (ARCHITECTURE, Wait list). Retention is
+  // one day at most, set outside this file:
+  // wrangler queues update email-bulk-dlq --message-retention-period-secs 86400
   "queues": {
     "producers": [{ "binding": "EMAIL", "queue": "email" }],
+    "consumers": [
+      {
+        "queue": "email-bulk-dlq",
+        "max_batch_size": 100,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+      },
+    ],
   },
   // The Workers rate-limiting binding on POST /login (ARCHITECTURE, Surge controls): per client
   // IP and per email address, each over a 60-second window. src/rate-limit.ts keeps the period

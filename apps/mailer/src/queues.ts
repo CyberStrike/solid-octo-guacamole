@@ -1,18 +1,23 @@
-import { parseMessage, type EmailMessage } from "./message";
+import type { EmailMessage } from "./message";
 
 export const BULK_QUEUE = "email-bulk";
 
 /** The kinds each queue carries (ARCHITECTURE, Auth, Email: Two queues). */
-const KINDS: Record<string, readonly EmailMessage["kind"][]> = {
-  email: ["sign-in", "waitlist-confirm"],
-  [BULK_QUEUE]: ["waitlist-launch"],
-};
+function kindsOn(queue: string): readonly EmailMessage["kind"][] {
+  switch (queue) {
+    case "email":
+      return ["sign-in", "waitlist-confirm"];
+    case BULK_QUEUE:
+      return ["waitlist-launch"];
+    default:
+      return [];
+  }
+}
 
 /**
- * parseMessage, for the queue the body came off: a kind on the other queue is refused like any
+ * The parsed message, or null if its kind belongs on the other queue: that is refused like any
  * other bad body. The launch email is sent only from `email-bulk`, where it is paced.
  */
-export function parseForQueue(queue: string, body: unknown): EmailMessage | null {
-  const parsed = parseMessage(body);
-  return parsed !== null && KINDS[queue]?.includes(parsed.kind) ? parsed : null;
+export function acceptedOn(queue: string, message: EmailMessage | null): EmailMessage | null {
+  return message !== null && kindsOn(queue).includes(message.kind) ? message : null;
 }

@@ -1,24 +1,25 @@
-import { readFileSync } from "node:fs";
+import wrangler from "../wrangler.jsonc?raw";
 import { describe, expect, it } from "vitest";
+
+interface MailerConfig {
+  queues: { consumers: { queue: string }[] };
+}
 
 // wrangler.jsonc without its comments and trailing commas: strings are kept whole, so a `//`
 // inside one survives.
-function readConfig(): Record<string, unknown> {
-  const text = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
-  const json = text
+function readConfig(): MailerConfig {
+  const json = wrangler
     .replace(/"(?:[^"\\]|\\.)*"|\/\/[^\n]*/g, (m) => (m.startsWith('"') ? m : ""))
     .replace(/,(\s*[}\]])/g, "$1");
-  // SAFETY: JSON.parse returns the file's top-level object, which is what the tests read from.
-  return JSON.parse(json) as Record<string, unknown>;
+  // SAFETY: the tests read only `queues` and the top-level keys, from the file's own JSON.
+  return JSON.parse(json) as MailerConfig;
 }
 
 describe("22-waitlist", () => {
   it("The mailer consumes email-bulk with email-bulk-dlq as its dead-letter queue", () => {
-    // SAFETY: the config's `queues.consumers` is an array of consumer objects.
-    const consumers = (readConfig().queues as { consumers: Record<string, unknown>[] }).consumers;
+    const { consumers } = readConfig().queues;
 
-    const bulk = consumers.find((c) => c.queue === "email-bulk");
-    expect(bulk).toMatchObject({
+    expect(consumers.find((c) => c.queue === "email-bulk")).toMatchObject({
       dead_letter_queue: "email-bulk-dlq",
       max_concurrency: 1,
       max_retries: 2,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseMessage } from "../src/message";
-import { parseForQueue } from "../src/queues";
+import { acceptedOn } from "../src/queues";
 import { render } from "../src/render";
 
 const FROM = "rarepair <sign-in@mail.example.test>";
@@ -60,18 +60,18 @@ describe("what each queue accepts", () => {
   };
 
   it("sends sign-in and confirmation emails from `email` only", () => {
-    expect(parseForQueue("email", signIn)).not.toBeNull();
-    expect(parseForQueue("email", confirm)).not.toBeNull();
-    expect(parseForQueue("email", launch(UNSUBSCRIBE))).toBeNull();
+    expect(acceptedOn("email", parseMessage(signIn))).not.toBeNull();
+    expect(acceptedOn("email", parseMessage(confirm))).not.toBeNull();
+    expect(acceptedOn("email", parseMessage(launch(UNSUBSCRIBE)))).toBeNull();
   });
 
   it("sends launch emails from `email-bulk` only, so nothing skips the pacing", () => {
-    expect(parseForQueue("email-bulk", launch(UNSUBSCRIBE))).not.toBeNull();
-    expect(parseForQueue("email-bulk", signIn)).toBeNull();
-    expect(parseForQueue("email-bulk", confirm)).toBeNull();
+    expect(acceptedOn("email-bulk", parseMessage(launch(UNSUBSCRIBE)))).not.toBeNull();
+    expect(acceptedOn("email-bulk", parseMessage(signIn))).toBeNull();
+    expect(acceptedOn("email-bulk", parseMessage(confirm))).toBeNull();
   });
 
   it("accepts nothing from a queue it doesn't know", () => {
-    expect(parseForQueue("somewhere-else", signIn)).toBeNull();
+    expect(acceptedOn("somewhere-else", parseMessage(signIn))).toBeNull();
   });
 });
