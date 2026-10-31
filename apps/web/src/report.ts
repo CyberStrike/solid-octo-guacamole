@@ -5,9 +5,11 @@
 import { createDb } from "@archive/db";
 import type { Context } from "hono";
 import type { Bindings } from "./env";
-import { escapeHtml, layout } from "./pages";
+import { readForm } from "./login";
+import { escapeHtml, forbiddenPage, layout } from "./pages";
 import type { SecurityVariables } from "./security";
 import type { SessionVariables } from "./session";
+import { isSameOrigin } from "./signin";
 
 type ReportContext = Context<{
   Bindings: Bindings;
@@ -69,12 +71,26 @@ ${Object.entries(REASONS)
 </form>`,
   );
 
+/** The sign-in form, coming back to work `id`'s report form after. */
+const signInFirst = (id: number) => `/login?next=${encodeURIComponent(`/works/${id}/report`)}`;
+
+/**
+ * What happens next. It says nothing of how many reports hide a work, which would
+ * help anyone gaming it. Draft copy.
+ */
+const reportedPage = () =>
+  layout(
+    "Report sent",
+    `<p class="draft">Draft: this text has not been proofread yet.</p>
+<p>Thank you. A moderator will look at it. Your report is kept with your account.</p>
+<p>A work several readers report may be hidden until a moderator has looked at it.</p>`,
+  );
+
 /** `GET /works/:id/report`: the form, for a signed-in reader. */
 export async function showReportForm(c: ReportContext) {
   const id = workId(c.req.param("id"));
   if (id === null) return c.notFound();
-  if (c.var.session === null)
-    return c.redirect(`/login?next=${encodeURIComponent(`/works/${id}/report`)}`, 302);
+  if (c.var.session === null) return c.redirect(signInFirst(id), 302);
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
   try {
     const work = await liveWork(db, id);
@@ -83,4 +99,37 @@ export async function showReportForm(c: ReportContext) {
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }
+}
+
+/**
+ * `POST /works/:id/report`: stores an open report. As on the sign-in forms, the
+ * origin is checked before anything else, and a signed-out post is sent to sign
+ * in before its body is read.
+ */
+export async function submitReport(c: ReportContext) {
+  if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
+  const id = workId(c.req.param("id"));
+  if (id === null) return c.notFound();
+  const session = c.var.session;
+  if (session === null) return c.redirect(signInFirst(id), 303);
+
+  const form = (await readForm(c.req.raw)) ?? new URLSearchParams();
+  const kind = form.get("reason") ?? "";
+  const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
+  try {
+    const work = await liveWork(db, id);
+    if (!work) return c.notFound();
+    await db
+      .insertInto("reports")
+      .values({
+        work_id: work.id,
+        reporter_id: session.user.id,
+        kind,
+        body: form.get("details"),
+      })
+      .execute();
+  } finally {
+    c.executionCtx.waitUntil(db.destroy());
+  }
+  return c.html(reportedPage(), 200, { "Cache-Control": "no-store" });
 }

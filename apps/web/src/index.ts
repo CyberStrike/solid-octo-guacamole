@@ -4,7 +4,7 @@ import { confirmSignIn, showConfirm } from "./confirm";
 import type { Bindings } from "./env";
 import { requestSignIn, showSignIn } from "./login";
 import { jumpToChapter, showChapter } from "./reader";
-import { showReportForm } from "./report";
+import { showReportForm, submitReport } from "./report";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
 import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
 import {
@@ -59,6 +59,7 @@ app.get("/privacy", (c) => c.html(privacyPage()));
 app.get("/works/:id", showWork);
 // Signed in only. The session is read on these routes alone for now.
 app.get("/works/:id/report", sessionMiddleware, showReportForm);
+app.post("/works/:id/report", sessionMiddleware, submitReport);
 
 // The URL carries a hash of the content, so the response never changes under it.
 app.get(STYLESHEET_PATH, (c) =>
