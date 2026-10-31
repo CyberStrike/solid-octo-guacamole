@@ -1,5 +1,6 @@
-import { createDb, insertUpload, type Database } from "@archive/db";
-import { processEpub } from "@archive/epub";
+import { createDb, getLiveWork, insertUpload, type Database } from "@archive/db";
+import { seedWork, type SeedWorkOptions } from "@archive/db/seed";
+import { processEpub, type ParsedWork } from "@archive/epub";
 import { createExecutionContext, createMessageBatch, getQueueResult } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { sql, type Kysely } from "kysely";
@@ -139,6 +140,92 @@ export const failingPut =
       return real.put(k, value, options);
     },
   });
+
+/**
+ * A parsed work, as the processor hands it to the save step, with `overrides`. Synthetic
+ * text, and its own AO3 work ID.
+ */
+export function parsedWork(overrides: Partial<ParsedWork> = {}): ParsedWork {
+  return {
+    ao3WorkId: String(newWorkId()),
+    title: "Synthetic Work",
+    authors: [{ pseud: "someone", user: "someone" }],
+    rating: "General Audiences",
+    warnings: ["No Archive Warnings Apply"],
+    categories: [],
+    fandoms: ["Test Fandom"],
+    relationships: [],
+    characters: [],
+    freeforms: [],
+    language: "English",
+    series: [],
+    stats: {
+      published: "2020-01-02",
+      updated: null,
+      completed: null,
+      words: 3,
+      chapters: { posted: 1, total: 1 },
+    },
+    summaryHtml: "<p>A synthetic summary.</p>",
+    notesHtml: null,
+    endNotesHtml: null,
+    chapters: [{ n: 1, title: "One", html: "<p>marker-only-chapter text.</p>", words: 3 }],
+    images: [],
+    rawMeta: {},
+    reviewReasons: [],
+    ...overrides,
+  };
+}
+
+/**
+ * What the database holds of a job's save: `works` rows for the AO3 work ID, versions from
+ * the upload, and `tags` rows with any of `tagNames`.
+ */
+export const savedRows = (ao3WorkId: number, uploadId: string, tagNames: string[] = []) =>
+  withDb(async (db) => ({
+    works: await db
+      .selectFrom("works")
+      .select(["id", "status", "current_version_id"])
+      .where("ao3_work_id", "=", ao3WorkId)
+      .execute(),
+    versions: await db
+      .selectFrom("work_versions")
+      .select("id")
+      .where("upload_id", "=", uploadId)
+      .execute(),
+    tags:
+      tagNames.length === 0
+        ? []
+        : await db.selectFrom("tags").select("name").where("name", "in", tagNames).execute(),
+  }));
+
+/** A `live` work already in the catalogue, as ingest would have left it. */
+export const existingWork = (options: SeedWorkOptions) => withDb((db) => seedWork(db, options));
+
+/** The work as the reader gets it (`getLiveWork`), or null when it isn't live. */
+export const liveWork = (ao3WorkId: number) => withDb((db) => getLiveWork(db, ao3WorkId));
+
+/**
+ * The bucket step, watched: before each `put` it records the key and whether the `works` row
+ * for `ao3WorkId` existed yet, reading through its own connection. Call `close()` after.
+ */
+export function watchedPuts(ao3WorkId: number) {
+  const probe = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 });
+  const puts: { key: string; workExisted: boolean }[] = [];
+  const bucket: NonNullable<Steps["bucket"]> = (real) => ({
+    get: real.get.bind(real),
+    put: async (key, value, options) => {
+      const row = await probe
+        .selectFrom("works")
+        .select("id")
+        .where("ao3_work_id", "=", ao3WorkId)
+        .executeTakeFirst();
+      puts.push({ key, workExisted: row !== undefined });
+      return real.put(key, value, options);
+    },
+  });
+  return { bucket, puts, close: () => probe.destroy() };
+}
 
 /** The keys in the bucket under `prefix`, sorted. */
 export async function bucketKeys(prefix: string): Promise<string[]> {

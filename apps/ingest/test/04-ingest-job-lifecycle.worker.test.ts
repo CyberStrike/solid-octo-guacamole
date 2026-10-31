@@ -5,12 +5,17 @@ import {
   bucketKeys,
   bucketText,
   deliver,
+  existingWork,
   failingPut,
   gated,
+  liveWork,
   newWorkId,
+  parsedWork,
   pendingUpload,
+  savedRows,
   setLease,
   uploadRow,
+  watchedPuts,
   watchedWorker,
 } from "./helpers";
 import type { Steps } from "../src/worker";
@@ -38,6 +43,151 @@ describe("04-ingest-job-lifecycle", () => {
     expect(await bucketKeys(`works/${workId}/`)).toEqual([own, others].sort());
     expect((await uploadRow(id)).status).toBe("live");
     expect(retry.explicitAcks).toEqual(["msg-0"]);
+  });
+
+  it("Successful job saves in order and goes live last", async () => {
+    const workId = newWorkId();
+    const id = await pendingUpload(ao3Epub({ workId }));
+    const watched = watchedPuts(workId);
+    const { handler } = watchedWorker({ bucket: watched.bucket });
+
+    try {
+      await deliver([{ upload_id: id }], { handler });
+    } finally {
+      await watched.close();
+    }
+
+    // R2 first: no work row existed while the fragment and the original were written.
+    expect(watched.puts).toEqual([
+      { key: `works/${workId}/${id}/1.html`, workExisted: false },
+      { key: `originals/${id}.epub`, workExisted: false },
+    ]);
+    // Then the transaction. The order inside it can't be seen from outside; "Failure inside
+    // the transaction rolls back" shows it is one transaction.
+    const live = await liveWork(workId);
+    expect(live?.work.status).toBe("live");
+    expect(live?.version.r2_prefix).toBe(`works/${workId}/${id}/`);
+    expect(live?.chapters.map((c) => c.r2_key)).toEqual([`works/${workId}/${id}/1.html`]);
+    expect(live?.tags.map((t) => t.name)).toEqual([
+      "General Audiences",
+      "No Archive Warnings Apply",
+      "Test Fandom",
+      "Tag A",
+      "Tag & B",
+    ]);
+    expect(await uploadRow(id)).toEqual({
+      status: "live",
+      lease_until: null,
+      error_stage: null,
+      error: null,
+      work_id: live?.work.id,
+    });
+  });
+
+  it("Failure before the transaction leaves nothing in Postgres", async () => {
+    const tag = `Freeform ${crypto.randomUUID()}`;
+    const work = parsedWork({
+      freeforms: [tag],
+      chapters: [
+        { n: 1, title: "One", html: "<p>one</p>", words: 1 },
+        { n: 2, title: "Two", html: "<p>two</p>", words: 1 },
+      ],
+    });
+    const workId = Number(work.ao3WorkId);
+    const id = await pendingUpload(ao3Epub({ workId }));
+    // The fragments are written, then R2 fails on the original: the transaction never starts.
+    const { handler } = watchedWorker({
+      process: async () => work,
+      bucket: failingPut(`originals/${id}.epub`),
+    });
+
+    const result = await deliver([{ upload_id: id }], { handler });
+
+    expect(await savedRows(workId, id, [tag])).toEqual({ works: [], versions: [], tags: [] });
+    expect(await bucketKeys(`works/${workId}/`)).toEqual([
+      `works/${workId}/${id}/1.html`,
+      `works/${workId}/${id}/2.html`,
+    ]);
+    // Worth a retry, as R2 being down is.
+    expect((await uploadRow(id)).status).toBe("pending");
+    expect(result.retryMessages.map((m) => m.msgId)).toEqual(["msg-0"]);
+
+    await deliver([{ upload_id: id }], { attempts: 4, handler });
+
+    expect(await savedRows(workId, id, [tag])).toEqual({ works: [], versions: [], tags: [] });
+    const row = await uploadRow(id);
+    expect(row.status).toBe("parse_failed");
+    expect(row.error_stage).toBe("save");
+    expect(row.error).toBe("Error");
+  });
+
+  it("Failure inside the transaction rolls back", async () => {
+    const tag = `Freeform ${crypto.randomUUID()}`;
+    // Two chapters numbered 1: the chapters insert fails on its primary key, after the work,
+    // its authors, its tags and its version are written.
+    const work = parsedWork({
+      freeforms: [tag],
+      chapters: [
+        { n: 1, title: "One", html: "<p>one</p>", words: 1 },
+        { n: 1, title: "Again", html: "<p>again</p>", words: 1 },
+      ],
+    });
+    const workId = Number(work.ao3WorkId);
+    const id = await pendingUpload(ao3Epub({ workId }));
+    const { handler } = watchedWorker({ process: async () => work });
+
+    const result = await deliver([{ upload_id: id }], { handler });
+
+    expect(await savedRows(workId, id, [tag])).toEqual({ works: [], versions: [], tags: [] });
+    // The file's own data broke a rule, as it would on every attempt: recorded at once.
+    expect(await uploadRow(id)).toEqual({
+      status: "parse_failed",
+      lease_until: null,
+      error_stage: "save",
+      error: "save_rejected_23505",
+      work_id: null,
+    });
+    expect(result.explicitAcks).toEqual(["msg-0"]);
+    expect(result.retryMessages).toEqual([]);
+  });
+
+  it("Failure inside the transaction leaves an existing work's current version unchanged", async () => {
+    const existing = await existingWork({ ao3WorkId: newWorkId(), chapters: 2 });
+    const before = await savedRows(existing.ao3WorkId, existing.uploadId);
+    const id = await pendingUpload(ao3Epub({ workId: existing.ao3WorkId }));
+
+    const result = await deliver([{ upload_id: id }]);
+
+    expect(await savedRows(existing.ao3WorkId, existing.uploadId)).toEqual(before);
+    expect(before.works[0]?.current_version_id).toBe(existing.versionId);
+    const live = await liveWork(existing.ao3WorkId);
+    expect(live?.chapters.map((c) => c.r2_key)).toEqual(existing.chapterKeys);
+    expect((await savedRows(existing.ao3WorkId, id)).versions).toEqual([]);
+    // Later uploads of a known work are I4's (#33): until then this one is refused.
+    const row = await uploadRow(id);
+    expect(row.status).toBe("parse_failed");
+    expect(row.error_stage).toBe("save");
+    expect(row.error).toBe("work_exists");
+    expect(result.explicitAcks).toEqual(["msg-0"]);
+  });
+
+  it("Original file is kept", async () => {
+    const epub = ao3Epub({ workId: newWorkId() });
+    const id = await pendingUpload(epub);
+
+    await deliver([{ upload_id: id }]);
+
+    expect((await uploadRow(id)).status).toBe("live");
+    const original = await env.BUCKET.get(`originals/${id}.epub`);
+    // Sizes and digests, not bytes: a failing diff of a whole epub would print all of it.
+    expect(original?.size).toBe(epub.byteLength);
+    const digest = async (data: BufferSource) =>
+      new Uint8Array(await crypto.subtle.digest("SHA-256", data)).toHex();
+    expect(await digest((await original?.arrayBuffer()) ?? new ArrayBuffer(0))).toBe(
+      await digest(epub),
+    );
+    // The upload's own object is left for the uploads/ expiry rule.
+    expect(await env.BUCKET.head(`uploads/${id}.epub`)).not.toBeNull();
   });
 
   it("Lease claims a pending upload", async () => {
