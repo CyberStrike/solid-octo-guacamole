@@ -1,12 +1,12 @@
 // The tag listing, `/tags/:type/:name`: a tag's live works as work cards
-// (FRONTEND-DISCOVERY, Components, Work card). Every live work, by AO3 work ID:
-// B2 adds paging, sorting, filters and caching.
+// (FRONTEND-DISCOVERY, Components, Work card), a page at a time, with page
+// links that are real links (FRONTEND-DISCOVERY, Pagination).
 
 import {
-  compareCodeUnits,
   createDb,
   isTagType,
   listLiveWorksByTag,
+  liveTagSpellings,
   tagNameKeys,
   type ListedWork,
   type TagType,
@@ -18,42 +18,87 @@ import { tagHref } from "./tag-links";
 
 const WORDS = new Intl.NumberFormat("en-US");
 
+/** Works per page. */
+const PAGE_SIZE = 20;
+
+/** The pages either side of the current one that the pager links, besides the first and last. */
+const PAGES_AROUND = 2;
+
+/**
+ * The page asked for. Anything but digits is the first page, as is 0. Digits
+ * too many for a safe integer stay a number past every last page.
+ */
+const pageOf = (raw: string | undefined) =>
+  raw !== undefined && /^\d+$/.test(raw) ? Math.max(1, Number(raw)) : 1;
+
 export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
   const type = c.req.param("type");
   const name = c.req.param("name");
   if (type === undefined || name === undefined || !isTagType(type)) return c.notFound();
-  const keys = tagNameKeys(type, name);
-  if (keys.length === 0) return c.notFound();
-  // One query, on one connection.
+  if (tagNameKeys(type, name).length === 0) return c.notFound();
+  const page = pageOf(c.req.query("page"));
+  // A few queries, one after another, on one connection.
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   try {
-    const { works } = await listLiveWorksByTag(db, type, name);
-    return c.html(tagListingPage(headingOf(works, type, keys), works));
+    // The heading comes from every live work with the tag, so no page or filter changes it.
+    const [heading] = await liveTagSpellings(db, type, name);
+    if (heading === undefined) {
+      // A fixed heading: a tag only hidden or removed works use reads like one
+      // nobody has used, and the page repeats nothing from its URL.
+      return page === 1
+        ? c.html(layout("No works with this tag", "<p>No works have this tag yet.</p>"))
+        : c.notFound();
+    }
+    const { works, total } = await listLiveWorksByTag(db, type, name, {
+      page,
+      pageSize: PAGE_SIZE,
+    });
+    const last = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    if (page > last) return c.notFound();
+    const href = (n: number) => listingHref(type, name, n);
+    return c.html(
+      layout(
+        heading,
+        `<ol class="work-list" role="list">\n${works.map(workCard).join("\n")}\n</ol>\n${pager(href, page, last)}`,
+      ),
+    );
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }
 }
 
-/**
- * The first spelling of the tag a listed work uses, by code unit. Only live
- * works count: a hidden or removed work's spelling is never shown. With no live
- * work the heading is fixed, so a tag only they use reads like one nobody has
- * used, and the page repeats nothing from its URL.
- */
-function headingOf(works: ListedWork[], type: TagType, keys: string[]): string {
-  const spellings = works.flatMap((w) =>
-    w.tags.flatMap((t) => (t.type === type && keys.includes(t.name_norm) ? [t.name] : [])),
-  );
-  return spellings.sort(compareCodeUnits)[0] ?? "No works with this tag";
+/** The listing's URL for page `n`, escaped for an attribute. Page 1 names no page. */
+function listingHref(type: TagType, name: string, n: number): string {
+  const query = new URLSearchParams(n === 1 ? [] : [["page", String(n)]]).toString();
+  return escapeHtml(tagHref(type, name) + (query ? `?${query}` : ""));
 }
 
-const tagListingPage = (heading: string, works: ListedWork[]) =>
-  layout(
-    heading,
-    works.length === 0
-      ? "<p>No works have this tag yet.</p>"
-      : `<ol class="work-list" role="list">\n${works.map(workCard).join("\n")}\n</ol>`,
-  );
+/**
+ * Previous, the page numbers and next, all real links; the current page is
+ * marked and not a link. Page numbers are the first, the last and those within
+ * PAGES_AROUND of the current one, with a gap shown between runs.
+ */
+function pager(href: (n: number) => string, page: number, last: number): string {
+  if (last === 1) return "";
+  const numbers = [
+    ...new Set([
+      1,
+      last,
+      ...Array.from({ length: 2 * PAGES_AROUND + 1 }, (_, i) => page - PAGES_AROUND + i),
+    ]),
+  ]
+    .filter((n) => n >= 1 && n <= last)
+    .sort((a, b) => a - b);
+  const items = numbers.flatMap((n, i) => [
+    ...(i > 0 && n - (numbers[i - 1] ?? n) > 1 ? ['<li aria-hidden="true">…</li>'] : []),
+    n === page
+      ? `<li><span aria-current="page">${n}</span></li>`
+      : `<li><a href="${href(n)}">${n}</a></li>`,
+  ]);
+  return `<nav class="pager" aria-label="Pages"><ul role="list">
+${page > 1 ? `<li><a rel="prev" href="${href(page - 1)}">Previous</a></li>\n` : ""}${items.join("\n")}
+${page < last ? `<li><a rel="next" href="${href(page + 1)}">Next</a></li>\n` : ""}</ul></nav>`;
+}
 
 // Entities for spaces and zero-width marks, which the sanitizer leaves as written.
 const BLANK_ENTITY =

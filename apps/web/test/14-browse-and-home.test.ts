@@ -4,7 +4,7 @@ import { env } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fetchW, STRICT, withoutNonce } from "./helpers";
 
-// Work IDs 30000-30999 and these tag names are this file's alone: one database
+// Work IDs 30000-31999 and these tag names are this file's alone: one database
 // serves every test file in the project, and a listing sees whatever shares its tag.
 const db = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 });
 afterAll(async () => {
@@ -490,6 +490,93 @@ describe("14-browse-and-home tag listing URLs", () => {
     expect(www.headers.get("location")).toBe(
       "https://rarepair.fans/tags/fandom/harry%20potter?x=1",
     );
+  });
+});
+
+/** The AO3 work IDs of a listing's cards, in page order. */
+const idsOf = (html: string) =>
+  cardsOf(html).map((card) => Number(card.match(/href="\/works\/(\d+)"/)?.[1]));
+
+/** IDs from `from` to `to`, inclusive. */
+const range = (from: number, to: number) =>
+  Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+const PAGED = "/tags/fandom/paged%20listing%20fandom";
+
+describe("14-browse-and-home listing pages", () => {
+  beforeAll(async () => {
+    // 45 works with one updated date, so AO3 work ID orders them; one hidden.
+    for (const ao3WorkId of range(31001, 31045)) {
+      await seedWork(db, { ao3WorkId, tags: [{ type: "fandom", name: "Paged Listing Fandom" }] });
+    }
+    await seedWork(db, {
+      ao3WorkId: 31046,
+      status: "hidden",
+      hiddenCause: "reports",
+      tags: [{ type: "fandom", name: "Paged Listing Fandom" }],
+    });
+  });
+
+  it("Tag listing shows paged works", async () => {
+    const first = await htmlOf(PAGED);
+    const pages = [first, await htmlOf(`${PAGED}?page=2`), await htmlOf(`${PAGED}?page=3`)];
+
+    expect(pages.map((p) => cardsOf(p).length)).toEqual([20, 20, 5]);
+    // Every work once, none twice, none missing.
+    expect(pages.flatMap(idsOf)).toEqual(range(31001, 31045));
+    expect(first).toMatch(/<nav class="pager" aria-label="Pages">/);
+    expect(first).toContain(`<a rel="next" href="${PAGED}?page=2">`);
+    // The heading is the tag's, whatever the page, sort or filter shows.
+    for (const html of [...pages, await htmlOf(`${PAGED}?sort=words&rating=Explicit`)]) {
+      expect(html.match(/<h1>[^<]*<\/h1>/g)).toEqual(["<h1>Paged Listing Fandom</h1>"]);
+    }
+  });
+
+  it("Pagination uses real links", async () => {
+    const navOf = (html: string) => html.match(/<nav class="pager"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    const linksOf = (html: string) =>
+      [...navOf(html).matchAll(/<a (?:rel="(\w+)" )?href="([^"]+)">([^<]+)<\/a>/g)].map(
+        ([, rel = "", href = "", text = ""]) => ({
+          rel,
+          href: href.replaceAll("&amp;", "&"),
+          text,
+        }),
+      );
+    const [one, two, three] = [
+      await htmlOf(PAGED),
+      await htmlOf(`${PAGED}?page=2`),
+      await htmlOf(`${PAGED}?page=3`),
+    ];
+
+    expect(linksOf(two)).toEqual([
+      { rel: "prev", href: PAGED, text: "Previous" },
+      { rel: "", href: PAGED, text: "1" },
+      { rel: "", href: `${PAGED}?page=3`, text: "3" },
+      { rel: "next", href: `${PAGED}?page=3`, text: "Next" },
+    ]);
+    // The current page is marked, and not a link.
+    expect(navOf(two)).toContain('<span aria-current="page">2</span>');
+    expect(linksOf(one).map((l) => l.text)).toEqual(["2", "3", "Next"]);
+    expect(linksOf(three).map((l) => l.text)).toEqual(["Previous", "1", "2"]);
+    // Each link is a page of its own.
+    for (const { href } of linksOf(two)) {
+      expect(cardsOf(await htmlOf(href)), href).toHaveLength(href.endsWith("3") ? 5 : 20);
+    }
+    // No infinite scroll: nothing runs on the page.
+    for (const html of [one, two, three]) expect(html).not.toMatch(/<script/i);
+  });
+
+  it("A malformed page number is the first page, and one past the last is not found", async () => {
+    const first = idsOf(await htmlOf(PAGED));
+
+    for (const page of ["0", "-1", "abc", "1.5", "2e1", ""]) {
+      expect(idsOf(await htmlOf(`${PAGED}?page=${page}`)), page).toEqual(first);
+    }
+    for (const page of ["4", "99999999999999999999", String(Number.MAX_SAFE_INTEGER)]) {
+      const res = await fetchW(`${PAGED}?page=${page}`);
+      expect(res.status, page).toBe(404);
+      expect(res.headers.get("cache-control") ?? "", page).not.toMatch(/max-age/);
+    }
   });
 });
 
