@@ -140,6 +140,11 @@ describe("11-reader-and-csp", () => {
     // block of its fixed and absolute descendants. Layout itself is a live check.
     const css = await stylesheetOf(await htmlOf(chapterUrl(W, 2)));
     expect(rulesFor(css, "article.chapter").join("\n")).toMatch(/(^|[;\s])contain:\s*content;/);
+    // Containment clips overflow, so wide content must fit or scroll rather than be cut off.
+    expect(rulesFor(css, "article.chapter img").join("\n")).toMatch(/max-width:\s*100%;/);
+    for (const wide of ["article.chapter table", "article.chapter pre"]) {
+      expect(rulesFor(css, wide).join("\n"), wide).toMatch(/overflow-x:\s*auto;/);
+    }
   });
 
   it("Chapter nav at both ends", async () => {
