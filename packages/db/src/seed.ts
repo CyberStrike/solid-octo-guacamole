@@ -32,8 +32,8 @@ export interface SeedWorkOptions extends SeedVersionOptions {
   summary?: string | null;
   rating?: string | null;
   complete?: boolean;
-  /** AO3's last-updated date. Default 2020-02-01. */
-  updatedAt?: string;
+  /** AO3's last-updated date. Default 2020-02-01; null for none. */
+  updatedAt?: string | null;
   /** The uploader. Default: a new user. */
   userId?: string;
   authors?: { pseud: string; ao3_user: string | null }[];
@@ -111,7 +111,7 @@ export async function seedWork(
         rating,
         language: "English",
         published_at: "2020-01-01T00:00:00Z",
-        updated_at: options.updatedAt ?? "2020-02-01T00:00:00Z",
+        updated_at: options.updatedAt === undefined ? "2020-02-01T00:00:00Z" : options.updatedAt,
         // The version below sets the counts as it becomes current.
         chapters_count: 0,
         complete: options.complete ?? true,

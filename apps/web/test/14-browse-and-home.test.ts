@@ -131,6 +131,11 @@ describe("14-browse-and-home", () => {
       rating: null,
       tags: [{ type: "fandom", name: "Spelled Out Fandom" }],
     });
+    await seedWork(db, {
+      ao3WorkId: 30022,
+      rating: "",
+      tags: [{ type: "fandom", name: "Spelled Out Fandom" }],
+    });
 
     const html = await htmlOf("/tags/fandom/spelled%20out%20fandom");
 
@@ -139,6 +144,7 @@ describe("14-browse-and-home", () => {
       "<strong>Mature · Graphic Depictions Of Violence</strong>",
     );
     expect(lineOf(cardOf(html, 30021), "card-rating")).toBe("<strong>Not Rated</strong>");
+    expect(lineOf(cardOf(html, 30022), "card-rating")).toBe("<strong>Not Rated</strong>");
     expect(card).not.toMatch(SYMBOLS);
     expect(card).not.toMatch(/style=/);
     expect(rulesFor(await stylesheetOf(html), "card-rating")).not.toMatch(/color|background/);
@@ -192,7 +198,10 @@ describe("14-browse-and-home", () => {
 
     const card = cardOf(html, 30040);
     expect(lineOf(card, "card-summary")).toBe(summary);
-    const more = card.indexOf('<a href="/works/30040">more</a>');
+    // Named for its work, so a list of links tells each "more" apart.
+    const more = card.indexOf(
+      '<a href="/works/30040" aria-label="more of Seeded work 30040">more</a>',
+    );
     expect(more).toBeGreaterThan(card.indexOf("Clamped summary paragraph 12"));
     expect(cardOf(html, 30041)).not.toContain(">more</a>");
     const rules = rulesFor(await stylesheetOf(html), "card-summary");
@@ -240,6 +249,18 @@ describe("14-browse-and-home", () => {
     expect(textOf(lineOf(cardOf(html, 30051), "card-tags") ?? "")).toBe(
       "Tags R1/X, Tags R2/X, Tags R3/X, +2 more · Tags C1, Tags C2, Tags C3, +1 more · 1 other tag",
     );
+    // A tag that folds to nothing has no listing to link to.
+    await seedWork(db, {
+      ao3WorkId: 30052,
+      tags: [
+        { type: "fandom", name: "Tags Order Fandom" },
+        { type: "character", name: "???" },
+      ],
+    });
+    const again = await htmlOf("/tags/fandom/tags%20order%20fandom");
+    expect(lineOf(cardOf(again, 30052), "card-tags")).toBe("???");
+    // Tags are in small type (FRONTEND-DISCOVERY, Tag list).
+    expect(rulesFor(await stylesheetOf(html), "card-tags")).toMatch(/font-size:\s*var\(--text-1\)/);
   });
 
   it("Card stats line", async () => {
@@ -268,6 +289,18 @@ describe("14-browse-and-home", () => {
     expect(textOf(lineOf(cardOf(html, 30061), "card-stats") ?? "")).toBe(
       "800 words · 1/? chapters · Complete · Updated 2023-11-20",
     );
+    // Never updated since it was published: the published date is the last update.
+    await seedWork(db, {
+      ao3WorkId: 30062,
+      chapters: [{ words: 300 }],
+      chapterTotal: 1,
+      updatedAt: null,
+      tags: [{ type: "fandom", name: "Stats Line Fandom" }],
+    });
+    const again = await htmlOf("/tags/fandom/stats%20line%20fandom");
+    expect(textOf(lineOf(cardOf(again, 30062), "card-stats") ?? "")).toBe(
+      "300 words · 1/1 chapters · Complete · Updated 2020-01-01",
+    );
   });
 
   it("Anonymous work card", async () => {
@@ -277,9 +310,17 @@ describe("14-browse-and-home", () => {
       tags: [{ type: "fandom", name: "Anonymous Card Fandom" }],
     });
 
+    // No byline at all reads the same.
+    await seedWork(db, {
+      ao3WorkId: 30071,
+      authors: [],
+      tags: [{ type: "fandom", name: "Anonymous Card Fandom" }],
+    });
+
     const html = await htmlOf("/tags/fandom/anonymous%20card%20fandom");
 
     expect(textOf(lineOf(cardOf(html, 30070), "card-byline") ?? "")).toBe("by Anonymous");
+    expect(textOf(lineOf(cardOf(html, 30071), "card-byline") ?? "")).toBe("by Anonymous");
   });
 });
 

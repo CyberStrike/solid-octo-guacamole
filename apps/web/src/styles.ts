@@ -203,6 +203,12 @@ article.chapter {
 .card-summary > * {
   margin: 0;
 }
+
+/* Tags and stats, the least prominent lines, in small type. */
+.card-tags,
+.card-stats {
+  font-size: var(--text-1);
+}
 `;
 
 // FNV-1a, enough to give each version of the stylesheet its own URL.

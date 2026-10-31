@@ -2,7 +2,6 @@ export { createDb, type DbConfig } from "./client";
 export { migrate } from "./migrate";
 export { authSchema } from "./auth-schema";
 export { normalizeTagName, compareTagKeys, compareCodeUnits, isTagType } from "./tags";
-export { TAG_TYPES } from "./schema";
 export { normalizePseud } from "./pseud";
 export {
   getLiveWork,
