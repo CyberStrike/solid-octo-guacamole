@@ -6,8 +6,15 @@ import {
   isLimited,
   LOGIN_WINDOW_SECONDS,
   tooManyRequests,
+  WAITLIST_WINDOW_SECONDS,
 } from "../src/rate-limit";
-import { LOGIN_EMAIL_LIMIT, LOGIN_IP_LIMIT } from "./limits";
+import {
+  LOGIN_EMAIL_LIMIT,
+  LOGIN_IP_LIMIT,
+  WAITLIST_EMAIL_LIMIT,
+  WAITLIST_FLOOR_MIN_MS,
+  WAITLIST_IP_LIMIT,
+} from "./limits";
 
 /** The sign-in limit's key for a client address, or for a request without one. */
 const loginIp = (address: string | null) => ipKey("login", address);
@@ -143,11 +150,18 @@ describe("the rate limits in wrangler.jsonc", () => {
   const { rawConfig } = experimental_readRawConfig({ config: "wrangler.jsonc" });
   const limits: Limit[] = rawConfig.ratelimits ?? [];
 
-  it("are the sign-in limits the tests and Retry-After assume", () => {
+  it("are the limits the tests and Retry-After assume", () => {
     expect(Object.fromEntries(limits.map(({ name, simple }) => [name, simple]))).toEqual({
       LOGIN_IP_LIMIT: { limit: LOGIN_IP_LIMIT, period: LOGIN_WINDOW_SECONDS },
       LOGIN_EMAIL_LIMIT: { limit: LOGIN_EMAIL_LIMIT, period: LOGIN_WINDOW_SECONDS },
+      WAITLIST_IP_LIMIT: { limit: WAITLIST_IP_LIMIT, period: WAITLIST_WINDOW_SECONDS },
+      WAITLIST_EMAIL_LIMIT: { limit: WAITLIST_EMAIL_LIMIT, period: WAITLIST_WINDOW_SECONDS },
     });
+  });
+
+  it("set the wait list's response-time floor no lower than the least the design allows", () => {
+    const floor = Number(rawConfig.vars?.WAITLIST_FLOOR_MS);
+    expect(floor).toBeGreaterThanOrEqual(WAITLIST_FLOOR_MIN_MS);
   });
 
   it("each have their own namespace, so none shares another's counters", () => {
