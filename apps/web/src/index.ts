@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { assetRoute } from "./assets";
+import { confirmSignIn, showConfirm } from "./confirm";
 import type { Bindings } from "./env";
 import { requestSignIn, showSignIn } from "./login";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
@@ -36,6 +37,8 @@ app.get("/", (c) =>
 );
 app.get("/login", showSignIn);
 app.post("/login", requestSignIn);
+app.get("/login/confirm", showConfirm);
+app.post("/login/confirm", confirmSignIn);
 app.post("/waitlist", joinWaitlist);
 // After launch, a stale link to the form goes home. Before it, nothing is at GET /waitlist.
 app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));

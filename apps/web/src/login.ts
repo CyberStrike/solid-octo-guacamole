@@ -14,19 +14,27 @@ export const MAX_EMAIL = 254;
 
 type LoginContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
 
+/** Better Auth's code for a sign-in link that was used, has expired or was never issued. */
+export const INVALID_TOKEN = "INVALID_TOKEN";
+
+// What `GET /login?error=INVALID_TOKEN` says. Any other value says nothing, and none is shown back.
+const LINK_REFUSED = "That sign-in link was used or has expired. Request a new one.";
+
 /** `GET /login`: the sign-in form, carrying the page to come back to. */
 export const showSignIn = (c: LoginContext) =>
   c.html(
     signInPage(c.get("nonce"), {
       siteKey: c.env.TURNSTILE_SITE_KEY,
       next: safeNext(c.req.query("next") ?? null),
+      error: c.req.query("error") === INVALID_TOKEN ? LINK_REFUSED : undefined,
     }),
   );
 
 // The sign-in form at its largest, every character percent-encoded at its widest:
 // a 254-character address and a 512-character next (up to 9 bytes each, as
-// UTF-8) and a 2048-character token (3 each) come to about 13 KB. The wait list
-// form, the same without `next`, is smaller.
+// UTF-8) and a 2048-character Turnstile token (3 each) come to about 13 KB. The
+// wait list form, the same without `next`, is smaller, and so is the confirm form
+// (a sign-in token of at most 256 characters and `next`: about 7 KB).
 const MAX_BODY = 16 * 1024;
 
 /**
