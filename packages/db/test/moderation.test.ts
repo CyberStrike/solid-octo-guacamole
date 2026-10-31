@@ -100,6 +100,96 @@ describe("packages/db requests, reports and moderation", () => {
   });
 });
 
+describe("17 reports and DMCA", () => {
+  it("Repeat reports from one account count once", async () => {
+    const { workId } = await seedWork(t.db);
+    const [u, u2] = [await addUser(), await addUser()];
+    for (const reporter_id of [u, u2, u, u]) {
+      await t.db
+        .insertInto("reports")
+        .values({ work_id: workId, reporter_id, kind: "other" })
+        .execute();
+    }
+    await t.db
+      .insertInto("reports")
+      .values({ work_id: workId, reporter_id: await addUser(), kind: "wrong_version" })
+      .execute();
+    const counted = await t.db
+      .selectFrom("reports")
+      .select((eb) => [
+        eb.fn.countAll<string>().as("stored"),
+        eb.fn.count<string>("reporter_id").distinct().as("accounts"),
+      ])
+      .where("work_id", "=", workId)
+      .where("status", "=", "open")
+      .where("kind", "<>", "wrong_version")
+      .executeTakeFirstOrThrow();
+    expect(counted).toEqual({ stored: "4", accounts: "2" });
+  });
+
+  it("Pending DMCA notice does not block an upload", async () => {
+    const removed = await seedWork(t.db, { status: "removed" });
+    const pending = await seedWork(t.db);
+    for (const { workId } of [removed, pending]) {
+      await t.db
+        .insertInto("takedowns")
+        .values({ work_id: workId, requester: "A rights holder", basis: "A stated basis" })
+        .execute();
+    }
+    // The takedown list: notices whose work a moderator removed.
+    const listed = await t.db
+      .selectFrom("takedowns")
+      .innerJoin("works", "works.id", "takedowns.work_id")
+      .select("works.ao3_work_id")
+      .where("works.status", "=", "removed")
+      .where("works.ao3_work_id", "in", [removed.ao3WorkId, pending.ao3WorkId])
+      .execute();
+    expect(listed).toEqual([{ ao3_work_id: removed.ao3WorkId }]);
+  });
+});
+
+describe("16 removal and opt-out", () => {
+  it("Mistaken opt-out can be reversed", async () => {
+    const request = await addRequest({ kind: "opt_out", pseud_norm: "moon child" });
+    for (const active of [true, false]) {
+      await t.db
+        .insertInto("optouts")
+        .values({ pseud_norm: "moon child", request_id: request.id, active })
+        .execute();
+    }
+    // The ingest check, for a byline's pseud_norm.
+    const activeFor = (pseudNorm: string) =>
+      t.db
+        .selectFrom("optouts")
+        .select("active")
+        .where("pseud_norm", "=", pseudNorm)
+        .where("active", "=", true)
+        .execute();
+    expect(await activeFor("moon child")).toEqual([{ active: true }]);
+    expect(await activeFor("moon_child")).toEqual([]);
+    await t.db
+      .updateTable("optouts")
+      .set({ active: false })
+      .where("request_id", "=", request.id)
+      .execute();
+    expect(await activeFor("moon child")).toEqual([]);
+  });
+
+  it("Requests from one email are found whatever its case", async () => {
+    await addRequest({
+      kind: "opt_out",
+      pseud_norm: "p",
+      contact_email: "Mixed.Case@Example.test",
+    });
+    const found = await t.db
+      .selectFrom("requests")
+      .select("contact_email")
+      .where((eb) => eb(eb.fn("lower", ["contact_email"]), "=", "mixed.case@example.test"))
+      .execute();
+    expect(found).toEqual([{ contact_email: "Mixed.Case@Example.test" }]);
+  });
+});
+
 describe("packages/db moderation constraints", () => {
   it("A request of another kind is refused", async () => {
     await expect(
