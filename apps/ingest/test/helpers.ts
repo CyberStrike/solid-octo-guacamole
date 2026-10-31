@@ -1,7 +1,9 @@
 import { createDb, insertUpload } from "@archive/db";
+import { processEpub } from "@archive/epub";
 import { createExecutionContext, createMessageBatch, getQueueResult } from "cloudflare:test";
 import { env } from "cloudflare:workers";
-import worker from "../src/worker";
+import { sql } from "kysely";
+import worker, { ingestWorker, type Steps } from "../src/worker";
 
 // Shared by the workerd tests. One database serves every test file (test/global-setup.ts),
 // so each upload gets its own user and ids.
@@ -64,4 +66,41 @@ export async function deliver(
   const ctx = createExecutionContext();
   await handler.queue(batch, env, ctx);
   return getQueueResult(batch, ctx);
+}
+
+/**
+ * Puts the upload in `processing` with its lease ending `interval` from now (a Postgres
+ * interval, negative for an expired lease). Returns the new `lease_until`.
+ */
+export async function setLease(id: string, interval: string): Promise<Date> {
+  const db = testDb();
+  try {
+    const row = await db
+      .updateTable("uploads")
+      .set({ status: "processing", lease_until: sql<Date>`now() + ${interval}::interval` })
+      .where("id", "=", id)
+      .returning("lease_until")
+      .executeTakeFirstOrThrow();
+    // SAFETY: the update above has just set it.
+    return row.lease_until as Date;
+  } finally {
+    await db.destroy();
+  }
+}
+
+/**
+ * The queue handler with `steps` over the real ones, watched: `parsed` gets each epub the
+ * job hands the processor, in order.
+ */
+export function watchedWorker(steps: Partial<Steps> = {}) {
+  const parsed: Uint8Array[] = [];
+  const process = steps.process ?? processEpub;
+  const handler = ingestWorker({
+    ...steps,
+    process: async (bytes) => {
+      parsed.push(bytes);
+      return process(bytes);
+    },
+  });
+  return { handler, parsed };
 }
