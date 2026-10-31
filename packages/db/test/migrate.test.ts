@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { migrations } from "../migrations/index";
 import { migrate } from "../src/index";
 import { createTestDb, type TestDb } from "../src/testing";
 
@@ -66,7 +67,7 @@ const expected = {
 
 describe("packages/db migrations", () => {
   it("Every migration applies to an empty database", async () => {
-    expect(await migrate(t.db)).toEqual(["0001_better_auth"]);
+    expect(await migrate(t.db)).toEqual(migrations.map((m) => m.name));
 
     const tables = await t.db.introspection.getTables();
     for (const [table, columns] of Object.entries(expected)) {
