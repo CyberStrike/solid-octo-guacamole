@@ -1,8 +1,9 @@
 // The shared layout every app page goes through, and the pages built on it:
-// the Turnstile placeholders (A1, U3 and X1 replace them), the not-found page
+// the sign-in pages, the Turnstile placeholders (U3 and X1 replace them), the not-found page
 // and the static about, terms and privacy pages.
 
 import { TURNSTILE_ORIGIN } from "./security";
+import { LINK_LIFETIME_MINUTES } from "./signin";
 import { STYLESHEET_PATH } from "./styles";
 
 export const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
@@ -99,4 +100,52 @@ export const privacyPage = () =>
 <li>We store the settings and reading position you save, to bring them back next time.</li>
 <li>Our anti-spam check, provided by Cloudflare, runs on the sign-in, upload and removal pages.</li>
 </ul>`,
+  );
+
+export interface SignInForm {
+  /** The Turnstile widget's site key. */
+  siteKey: string;
+  /** Where to go after signing in, already reduced to a same-site path. */
+  next: string;
+  /** What the visitor typed, when the form comes back to them. */
+  email?: string;
+  /** Why the form came back. */
+  error?: string;
+}
+
+/**
+ * The sign-in form, with Turnstile alongside. The form starts `hidden` and a
+ * nonced script shows it, so without JavaScript there is only the `<noscript>`
+ * message and nothing to submit: the request could never pass Turnstile anyway.
+ */
+export const signInPage = (nonce: string, form: SignInForm) =>
+  layout(
+    "Sign in",
+    `${form.error === undefined ? "" : `<p role="alert">${escapeHtml(form.error)}</p>`}
+<noscript><p>Signing in needs JavaScript, for its anti-spam check. Reading works without it.</p></noscript>
+<form id="sign-in" method="post" action="/login" hidden>
+<label for="email">Email address</label>
+<input id="email" type="email" name="email" autocomplete="email" maxlength="254" required value="${escapeHtml(form.email ?? "")}">
+<input type="hidden" name="next" value="${escapeHtml(form.next)}">
+<div class="cf-turnstile" data-sitekey="${escapeHtml(form.siteKey)}"></div>
+<button type="submit">Email me a sign-in link</button>
+</form>
+<script nonce="${escapeHtml(nonce)}">document.getElementById("sign-in").hidden = false;</script>
+<p>We'll email you a link that signs you in. It can take a minute to arrive during busy periods.</p>`,
+    `<script src="${TURNSTILE_API}" nonce="${escapeHtml(nonce)}" async defer></script>`,
+  );
+
+/** After a sign-in request: what happens next. */
+export const checkEmailPage = () =>
+  layout(
+    "Check your email",
+    `<p>We've sent you a sign-in link. It lasts ${LINK_LIFETIME_MINUTES} minutes.</p>
+<p>The link can take a minute to arrive during busy periods.</p>`,
+  );
+
+/** A form posted from somewhere other than this site. */
+export const forbiddenPage = () =>
+  layout(
+    "Request refused",
+    `<p>That request didn't come from rarepair. <a href="/login">Sign in here</a>.</p>`,
   );

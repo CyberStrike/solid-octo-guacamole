@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { assetRoute } from "./assets";
 import type { Bindings } from "./env";
+import { requestSignIn, showSignIn } from "./login";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
 import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
 import {
@@ -31,7 +32,8 @@ app.get("/", (c) =>
     ? c.html(comingSoonPage(c.get("nonce"), c.env.TURNSTILE_SITE_KEY))
     : c.notFound(),
 );
-app.get("/login", (c) => c.html(turnstilePage("Sign in", c.get("nonce"))));
+app.get("/login", showSignIn);
+app.post("/login", requestSignIn);
 app.get("/upload", (c) => c.html(turnstilePage("Upload a work", c.get("nonce"))));
 app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce"))));
 
@@ -49,5 +51,11 @@ app.get(STYLESHEET_PATH, (c) =>
 );
 
 app.notFound((c) => c.html(notFoundPage(), 404));
+// Hono's default logs the whole error, and one from Postgres can quote the row it
+// failed on, a sign-in address included. Log only what kind of error it was.
+app.onError((error, c) => {
+  console.error(`${c.req.method} ${c.req.path}: ${error.name}`);
+  return c.text("Internal Server Error", 500);
+});
 
 export default app;

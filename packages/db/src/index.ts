@@ -27,6 +27,7 @@ export type {
   HiddenCause,
   TagType,
   UploadStatus,
+  RateLimitTable,
   ReportTable,
   TakedownTable,
   RequestTable,

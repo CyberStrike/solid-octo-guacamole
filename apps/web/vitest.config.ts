@@ -1,30 +1,124 @@
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
-// The Worker's HTTP surface runs in workerd, through exports.default.fetch.
-// The entry, compatibility date and bindings come from wrangler.jsonc, so the
-// tests run the config that deploys, with PRELAUNCH as the only difference.
-const wrangler = { configPath: "./wrangler.jsonc" };
+const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
+// Cloudflare's published Turnstile test values: the always-pass secret and the dummy token.
+const TURNSTILE_SECRET_KEY = "1x0000000000000000000000000000000AA";
+const DUMMY_TOKEN = "XXXX.DUMMY.TOKEN.XXXX";
 
+/**
+ * The Worker's outbound network in tests: siteverify passes the dummy token under
+ * the test secret, as Cloudflare does, and everything else is blocked. Cloudflare
+ * reports such a token as solved on "localhost"; this stand-in reports the host
+ * the test chooses, so the host check can be tested. The dummy token passes for
+ * rarepair.fans, or for the host after an "@" ("XXXX.DUMMY.TOKEN.XXXX@other.example");
+ * "siteverify-down" gets a 503; any other token fails.
+ */
+async function outbound(request: Request): Promise<Response> {
+  if (request.url !== SITEVERIFY) {
+    return new Response("outbound network blocked in tests", { status: 599 });
+  }
+  const form = new URLSearchParams(await request.text());
+  const [token, hostname = "rarepair.fans"] = (form.get("response") ?? "").split("@");
+  if (token === "siteverify-down") return new Response("unavailable", { status: 503 });
+  if (form.get("secret") === TURNSTILE_SECRET_KEY && token === DUMMY_TOKEN) {
+    return Response.json({ success: true, hostname, "error-codes": [] });
+  }
+  return Response.json({ success: false, "error-codes": ["invalid-input-response"] });
+}
+
+// Stands in for apps/mailer as the `email` queue's consumer, and answers a fetch
+// with every message body it has been delivered. One message a batch, delivered at once.
+const EMAIL_SINK = /* js */ `
+const delivered = [];
+export default {
+  async queue(batch) {
+    for (const message of batch.messages) {
+      delivered.push(message.body);
+      message.ack();
+    }
+  },
+  async fetch() {
+    return Response.json(delivered);
+  },
+};
+`;
+
+/**
+ * The Worker in workerd, as wrangler.jsonc deploys it, with `bindings` over its
+ * own. The entry, compatibility date and bindings come from wrangler.jsonc, so
+ * the tests run the config that deploys. Postgres is the one the global setup
+ * starts, reached through a local Hyperdrive as in production.
+ */
+const worker = (bindings: Record<string, string> = {}) =>
+  cloudflareTest(({ inject }) => ({
+    wrangler: { configPath: "./wrangler.jsonc" },
+    miniflare: {
+      hyperdrives: { HYPERDRIVE: inject("databaseUrl") },
+      outboundService: outbound,
+      bindings: {
+        // Throwaway test values, not credentials.
+        BETTER_AUTH_SECRET: "test-only-auth-value-not-used-anywhere-else",
+        TURNSTILE_SECRET_KEY,
+        ...bindings,
+      },
+      serviceBindings: { EMAIL_SINK: "email-sink" },
+      workers: [
+        {
+          name: "email-sink",
+          modules: true,
+          script: EMAIL_SINK,
+          compatibilityDate: "2026-08-01",
+          queueConsumers: { email: { maxBatchSize: 1, maxBatchTimeout: 0 } },
+        },
+      ],
+    },
+  }));
+
+// What every workerd project shares. A project doesn't inherit the root's
+// timeouts; the first request loads Better Auth.
+const workerd = {
+  globalSetup: ["./test/global-setup.ts"],
+  testTimeout: 60_000,
+  hookTimeout: 60_000,
+};
+
+// Three projects. Pure logic, such as the Turnstile verifier and the `next`
+// reduction, runs in Node (/tdd, Rules of the loop). The Worker's HTTP surface
+// runs in workerd, through exports.default.fetch: `open` with PRELAUNCH off, and
+// `prelaunch` exactly as wrangler.jsonc deploys it.
 export default defineConfig({
+  // The plugin resolves a module workerd asks it for through this root config's
+  // SSR environment, not a project's: pg's require of pg-cloudflare needs the
+  // plugin's conditions here too. The node project doesn't inherit them.
+  ssr: { resolve: { conditions: ["workerd", "worker", "module", "browser"] } },
   test: {
-    testTimeout: 60_000,
     projects: [
       {
-        // The archive open: wrangler.jsonc with PRELAUNCH turned off. Other vars are kept.
-        plugins: [cloudflareTest({ wrangler, miniflare: { bindings: { PRELAUNCH: "off" } } })],
         test: {
-          name: "open",
-          include: ["test/**/*.test.ts"],
-          exclude: ["test/**/*.prelaunch.test.ts"],
+          name: "node",
+          include: ["test/**/*.node.test.ts"],
+          environment: "node",
         },
       },
       {
-        // Before launch: wrangler.jsonc exactly as it deploys.
-        plugins: [cloudflareTest({ wrangler })],
+        // The archive open: wrangler.jsonc with PRELAUNCH turned off. Other vars are kept.
+        plugins: [worker({ PRELAUNCH: "off" })],
+        test: {
+          name: "open",
+          include: ["test/**/*.test.ts"],
+          exclude: ["test/**/*.node.test.ts", "test/**/*.prelaunch.test.ts"],
+          ...workerd,
+        },
+      },
+      {
+        // Before launch: wrangler.jsonc as it deploys, PRELAUNCH on. As in `open`, the
+        // database, secrets, outbound network and email sink are the test stand-ins.
+        plugins: [worker()],
         test: {
           name: "prelaunch",
           include: ["test/**/*.prelaunch.test.ts"],
+          ...workerd,
         },
       },
     ],

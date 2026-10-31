@@ -64,6 +64,15 @@ export interface VerificationTable {
   updated_at: CreatedTimestamp;
 }
 
+/** Better Auth's rate-limit counters, one row per limited key. */
+export interface RateLimitTable {
+  id: string;
+  key: string;
+  count: number;
+  /** Milliseconds since the epoch. A bigint, so pg reads it as a string. */
+  last_request: ColumnType<string, number | string, number | string>;
+}
+
 export type WorkStatus = "processing" | "live" | "hidden" | "removed";
 export type HiddenCause = "removal_request" | "reports" | "moderator";
 export type TagType =
@@ -262,6 +271,7 @@ export interface Database {
   tags: TagTable;
   work_tags: WorkTagTable;
   uploads: UploadTable;
+  rateLimit: RateLimitTable;
   reports: ReportTable;
   takedowns: TakedownTable;
   requests: RequestTable;
