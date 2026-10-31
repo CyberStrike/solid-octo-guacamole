@@ -23,7 +23,9 @@ export const pageState: MiddlewareHandler = async (c, next) => {
   await next();
   if (!c.res.headers.get("content-type")?.toLowerCase().startsWith("text/html")) return;
 
-  // The settings dress every HTML page, error pages included.
+  // The settings dress every HTML page that comes back through here, error pages
+  // included. (A refusal answered before this middleware, such as a cross-site report,
+  // is not.)
   const attributes = dataAttributes(parseSettings(getCookie(c, SETTINGS_COOKIE)));
   // Only a successful GET shows the flash, since showing it uses it up. Its copy comes
   // from our table, never from the cookie.
