@@ -4,6 +4,8 @@ export interface OutgoingEmail {
   to: string;
   subject: string;
   text: string;
+  // Extra message headers. Only the launch email sets any (one-click unsubscribe, RFC 8058).
+  headers?: Record<string, string>;
 }
 
 // What a provider made of one batch call.

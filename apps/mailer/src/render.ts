@@ -25,6 +25,11 @@ export function render(message: EmailMessage, from: string): OutgoingEmail {
         to: message.to,
         subject: "rarepair is open",
         text: `You asked to hear when rarepair opens, and it has: https://rarepair.fans/\n\nThis is the one email you'll get from the wait list, and your address is not kept for anything else. To remove it now, use this link:\n\n${message.url}\n`,
+        // RFC 8058: a mail provider POSTs to this URL for one-click unsubscribe.
+        headers: {
+          "List-Unsubscribe": `<${message.url}>`,
+          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
       };
   }
 }
