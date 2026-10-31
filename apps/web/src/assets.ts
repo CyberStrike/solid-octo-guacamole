@@ -17,7 +17,8 @@ export const assetRoute: Handler<{ Bindings: Bindings }> = async (c) => {
   }
   // A copy, as the binding's response headers may be immutable.
   const headers = new Headers(res.headers);
-  if (res.ok && CONTENT_HASHED.test(c.req.path)) {
+  // A 304 too: a cache takes the 304's headers as the stored response's.
+  if ((res.status === 200 || res.status === 304) && CONTENT_HASHED.test(c.req.path)) {
     headers.set("Cache-Control", "public, max-age=31536000, immutable");
   }
   headers.set("X-Content-Type-Options", "nosniff");

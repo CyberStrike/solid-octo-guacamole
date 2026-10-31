@@ -94,6 +94,9 @@ describe("22-waitlist", () => {
       const res = await fetchW(path, { method });
       expect(withoutNonce(res.headers.get("content-security-policy"))).toBe(TURNSTILE);
     }
+    // Sign-in, open before launch, keeps its own Turnstile policy.
+    const login = await fetchW("/login");
+    expect(withoutNonce(login.headers.get("content-security-policy"))).toBe(TURNSTILE);
   });
 
   it("Coming-soon page serves its own fonts", async () => {
@@ -141,6 +144,13 @@ describe("22-waitlist", () => {
       const digest = await sha256(new Uint8Array(await res.arrayBuffer()));
       expect(path).toContain(`.${digest.slice(0, 16)}.woff2`);
       served.add(digest);
+
+      // A revalidation keeps the file immutable: a 304 carries the same Cache-Control.
+      const etag = res.headers.get("etag") ?? "";
+      expect(etag).not.toBe("");
+      const again = await fetchW(path, { headers: { "if-none-match": etag } });
+      expect(again.status).toBe(304);
+      expect(again.headers.get("cache-control")).toBe(IMMUTABLE);
     }
     expect(served).toEqual(new Set(Object.values(UPSTREAM_WOFF2)));
 
