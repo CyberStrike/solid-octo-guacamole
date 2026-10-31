@@ -132,7 +132,9 @@ async function run(
     resolveChapterLink(href, fromFile) {
       if (!readerId) return null;
       // Browsers drop tabs and newlines from a URL before reading it.
-      const target = resolveHref(dirOf(fromFile), href.replace(/[\t\n\r]/g, ""));
+      const cleaned = href.replace(/[\t\n\r]/g, "");
+      if (namesDirectory(cleaned)) return null;
+      const target = resolveHref(dirOf(fromFile), cleaned);
       // `#` and an empty href name no target: only a file or an anchor does.
       if (!target || (target.path === "" && target.anchor === null)) return null;
       const n = split.chapterFor(target.path || fromFile, target.anchor);
@@ -205,4 +207,21 @@ async function run(
     reviewReasons,
   };
   return { work, images };
+}
+
+/**
+ * Whether a relative href's path ends in `/`, `.` or `..`, so it names a
+ * directory, which a browser would not open as a chapter file.
+ */
+function namesDirectory(href: string): boolean {
+  const path = href.split(/[?#]/, 1)[0]!;
+  if (path === "") return false;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    return true; // resolveHref refuses it too
+  }
+  const last = decoded.slice(decoded.lastIndexOf("/") + 1);
+  return last === "" || last === "." || last === "..";
 }

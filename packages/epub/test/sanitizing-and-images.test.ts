@@ -1,7 +1,7 @@
-import { strToU8 } from "fflate";
+import { strFromU8, strToU8, unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { processEpub, type ImageRef } from "../src";
-import { ao3Epub, fromBase64, MiB } from "./helpers";
+import { ao3Epub, fromBase64, MiB, zipEntries } from "./helpers";
 
 // The sanitizer and image cases of specs/scenarios/mvp/07-sanitizing-and-images.md that issues #39 and #4 list, through processEpub.
 // Content-origin image keys, signature sniffing of JPEG/GIF/WebP and key sharing live elsewhere or are tracked as issues.
@@ -407,10 +407,9 @@ describe("07-sanitizing-and-images", () => {
     const work = await processEpub(
       threeChapters({ c1: `<a href="Three%20Parts_split_001.xhtml#c3">go-three</a>` }),
     );
-    const [c1, , c3] = work.chapters.map((c) => c.html);
+    const c1 = work.chapters[0]!.html;
     expect(c1).toContain(`<a href="/works/1000001/chapters/3">go-three</a>`);
     expect(c1).not.toMatch(/rel=|#|\.xhtml/);
-    expect(c3).toContain("marker-c3-a");
   });
 });
 
@@ -459,7 +458,7 @@ describe("chapter links", () => {
     expect(work.reviewReasons).toContain(
       "chapters_one_per_file: no usable table of contents or chapter headings",
     );
-    expect(work.chapters).toHaveLength(3);
+    expect(work.chapters.map((c) => c.title)).toEqual(["Chapter 1", "Chapter 2", "Chapter 3"]);
     expect(work.chapters[0]!.html).toContain(`<a href="/works/1000001/chapters/3">to-f3</a>`);
     expect(work.chapters[0]!.html).toContain(`<a href="/works/1000001/chapters/2">to-f2</a>`);
   });
@@ -542,6 +541,52 @@ describe("chapter links", () => {
     expect(work.chapters[0]!.html).toContain(`<a href="/works/1000001/chapters/3">to-encoded</a>`);
   });
 
+  it("a TOC anchor still finds an id written with entities", async () => {
+    const work = await processEpub(
+      ao3Epub({
+        stats: "Published: 2020-01-01 Chapters: 2/2 Words: 4",
+        files: [
+          {
+            name: "e.xhtml",
+            body: `<div id="chapters" class="userstuff1">
+  <h2 id="ch&#49;">one</h2><p>marker-e1</p>
+  <h2 id="ch&#50;">two</h2><p>marker-e2</p>
+</div>`,
+          },
+        ],
+        navPoints: [
+          { label: "TOC One", src: "e.xhtml#ch&amp;#49;" },
+          { label: "TOC Two", src: "e.xhtml#ch&amp;#50;" },
+        ],
+      }),
+    );
+    expect(work.chapters.map((c) => c.title)).toEqual(["TOC One", "TOC Two"]);
+  });
+
+  it("a link to an element outside #chapters in a chapter file stays text", async () => {
+    const region = (inner: string) => `<div id="chapters" class="userstuff1">${inner}</div>`;
+    const work = await processEpub(
+      ao3Epub({
+        files: [
+          {
+            name: "a.xhtml",
+            body: region(
+              `<h2 class="toc-heading">One</h2><p>marker-a <a href="b.xhtml#stray">to-stray</a> <a href="b.xhtml#in-b">to-b</a></p>`,
+            ),
+          },
+          {
+            name: "b.xhtml",
+            body: `<p id="stray">stray-text</p>${region(`<h2 class="toc-heading">Two</h2><p id="in-b">marker-b</p>`)}`,
+          },
+        ],
+      }),
+    );
+    const one = work.chapters[0]!.html;
+    expect(one).toContain(`<a href="/works/1000001/chapters/2">to-b</a>`);
+    expect(one).toContain("to-stray");
+    expect(one).not.toContain(">to-stray</a>");
+  });
+
   it("tabs and newlines in an href are ignored, as browsers do, and . names no file", async () => {
     const work = await processEpub(
       threeChapters({
@@ -577,6 +622,20 @@ describe("chapter links", () => {
     expect(work.chapters[0]!.html).toContain(`<a href="/works/2147483647/chapters/3">go-three</a>`);
   });
 
+  it("a work ID with a leading zero gives no chapter links", async () => {
+    // The builder takes a number, so rewrite its work URLs to carry the zero.
+    const entries = unzipSync(
+      threeChapters({ c1: `<a href="Three%20Parts_split_001.xhtml#c3">go-three</a>` }),
+    );
+    const files: Record<string, string> = {};
+    for (const [name, data] of Object.entries(entries))
+      files[name] = strFromU8(data).replaceAll("/works/1000001", "/works/0123");
+    delete files["mimetype"]; // zipEntries writes it first, uncompressed
+    const work = await processEpub(zipEntries(files));
+    expect(work.ao3WorkId).toBe("0123");
+    expect(work.chapters[0]!.html).not.toContain("<a");
+  });
+
   it("hostile hrefs give only a reader URL, an external link with rel, or text", async () => {
     const hrefs = [
       `javascript:alert(1)`,
@@ -600,10 +659,10 @@ describe("chapter links", () => {
       }),
     );
     const c1 = work.chapters[0]!.html;
-    const anchors = [...c1.matchAll(/<a\b[^>]*>/g)].map((m) => m[0]);
-    expect(anchors).toEqual([
-      `<a href="/works/1000001/chapters/3">`,
-      `<a href="https://evil.example/Three%20Parts_split_001.xhtml#c3" rel="nofollow noopener noreferrer ugc">`,
+    const links = [...c1.matchAll(/<a\b[^>]*>[^<]*<\/a>/g)].map((m) => m[0]);
+    expect(links).toEqual([
+      `<a href="/works/1000001/chapters/3">h-10</a>`,
+      `<a href="https://evil.example/Three%20Parts_split_001.xhtml#c3" rel="nofollow noopener noreferrer ugc">h-11</a>`,
     ]);
     expect(c1).not.toMatch(/javascript|data:|onclick|target=|script/i);
     for (let i = 0; i < hrefs.length; i++) expect(c1).toContain(`h-${i}`);
@@ -615,6 +674,10 @@ describe("chapter links", () => {
       c3: `<a href="Three%20Parts_split_000.xhtml">go-one</a>`,
       summary: `<p><a href="Three%20Parts_split_000.xhtml#c2">sum-two</a></p>`,
     });
-    expect(await processEpub(epub)).toEqual(await processEpub(epub));
+    const first = await processEpub(epub);
+    expect(first.chapters[0]!.html).toContain(`<a href="/works/1000001/chapters/3">go-three</a>`);
+    expect(first.chapters[2]!.html).toContain(`<a href="/works/1000001/chapters/1">go-one</a>`);
+    expect(first.summaryHtml).toContain(`<a href="/works/1000001/chapters/2">sum-two</a>`);
+    expect(await processEpub(epub)).toEqual(first);
   });
 });

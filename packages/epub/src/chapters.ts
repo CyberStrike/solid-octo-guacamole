@@ -121,14 +121,17 @@ function takeLeadingHeading(nodes: Node[]): string | null {
   return cleanText(h) || null;
 }
 
-/** First element with each id in `root`, keyed by the decoded id (links and the NCX are decoded). */
+/**
+ * First element with each id in `root`, keyed by the id as written and as
+ * decoded: NCX anchors can keep a character reference that links decode.
+ */
 function idIndex(root: ElementNode): Map<string, ElementNode> {
   const out = new Map<string, ElementNode>();
   walk(root, (n) => {
     if (n.type !== "element") return;
     const raw = idOf(n);
-    const id = raw === undefined ? undefined : decodeEntities(raw);
-    if (id !== undefined && !out.has(id)) out.set(id, n);
+    if (raw === undefined) return;
+    for (const id of [raw, decodeEntities(raw)]) if (!out.has(id)) out.set(id, n);
   });
   return out;
 }
