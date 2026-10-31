@@ -151,11 +151,11 @@ export const forbiddenPage = () =>
   );
 
 /**
- * A request over a rate limit or quota, shared by every limited route: when to try again,
+ * A request over a rate limit, shared by every limited route: when to try again,
  * in the same whole number of seconds as the response's `Retry-After`.
  */
 export const tooManyRequestsPage = (seconds: number) =>
   layout(
     "Too many requests",
-    `<p>There have been too many requests in a short time. Please try again in ${seconds} seconds.</p>`,
+    `<p>There have been too many requests in a short time. Please try again in ${seconds === 1 ? "1 second" : `${seconds} seconds`}.</p>`,
   );

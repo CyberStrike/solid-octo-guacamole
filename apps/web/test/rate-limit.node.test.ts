@@ -7,6 +7,7 @@ import {
   LOGIN_WINDOW_SECONDS,
   tooManyRequests,
 } from "../src/rate-limit";
+import { LOGIN_EMAIL_LIMIT, LOGIN_IP_LIMIT } from "./limits";
 
 /** The sign-in limit's key for a client address, or for a request without one. */
 const loginIp = (address: string | null) => ipKey("login", address);
@@ -33,6 +34,9 @@ describe("ipKey", () => {
     const key = await loginIp("198.51.100.7");
     expect(await loginIp("::ffff:198.51.100.7")).toBe(key);
     expect(await loginIp("::FFFF:198.51.100.7")).toBe(key);
+    // In hex too: c633:6407 is 198.51.100.7.
+    expect(await loginIp("::ffff:c633:6407")).toBe(key);
+    expect(await loginIp("0:0:0:0:0:ffff:c633:6407")).toBe(key);
     const other = await loginIp("::ffff:203.0.113.9");
     expect(other).not.toBe(key);
     expect(other).not.toBe(await loginIp("::1"));
@@ -41,6 +45,8 @@ describe("ipKey", () => {
   it("gives every request without a client address one shared key, still limited", async () => {
     const key = await loginIp(null);
     expect(await loginIp(null)).toBe(key);
+    // An empty header is no address either.
+    expect(await loginIp("")).toBe(key);
     expect(key).not.toBe(await loginIp("192.0.2.1"));
   });
 
@@ -100,19 +106,21 @@ describe("isLimited without its binding", () => {
   });
 });
 
-describe("the sign-in limits in wrangler.jsonc", () => {
-  it("have the window Retry-After says", async () => {
-    const { rawConfig } = experimental_readRawConfig({ config: "wrangler.jsonc" });
-    const periods = Object.fromEntries(
-      (rawConfig.ratelimits ?? []).map((limit: { name: string; simple: { period: number } }) => [
-        limit.name,
-        limit.simple.period,
-      ]),
-    );
-    expect(periods).toEqual({
-      LOGIN_IP_LIMIT: LOGIN_WINDOW_SECONDS,
-      LOGIN_EMAIL_LIMIT: LOGIN_WINDOW_SECONDS,
+describe("the rate limits in wrangler.jsonc", () => {
+  type Limit = { name: string; namespace_id: string; simple: { limit: number; period: number } };
+  const { rawConfig } = experimental_readRawConfig({ config: "wrangler.jsonc" });
+  const limits: Limit[] = rawConfig.ratelimits ?? [];
+
+  it("are the sign-in limits the tests and Retry-After assume", () => {
+    expect(Object.fromEntries(limits.map(({ name, simple }) => [name, simple]))).toEqual({
+      LOGIN_IP_LIMIT: { limit: LOGIN_IP_LIMIT, period: LOGIN_WINDOW_SECONDS },
+      LOGIN_EMAIL_LIMIT: { limit: LOGIN_EMAIL_LIMIT, period: LOGIN_WINDOW_SECONDS },
     });
+  });
+
+  it("each have their own namespace, so none shares another's counters", () => {
+    const namespaces = limits.map((limit) => limit.namespace_id);
+    expect(new Set(namespaces).size).toBe(namespaces.length);
   });
 });
 
@@ -126,5 +134,17 @@ describe("tooManyRequests", () => {
     const html = await res.text();
     expect(html).toContain("<h1>Too many requests</h1>");
     expect(html).toContain("Please try again in 60 seconds.");
+  });
+
+  it("asks for a wait of at least one whole second", async () => {
+    for (const [seconds, header, text] of [
+      [0, "1", "1 second."],
+      [1, "1", "1 second."],
+      [12.5, "13", "13 seconds."],
+    ] as const) {
+      const res = tooManyRequests(seconds);
+      expect(res.headers.get("retry-after")).toBe(header);
+      expect(await res.text()).toContain(`Please try again in ${text}`);
+    }
   });
 });

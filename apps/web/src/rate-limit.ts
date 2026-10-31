@@ -20,7 +20,8 @@ async function hashKey(prefix: string, value: string): Promise<string> {
 /**
  * Who a client address stands for: an IPv4 address whole, and an IPv6 one by its /64, which
  * one subscriber commonly holds all of, written out in full however it was shortened. An
- * IPv4 address written as IPv6 (`::ffff:198.51.100.7`) is that IPv4 address.
+ * IPv4 address written as IPv6 (`::ffff:198.51.100.7`, or `::ffff:c633:6407`) is that IPv4
+ * address.
  */
 function clientOf(address: string): string {
   if (!address.includes(":")) return address;
@@ -29,6 +30,13 @@ function clientOf(address: string): string {
   const groups = (part = "") => (part === "" ? [] : part.split(":"));
   const zeros = tail === undefined ? 0 : 8 - groups(head).length - groups(tail).length;
   const all = [...groups(head), ...Array<string>(Math.max(0, zeros)).fill("0"), ...groups(tail)];
+  const [high = "", low = ""] = all.slice(6);
+  if (all.length === 8 && all.slice(0, 5).every((group) => Number.parseInt(group, 16) === 0)) {
+    if (all[5] === "ffff") {
+      const value = (Number.parseInt(high, 16) << 16) | Number.parseInt(low, 16);
+      return [24, 16, 8, 0].map((shift) => (value >>> shift) & 255).join(".");
+    }
+  }
   return `${all
     .slice(0, 4)
     .map((group) => group.padStart(4, "0"))
@@ -37,11 +45,12 @@ function clientOf(address: string): string {
 
 /**
  * A limit's key for a client, from its `cf-connecting-ip` (which Cloudflare sets), or null
- * when the request has none. Requests without one share a key, so they are limited too.
- * `scope` names the limit ("login"), so two limits never share a counter.
+ * when the request has none. Requests without one, or with it empty, share a key, so they
+ * are limited too. `scope` names the limit ("login"), so two limits' keys never collide even
+ * where they share a namespace.
  */
 export const ipKey = (scope: string, address: string | null) =>
-  hashKey(`${scope}-ip:`, clientOf(address ?? "unknown"));
+  hashKey(`${scope}-ip:`, address === null || address === "" ? "unknown" : clientOf(address));
 
 /** A limit's key for an email address, however it was spelt: trimmed and lowercased. */
 export const emailKey = (scope: string, address: string) =>
@@ -66,14 +75,16 @@ export async function isLimited(limiter: RateLimit | undefined, key: string): Pr
 
 /**
  * The 429 for a limited request: the plain page and `Retry-After`, both saying the same
- * whole number of seconds.
+ * whole number of seconds, rounded up and at least one.
  */
-export const tooManyRequests = (seconds: number) =>
-  new Response(tooManyRequestsPage(seconds), {
+export function tooManyRequests(seconds: number): Response {
+  const wait = Math.max(1, Math.ceil(seconds));
+  return new Response(tooManyRequestsPage(wait), {
     status: 429,
     headers: {
       "Content-Type": "text/html; charset=UTF-8",
-      "Retry-After": String(seconds),
+      "Retry-After": String(wait),
       "Cache-Control": "no-store",
     },
   });
+}

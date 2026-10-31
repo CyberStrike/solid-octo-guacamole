@@ -94,9 +94,7 @@ export function postLogin(
   });
 }
 
-// The sign-in limits (wrangler.jsonc): requests per IP and per email address in a window.
-export const LOGIN_IP_LIMIT = 10;
-export const LOGIN_EMAIL_LIMIT = 3;
+export { LOGIN_EMAIL_LIMIT, LOGIN_IP_LIMIT } from "./limits";
 
 /**
  * Waits, if need be, for a window of `periodSeconds` with at least 20 seconds left in it, time
