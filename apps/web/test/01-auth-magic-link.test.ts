@@ -9,10 +9,12 @@ import {
   deliveredEmails,
   emailsTo,
   fetchW,
+  LOGIN_IP_LIMIT,
   loginRequest,
   nonceOf,
   PASSING_TOKEN,
   postLogin,
+  windowHeadroom,
 } from "./helpers";
 
 /** The opening tag of the sign-in form, or null. */
@@ -49,6 +51,20 @@ async function queuedFor(to: string): Promise<boolean> {
 async function expectNothingCreated(to: string, before: Set<string>) {
   expect(await verificationIds()).toEqual(before);
   expect(await queuedFor(to)).toBe(false);
+}
+
+/**
+ * Spends one IP's sign-in limit for the current window, on requests Turnstile refuses: the
+ * IP is counted before the form is read, so they count all the same.
+ */
+async function fillIpLimit(ip: string) {
+  for (let i = 0; i < LOGIN_IP_LIMIT; i++) {
+    const res = await postLogin(
+      { email: `filler-${i}@example.test`, "cf-turnstile-response": "a-failing-token" },
+      { headers: { "cf-connecting-ip": ip } },
+    );
+    expect(res.status).toBe(400);
+  }
 }
 
 describe("01-auth-magic-link", () => {
@@ -275,6 +291,36 @@ describe("01-auth-magic-link", () => {
       expect(html).toContain('<p role="alert">Enter a valid email address.</p>');
       await expectNothingCreated(email, before);
     }
+  });
+
+  it("Login requests are rate-limited per IP", async () => {
+    await windowHeadroom();
+    const ip = "203.0.113.1";
+    await fillIpLimit(ip);
+
+    // Even for an address it hasn't asked for, with a passing check.
+    const before = await verificationIds();
+    const res = await postLogin(
+      { email: "per-ip@example.test", "cf-turnstile-response": PASSING_TOKEN },
+      { headers: { "cf-connecting-ip": ip } },
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("60");
+    expect(await res.text()).toContain("Please try again in 60 seconds.");
+    await expectNothingCreated("per-ip@example.test", before);
+
+    // A cross-site request from it is still refused as one, before the limit is asked.
+    const crossSite = await postLogin(
+      { email: "per-ip@example.test", "cf-turnstile-response": PASSING_TOKEN },
+      { headers: { "cf-connecting-ip": ip, origin: "https://evil.example" } },
+    );
+    expect(crossSite.status).toBe(403);
+    // Another IP is not held up.
+    const other = await postLogin(
+      { email: "per-ip@example.test", "cf-turnstile-response": PASSING_TOKEN },
+      { headers: { "cf-connecting-ip": "203.0.113.101" } },
+    );
+    expect(other.status).toBe(200);
   });
 });
 

@@ -58,15 +58,25 @@ const LOGIN_HEADERS = {
   "sec-fetch-site": "same-origin",
 };
 
-/** The sign-in form's POST, as a browser on rarepair.fans submits it. */
+/**
+ * A client address under 10.0.0.0/8, new for each sign-in request, so that only a test
+ * that sets `cf-connecting-ip` itself meets the per-IP limit. Random rather than counted:
+ * every test file of a project shares one limiter.
+ */
+const freshIp = () => `10.${crypto.getRandomValues(new Uint8Array(3)).join(".")}`;
+
+/** The sign-in form's POST, as a browser on rarepair.fans submits it, from a fresh IP. */
 export const loginRequest = (fields: Record<string, string>) =>
   new Request(`${BASE}/login`, {
     method: "POST",
-    headers: LOGIN_HEADERS,
+    headers: { ...LOGIN_HEADERS, "cf-connecting-ip": freshIp() },
     body: new URLSearchParams(fields).toString(),
   });
 
-/** Submits the sign-in form to the Worker; `headers` are added over a browser's. */
+/**
+ * Submits the sign-in form to the Worker from a fresh IP; `headers` are added over a
+ * browser's, so a test can set its own `cf-connecting-ip`.
+ */
 export function postLogin(
   fields: Record<string, string>,
   {
@@ -75,5 +85,24 @@ export function postLogin(
     body = new URLSearchParams(fields).toString(),
   }: { url?: string; headers?: Record<string, string>; body?: BodyInit } = {},
 ) {
-  return fetchW(url, { method: "POST", headers: { ...LOGIN_HEADERS, ...headers }, body });
+  return fetchW(url, {
+    method: "POST",
+    headers: { ...LOGIN_HEADERS, "cf-connecting-ip": freshIp(), ...headers },
+    body,
+  });
+}
+
+// The sign-in limits (wrangler.jsonc): requests per IP and per email address in a window.
+export const LOGIN_IP_LIMIT = 10;
+export const LOGIN_EMAIL_LIMIT = 3;
+export const LOGIN_WINDOW_SECONDS = 60;
+
+/**
+ * Waits, if need be, for a window with at least 15 seconds left in it. The local limiter's
+ * windows are fixed and aligned to the clock, so a test that fills one and then expects a
+ * 429 must not straddle the boundary.
+ */
+export async function windowHeadroom() {
+  const left = LOGIN_WINDOW_SECONDS * 1000 - (Date.now() % (LOGIN_WINDOW_SECONDS * 1000));
+  if (left < 15_000) await new Promise((resolve) => setTimeout(resolve, left + 100));
 }

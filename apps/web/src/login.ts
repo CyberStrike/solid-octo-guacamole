@@ -4,6 +4,7 @@ import type { Context } from "hono";
 import { makeAuth } from "./auth";
 import type { Bindings } from "./env";
 import { checkEmailPage, forbiddenPage, signInPage } from "./pages";
+import { isLimited, LOGIN_WINDOW_SECONDS, loginIpKey, tooManyRequests } from "./rate-limit";
 import type { SecurityVariables } from "./security";
 import { isSameOrigin, safeNext } from "./signin";
 import { verifyTurnstile } from "./turnstile";
@@ -69,6 +70,10 @@ async function readForm(request: Request): Promise<URLSearchParams | null> {
  */
 export async function requestSignIn(c: LoginContext) {
   if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
+  // Before the body is read or Turnstile is asked, so a flood costs neither.
+  if (await isLimited(c.env.LOGIN_IP_LIMIT, await loginIpKey(c.req.raw))) {
+    return tooManyRequests(LOGIN_WINDOW_SECONDS);
+  }
 
   const form = await readForm(c.req.raw);
   if (form === null) {
