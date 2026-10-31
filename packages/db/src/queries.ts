@@ -10,7 +10,7 @@ import type {
   WorkTable,
   WorkVersionTable,
 } from "./schema";
-import { compareCodeUnits, normalizeTagName } from "./tags";
+import { normalizeTagName } from "./tags";
 
 /** A work's own fields, as a page shows them. */
 export type WorkSummary = Pick<
@@ -23,6 +23,7 @@ export type WorkSummary = Pick<
   | "language"
   | "words"
   | "chapters_count"
+  | "chapters_total"
   | "complete"
   | "published_at"
   | "updated_at"
@@ -31,12 +32,19 @@ export type WorkSummary = Pick<
 
 export interface LiveWork {
   work: WorkSummary;
+  /** In byline order. */
   authors: { pseud: string; ao3_user: string | null }[];
   /** In the author's order. */
   tags: Selectable<TagTable>[];
   version: Pick<
     Selectable<WorkVersionTable>,
-    "id" | "chapter_count" | "r2_prefix" | "created_at" | "review_reasons" | "checked_at"
+    | "id"
+    | "chapter_count"
+    | "chapter_total"
+    | "r2_prefix"
+    | "created_at"
+    | "review_reasons"
+    | "checked_at"
   >;
   /** The current version's chapters, by number. */
   chapters: Pick<Selectable<ChapterTable>, "n" | "title" | "words" | "r2_key">[];
@@ -51,6 +59,7 @@ const SUMMARY = [
   "works.language",
   "works.words",
   "works.chapters_count",
+  "works.chapters_total",
   "works.complete",
   "works.published_at",
   "works.updated_at",
@@ -80,6 +89,7 @@ export async function getLiveWork(
     .select([
       "work_versions.id as version_id",
       "work_versions.chapter_count",
+      "work_versions.chapter_total",
       "work_versions.r2_prefix",
       "work_versions.created_at",
       "work_versions.review_reasons",
@@ -89,7 +99,7 @@ export async function getLiveWork(
       jsonArrayFrom(
         eb
           .selectFrom("work_authors")
-          .select(["work_authors.pseud", "work_authors.ao3_user"])
+          .select(["work_authors.pseud", "work_authors.ao3_user", "work_authors.position"])
           .whereRef("work_authors.work_id", "=", "works.id"),
       ).as("authors"),
       jsonArrayFrom(
@@ -113,6 +123,7 @@ export async function getLiveWork(
   const {
     version_id,
     chapter_count,
+    chapter_total,
     r2_prefix,
     created_at,
     review_reasons,
@@ -124,15 +135,21 @@ export async function getLiveWork(
   } = row;
   return {
     work,
-    // By pseud, then user, by code unit: the same order in every database.
-    authors: authors.sort(
-      (a, b) =>
-        compareCodeUnits(a.pseud, b.pseud) || compareCodeUnits(a.ao3_user ?? "", b.ao3_user ?? ""),
-    ),
+    authors: authors
+      .sort((a, b) => a.position - b.position)
+      .map(({ pseud, ao3_user }) => ({ pseud, ao3_user })),
     tags: tags
       .sort((a, b) => a.position - b.position)
       .map(({ id, type, name, name_norm }) => ({ id, type, name, name_norm })),
-    version: { id: version_id, chapter_count, r2_prefix, created_at, review_reasons, checked_at },
+    version: {
+      id: version_id,
+      chapter_count,
+      chapter_total,
+      r2_prefix,
+      created_at,
+      review_reasons,
+      checked_at,
+    },
     chapters: chapters.sort((a, b) => a.n - b.n),
   };
 }
