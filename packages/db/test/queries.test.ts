@@ -61,6 +61,14 @@ describe("14 browse and home", () => {
       seeded.sort((a, b) => a - b),
     );
     expect(await page(4)).toEqual({ works: [], total: 45 });
+    // Below the first page, or not a whole number, is the first page, not a database error.
+    for (const n of [0, -3, 1.5, Number.NaN]) {
+      expect(
+        (await page(n)).works.map((w) => w.work.ao3_work_id),
+        String(n),
+      ).toEqual(seeded.slice(0, 20));
+    }
+    expect(await page(Number.MAX_SAFE_INTEGER)).toEqual({ works: [], total: 45 });
   });
 
   it("Sort by updated date", async () => {

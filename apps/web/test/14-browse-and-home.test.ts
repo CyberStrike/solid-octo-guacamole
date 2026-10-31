@@ -501,21 +501,60 @@ const idsOf = (html: string) =>
 const range = (from: number, to: number) =>
   Array.from({ length: to - from + 1 }, (_, i) => from + i);
 
+/** Runs `seed` the first time it's called, so each describe that reads its works can ask for them. */
+const once = (seed: () => Promise<void>) => {
+  let seeded: Promise<void> | undefined;
+  return () => (seeded ??= seed());
+};
+
 const PAGED = "/tags/fandom/paged%20listing%20fandom";
 
-describe("14-browse-and-home listing pages", () => {
-  beforeAll(async () => {
-    // 45 works with one updated date, so AO3 work ID orders them; one hidden.
-    for (const ao3WorkId of range(31001, 31045)) {
-      await seedWork(db, { ao3WorkId, tags: [{ type: "fandom", name: "Paged Listing Fandom" }] });
-    }
-    await seedWork(db, {
-      ao3WorkId: 31046,
-      status: "hidden",
-      hiddenCause: "reports",
-      tags: [{ type: "fandom", name: "Paged Listing Fandom" }],
-    });
+const seedPaged = once(async () => {
+  // 45 works with one updated date, so AO3 work ID orders them; one hidden.
+  for (const ao3WorkId of range(31001, 31045)) {
+    await seedWork(db, { ao3WorkId, tags: [{ type: "fandom", name: "Paged Listing Fandom" }] });
+  }
+  await seedWork(db, {
+    ao3WorkId: 31046,
+    status: "hidden",
+    hiddenCause: "reports",
+    tags: [{ type: "fandom", name: "Paged Listing Fandom" }],
   });
+});
+
+describe("14-browse-and-home listing pages", () => {
+  beforeAll(seedPaged);
+
+  it("A long listing's pager links the first page, the last and two either side", async () => {
+    // 141 works: eight pages.
+    for (const ao3WorkId of range(31201, 31341)) {
+      await seedWork(db, { ao3WorkId, tags: [{ type: "fandom", name: "Long Listing Fandom" }] });
+    }
+    const long = "/tags/fandom/long%20listing%20fandom";
+    const numbersOf = async (page: number) =>
+      [
+        ...(
+          (await htmlOf(`${long}?page=${page}`)).match(/<nav class="pager"[\s\S]*?<\/nav>/)?.[0] ??
+          ""
+        ).matchAll(/<li(?: aria-hidden="true")?>(?:<a [^>]*>|<span aria-current="page">)?([^<]+)/g),
+      ].map((m) => m[1]);
+
+    expect(await numbersOf(1)).toEqual(["1", "2", "3", "…", "8", "Next"]);
+    expect(await numbersOf(6)).toEqual(["Previous", "1", "…", "4", "5", "6", "7", "8", "Next"]);
+    // A gap of one page shows the page, not a gap.
+    expect(await numbersOf(5)).toEqual([
+      "Previous",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "Next",
+    ]);
+  }, 60_000);
 
   it("Tag listing shows paged works", async () => {
     const first = await htmlOf(PAGED);
@@ -582,28 +621,33 @@ describe("14-browse-and-home listing pages", () => {
 
 const SORTED = "/tags/fandom/sorted%20listing%20fandom";
 
+const seedSorted = once(async () => {
+  const fandom = { type: "fandom" as const, name: "Sorted Listing Fandom" };
+  const slowBurn = (name: string) => [fandom, { type: "freeform" as const, name }];
+  const works = [
+    [31101, "2021-03-01", 1200, "Explicit", true, slowBurn("Listing Slow Burn")],
+    [31102, "2023-05-01", 7000, "Mature", true, slowBurn("listing slow-burn!")],
+    // Never updated: its published date, 2020-01-01, stands in.
+    [31103, null, 5000, null, false, slowBurn("Listing Slow Burn")],
+    [31104, "2022-01-01", 300, "Explicit", false, [fandom]],
+    [31105, "2020-06-01", 2500, "Explicit", true, [fandom]],
+  ] as const;
+  for (const [ao3WorkId, updated, words, rating, complete, tags] of works) {
+    await seedWork(db, {
+      ao3WorkId,
+      updatedAt: updated && `${updated}T00:00:00Z`,
+      chapters: [{ words }],
+      rating,
+      complete,
+      tags: [...tags],
+    });
+  }
+});
+
 describe("14-browse-and-home listing sort and filters", () => {
   beforeAll(async () => {
-    const fandom = { type: "fandom" as const, name: "Sorted Listing Fandom" };
-    const slowBurn = (name: string) => [fandom, { type: "freeform" as const, name }];
-    const works = [
-      [31101, "2021-03-01", 1200, "Explicit", true, slowBurn("Listing Slow Burn")],
-      [31102, "2023-05-01", 7000, "Mature", true, slowBurn("listing slow-burn!")],
-      // Never updated: its published date, 2020-01-01, stands in.
-      [31103, null, 5000, null, false, slowBurn("Listing Slow Burn")],
-      [31104, "2022-01-01", 300, "Explicit", false, [fandom]],
-      [31105, "2020-06-01", 2500, "Explicit", true, [fandom]],
-    ] as const;
-    for (const [ao3WorkId, updated, words, rating, complete, tags] of works) {
-      await seedWork(db, {
-        ao3WorkId,
-        updatedAt: updated && `${updated}T00:00:00Z`,
-        chapters: [{ words }],
-        rating,
-        complete,
-        tags: [...tags],
-      });
-    }
+    await seedPaged();
+    await seedSorted();
   });
 
   it("Sort by updated date", async () => {
@@ -695,7 +739,15 @@ const submit = (html: string, changes: Record<string, string>) => {
   return `${textOf(action)}?${new URLSearchParams(values).toString()}`;
 };
 
+/** The works the form, canonical and cache cases read. */
+const seedListings = async () => {
+  await seedPaged();
+  await seedSorted();
+};
+
 describe("14-browse-and-home listing form", () => {
+  beforeAll(seedListings);
+
   it("Sort and filter work without JS", async () => {
     const page = await htmlOf(SORTED);
     const { action, fields, body } = formOf(page);
@@ -770,6 +822,12 @@ describe("14-browse-and-home listing form", () => {
         "/tags/fandom/Sorted%20Listing%20Fandom?sort=words&rating=&complete=yes&tag=&tag_type=freeform&page=1",
       ),
     ).toEqual([`<link rel="canonical" href="${SORTED}?sort=words&amp;complete=yes">`]);
+    // A narrowing tag is folded too, so its spellings share the page.
+    for (const tag of ["Listing+Slow+Burn", "listing%20slow-burn%21"]) {
+      expect(await canonicalOf(`${SORTED}?tag=${tag}`), tag).toEqual([
+        `<link rel="canonical" href="${SORTED}?tag=listing+slow+burn&amp;tag_type=freeform">`,
+      ]);
+    }
     expect(await canonicalOf(`${PAGED}?page=2`)).toEqual([
       `<link rel="canonical" href="${PAGED}?page=2">`,
     ]);
@@ -804,12 +862,16 @@ async function expectShortListingCache() {
 }
 
 describe("14-browse-and-home listing cache", () => {
+  beforeAll(seedListings);
+
   it("Listings are briefly cached", async () => {
     await expectShortListingCache();
   });
 });
 
 describe("19-surge-controls-and-quotas", () => {
+  beforeAll(seedListings);
+
   it("Listings use a short cache", async () => {
     await expectShortListingCache();
   });

@@ -81,17 +81,21 @@ function queryOf(raw: Record<string, string>): ListingQuery {
   return query;
 }
 
-/** The query's parameters that differ from the defaults, in a fixed order, then the page past the first. */
-function paramsOf(query: ListingQuery, page: number): Pair[] {
-  return [
-    ...(query.sort === "updated" ? [] : [["sort", query.sort] satisfies Pair]),
-    ...(query.rating === undefined ? [] : [["rating", query.rating] satisfies Pair]),
-    ...(query.complete === undefined ? [] : [["complete", query.complete] satisfies Pair]),
-    ...(query.tag === undefined
-      ? []
-      : [["tag", query.tag.name] satisfies Pair, ["tag_type", query.tag.type] satisfies Pair]),
-    ...(page === 1 ? [] : [["page", String(page)] satisfies Pair]),
-  ];
+/**
+ * The query's parameters that differ from the defaults, in a fixed order, then
+ * the page past the first. `tagName` is the narrowing tag's name as the URL
+ * should carry it: as typed, or folded for the canonical URL.
+ */
+function paramsOf(query: ListingQuery, page: number, tagName = query.tag?.name): Pair[] {
+  const params: Pair[] = [];
+  if (query.sort !== "updated") params.push(["sort", query.sort]);
+  if (query.rating !== undefined) params.push(["rating", query.rating]);
+  if (query.complete !== undefined) params.push(["complete", query.complete]);
+  if (query.tag !== undefined && tagName !== undefined) {
+    params.push(["tag", tagName], ["tag_type", query.tag.type]);
+  }
+  if (page !== 1) params.push(["page", String(page)]);
+  return params;
 }
 
 export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
@@ -131,9 +135,10 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
       works.length === 0
         ? "<p>No works match these filters.</p>"
         : `<ol class="work-list" role="list">\n${works.map(workCard).join("\n")}\n</ol>`;
-    // Spellings of the tag share one canonical page: its folded name, with no redirect,
-    // since folding a folded name again can change it.
-    const canonical = `<link rel="canonical" href="${listingHref(type, nameNorm, paramsOf(query, page))}">`;
+    // Spellings of the tags share one canonical page: their folded names, with no
+    // redirect, since folding a folded name again can change it.
+    const tagNorm = query.tag && tagNameKeys(query.tag.type, query.tag.name)[0];
+    const canonical = `<link rel="canonical" href="${listingHref(type, nameNorm, paramsOf(query, page, tagNorm))}">`;
     return c.html(
       layout(
         heading,
@@ -192,18 +197,20 @@ function listingHref(type: TagType, name: string, params: Pair[]): string {
 /**
  * Previous, the page numbers and next, all real links; the current page is
  * marked and not a link. Page numbers are the first, the last and those within
- * PAGES_AROUND of the current one, with a gap shown between runs.
+ * PAGES_AROUND of the current one, with a gap shown between runs. A gap of one
+ * page shows that page instead, since its link takes no more room.
  */
 function pager(href: (n: number) => string, page: number, last: number): string {
   if (last === 1) return "";
+  const around = (n: number) => n === 1 || n === last || Math.abs(n - page) <= PAGES_AROUND;
   const numbers = [
     ...new Set([
       1,
       last,
-      ...Array.from({ length: 2 * PAGES_AROUND + 1 }, (_, i) => page - PAGES_AROUND + i),
+      ...Array.from({ length: 2 * PAGES_AROUND + 3 }, (_, i) => page - PAGES_AROUND - 1 + i),
     ]),
   ]
-    .filter((n) => n >= 1 && n <= last)
+    .filter((n) => n >= 1 && n <= last && (around(n) || (around(n - 1) && around(n + 1))))
     .sort((a, b) => a - b);
   const items = numbers.flatMap((n, i) => [
     ...(i > 0 && n - (numbers[i - 1] ?? n) > 1 ? ['<li aria-hidden="true">…</li>'] : []),

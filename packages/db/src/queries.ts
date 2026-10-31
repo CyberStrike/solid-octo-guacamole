@@ -275,7 +275,8 @@ export async function listLiveWorksByTag(
     .where(listed)
     .executeTakeFirstOrThrow();
   const total = Number(count);
-  const offset = (page - 1) * pageSize;
+  // A page below the first, or not a whole number, is the first.
+  const offset = page >= 1 ? (Math.floor(page) - 1) * pageSize : 0;
   if (offset >= total) return { works: [], total };
   const rows = await db
     .selectFrom("works")
