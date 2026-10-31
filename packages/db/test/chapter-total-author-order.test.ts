@@ -24,10 +24,9 @@ async function createDeployedDb(): Promise<TestDb> {
       name text primary key,
       applied_at timestamptz not null default current_timestamp
     )`.execute(deployed.db);
-    const before = migrations.slice(
-      0,
-      migrations.findIndex((x) => x.name === MIGRATION),
-    );
+    const at = migrations.findIndex((x) => x.name === MIGRATION);
+    if (at < 0) throw new Error(`migration ${MIGRATION} is not registered`);
+    const before = migrations.slice(0, at);
     for (const m of before) {
       await sql.raw(m.sql).execute(deployed.db);
       await sql`insert into schema_migrations (name) values (${m.name})`.execute(deployed.db);

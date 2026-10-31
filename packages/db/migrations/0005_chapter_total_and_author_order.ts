@@ -23,7 +23,7 @@ from (
     "work_id", "pseud", "ao3_user",
     (row_number() over (
       partition by "work_id"
-      order by "pseud" collate "C", coalesce("ao3_user", '') collate "C"
+      order by "pseud" collate "C", coalesce("ao3_user", '') collate "C", "ao3_user" nulls first
     ) - 1)::integer as "position"
   from "work_authors"
 ) as ordered

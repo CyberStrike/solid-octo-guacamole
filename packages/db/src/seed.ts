@@ -19,7 +19,7 @@ export interface SeedChapter {
 export interface SeedVersionOptions {
   /** A count, or each chapter. Default 1. */
   chapters?: number | SeedChapter[];
-  /** The planned total. Default null: unknown. */
+  /** The planned total. Default null: unknown, and a current version replaces the work's total with it. */
   chapterTotal?: number | null;
   reviewReasons?: string[];
 }
