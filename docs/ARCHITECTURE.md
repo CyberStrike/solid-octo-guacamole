@@ -105,12 +105,17 @@ user         (id, email, name, email_verified, image, created_at, updated_at,  -
               warnings_off)            -- signed-in reader turned the warnings screen off
 session, account, verification  -- Better Auth's tables; verification holds hashed magic-link tokens
 works        (id, ao3_work_id UNIQUE NOT NULL, title, summary_html, rating, language,  -- ao3_work_id is the URL key
-              words, chapters_count, complete, published_at, updated_at,
+              words, chapters_count,
+              chapters_total NULL,  -- the planned total (AO3's y in x/y); NULL when unknown
+              complete, published_at, updated_at,
               status,            -- processing | live | hidden | removed
               hidden_cause NULL, -- removal_request | reports | moderator, while hidden
               current_version_id, raw_meta jsonb, search tsvector)
-work_authors (work_id, pseud, ao3_user NULL)
-work_versions(id, work_id, upload_id, chapter_count, r2_prefix, created_at,
+work_authors (work_id, pseud, ao3_user NULL,
+              position)  -- the author's place in the byline, from 0; unique per work
+work_versions(id, work_id, upload_id, chapter_count,
+              chapter_total NULL,  -- the planned total as this version's preface gave it
+              r2_prefix, created_at,
               review_reasons text[],  -- from the parser; non-empty shows the notice
               checked_at NULL)        -- set when a moderator approves the version
 chapters     (work_id, version_id, n, title, words, r2_key)

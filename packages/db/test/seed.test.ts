@@ -123,7 +123,7 @@ describe("@archive/db/seed seedWork", () => {
     expect(work?.tags.map((x) => x.name)).toEqual(["Twice Seeded", "Between"]);
   });
 
-  it("Authors read back by pseud, then user; tags keep both canonical spellings", async () => {
+  it("Authors read back in the order given; tags keep both canonical spellings", async () => {
     const s = await seedWork(t.db, {
       authors: [
         { pseud: "Zed", ao3_user: "zed" },
@@ -138,10 +138,10 @@ describe("@archive/db/seed seedWork", () => {
     });
     const work = await getLiveWork(t.db, s.ao3WorkId);
     expect(work?.authors).toEqual([
-      { pseud: "Amy", ao3_user: "amy" },
-      { pseud: "Sam", ao3_user: null },
-      { pseud: "Sam", ao3_user: "bob" },
       { pseud: "Zed", ao3_user: "zed" },
+      { pseud: "Sam", ao3_user: "bob" },
+      { pseud: "Sam", ao3_user: null },
+      { pseud: "Amy", ao3_user: "amy" },
     ]);
     expect(work?.tags.map((x) => x.name)).toEqual([COMBINING, COMPOSED]);
   });
