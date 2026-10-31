@@ -18,9 +18,11 @@ export function createDb(config: DbConfig): Kysely<Database> {
   const pool = new pg.Pool({ connectionString: config.connectionString, max: config.max });
   // pg reports an idle client's lost connection as an error on the pool, and an
   // EventEmitter with no listener throws it. The pool has already dropped that
-  // client, and a query on a lost connection fails on its own, so this one only
-  // keeps it from being thrown. In workerd, ending the pool does it every time:
-  // the socket's pending read rejects once the socket is closed.
-  pool.on("error", () => undefined);
+  // client, so the error is only reported. In workerd, ending the pool raises one
+  // every time (the socket's pending read rejects once it is closed): that one is
+  // expected and dropped. The message names no reader, only the connection.
+  pool.on("error", (error) => {
+    if (!pool.ending) console.error(`postgres: idle connection lost: ${error.message}`);
+  });
   return new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
 }

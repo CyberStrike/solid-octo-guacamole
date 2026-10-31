@@ -7,8 +7,10 @@ const TURNSTILE_SECRET_KEY = "1x0000000000000000000000000000000AA";
 const DUMMY_TOKEN = "XXXX.DUMMY.TOKEN.XXXX";
 
 /**
- * The Worker's outbound network in tests: siteverify answers as Cloudflare does for
- * the test secret, and everything else is blocked. The dummy token passes for
+ * The Worker's outbound network in tests: siteverify passes the dummy token under
+ * the test secret, as Cloudflare does, and everything else is blocked. Cloudflare
+ * reports such a token as solved on "localhost"; this stand-in reports the host
+ * the test chooses, so the host check can be tested. The dummy token passes for
  * rarepair.fans, or for the host after an "@" ("XXXX.DUMMY.TOKEN.XXXX@other.example");
  * "siteverify-down" gets a 503; any other token fails.
  */

@@ -6,7 +6,7 @@ import type { TestProject } from "vitest/node";
 // every test file: tests use their own email addresses rather than a reset.
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   // The setup's own client, plus room for the Worker's per-request pools.
-  const t = await createTestDb({ maxConnections: 16 });
+  const t = await createTestDb({ maxConnections: 64 });
   project.provide("databaseUrl", t.connectionString);
   return () => t.close();
 }

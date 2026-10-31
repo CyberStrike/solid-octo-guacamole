@@ -73,7 +73,8 @@ async function queuedFor(to: string): Promise<boolean> {
   const res = await postLogin({ email: sentinel, "cf-turnstile-response": PASSING_TOKEN });
   expect(res.status).toBe(200);
   expect(await emailsTo(sentinel)).toHaveLength(1);
-  return (await emailsTo(to, { atLeast: 0 })).length > 0;
+  // Any body naming `to`, even one the mailer would refuse.
+  return (await deliveredEmails()).some((body) => JSON.stringify(body).includes(to));
 }
 
 /** Shows that a refused request left nothing behind: no token and no email. */
@@ -252,7 +253,7 @@ describe("01-auth-magic-link", () => {
       const html = await res.text();
       expect(formTag(html)).not.toBeNull();
       expect(html).toContain('<p role="alert">Enter a valid email address.</p>');
-      expect(await verificationIds()).toEqual(before);
+      await expectNothingCreated(email, before);
     }
   });
 });

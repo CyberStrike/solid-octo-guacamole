@@ -23,7 +23,7 @@ export function makeAuth(env: Env, db: Kysely<Database>) {
     // Counters in Postgres, not in this isolate's memory. Only `auth.handler`
     // requests are counted, so `auth.api` calls from our routes never are: their
     // own per-IP and per-email limits use the Workers rate-limiting binding (A3, #23).
-    rateLimit: { ...authSchema.rateLimit, storage: "database" },
+    rateLimit: { ...authSchema.rateLimit, enabled: true, storage: "database" },
     advanced: {
       // __Secure- cookies. No crossSubDomainCookies: no Domain, so never content.rarepair.fans.
       useSecureCookies: true,
