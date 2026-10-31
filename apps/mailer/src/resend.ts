@@ -8,12 +8,19 @@ const TIMEOUT_MS = 10_000;
 
 // The provider message IDs from an accepted batch's answer. These are logged, so anything that
 // doesn't look like an ID (Resend's are UUIDs) is left out rather than trusted.
+// oxlint-disable-next-line deslop/no-unknown-parameters -- the raw answer body; checking it is this function's job
 function messageIds(body: unknown): string[] {
+  // SAFETY: the optional chain reads `data` off any value, and the next line checks it.
   const data = (body as { data?: unknown } | null)?.data;
   if (!Array.isArray(data)) return [];
-  return data
-    .map((d) => (d as { id?: unknown } | null)?.id)
-    .filter((id): id is string => typeof id === "string" && /^[\w-]{1,64}$/.test(id));
+  // Unknown, not the any[] Array.isArray gives, so each entry stays checked.
+  const entries: unknown[] = data;
+  return entries.flatMap((d) => {
+    // SAFETY: the same for each entry's `id`, which the next line checks.
+    const id = (d as { id?: unknown } | null)?.id;
+    // oxlint-disable-next-line deslop/no-runtime-typeof -- how an untrusted id is checked before it is logged
+    return typeof id === "string" && /^[\w-]{1,64}$/.test(id) ? [id] : [];
+  });
 }
 
 // Resend's batch API: one call for up to 100 emails.
@@ -47,7 +54,8 @@ export function resendSender(
       await res.body?.cancel().catch(() => {});
       // A refusal is a rate limit, a quota (both 429) or an outage (5xx).
       // https://resend.com/docs/api-reference/errors
-      if (res.status === 429 || res.status >= 500) return { outcome: "refused", status: res.status };
+      if (res.status === 429 || res.status >= 500)
+        return { outcome: "refused", status: res.status };
       return { outcome: "failed", status: res.status };
     },
   };

@@ -6,7 +6,9 @@ import { ao3Epub, fromBase64, MiB } from "./helpers";
 // The sanitizer and image cases of specs/scenarios/mvp/07-sanitizing-and-images.md that issue #39 lists, through processEpub.
 // Chapter-link rewriting, content-origin image keys, signature sniffing of JPEG/GIF/WebP and key sharing live elsewhere or are tracked as issues.
 
-const PNG = fromBase64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=");
+const PNG = fromBase64(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+);
 const IMAGE_BASE = "https://content.example/img/";
 const PNG_MANIFEST = { href: "images/p.png", mediaType: "image/png", data: PNG };
 const LINK = "https://example.org/";
@@ -14,7 +16,8 @@ const LINK = "https://example.org/";
 type Extra = { href: string; mediaType: string; data: Uint8Array };
 
 /** A chapter body: the leading heading is the chapter title, which the parser removes. */
-const chapterOf = (inner: string) => `<div id="chapters"><h2 class="toc-heading">T</h2><div>${inner}</div></div>`;
+const chapterOf = (inner: string) =>
+  `<div id="chapters"><h2 class="toc-heading">T</h2><div>${inner}</div></div>`;
 const epubOf = (inner: string, extraManifest: Extra[] = []) =>
   ao3Epub({ files: [{ name: "x_split_001.xhtml", body: chapterOf(inner) }], extraManifest });
 
@@ -54,16 +57,52 @@ describe("07-sanitizing-and-images", () => {
     expect(html).toContain(`<div lang="en">div-text</div>`);
     expect(html).toContain(`<span lang="en">span-text</span>`);
     for (const tag of [
-      "p", "br", "hr", "em", "strong", "i", "b", "u", "s", "sub", "sup", "blockquote",
-      "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "dl", "dt", "dd",
-      "table", "thead", "tbody", "tr", "th", "td", "span", "div", "a", "img", "abbr", "small", "center",
+      "p",
+      "br",
+      "hr",
+      "em",
+      "strong",
+      "i",
+      "b",
+      "u",
+      "s",
+      "sub",
+      "sup",
+      "blockquote",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+      "ul",
+      "ol",
+      "li",
+      "dl",
+      "dt",
+      "dd",
+      "table",
+      "thead",
+      "tbody",
+      "tr",
+      "th",
+      "td",
+      "span",
+      "div",
+      "a",
+      "img",
+      "abbr",
+      "small",
+      "center",
     ]) {
       expect(html, tag).toMatch(new RegExp(`<${tag}[\\s>]`));
     }
   });
 
   it("Empty marker spans and divs are dropped", async () => {
-    const html = await chapterHtml(`<p>keep-1</p><div> </div><div></div><p>keep-2 <span>plain-span</span></p>`);
+    const html = await chapterHtml(
+      `<p>keep-1</p><div> </div><div></div><p>keep-2 <span>plain-span</span></p>`,
+    );
     const inside = html.replace(/^<div>/, "").replace(/<\/div>$/, ""); // the chapter's own wrapper div has content, so it stays
     expect(inside).not.toContain("<div");
     expect(inside).not.toContain("<span");
@@ -86,7 +125,17 @@ describe("07-sanitizing-and-images", () => {
     expect(html).toMatch(/<img [^>]*title="t2"/);
     expect(html).toMatch(/<td [^>]*colspan="2"/);
     expect(html).toMatch(/<td [^>]*rowspan="3"/);
-    for (const kept of ["href=", "src=", "alt=", "title=", "colspan=", "rowspan=", "dir=", "lang=", "align="]) {
+    for (const kept of [
+      "href=",
+      "src=",
+      "alt=",
+      "title=",
+      "colspan=",
+      "rowspan=",
+      "dir=",
+      "lang=",
+      "align=",
+    ]) {
       expect(html, kept).toContain(` ${kept}`);
     }
     expect(html).not.toMatch(/\sclass=/);
@@ -98,7 +147,13 @@ describe("07-sanitizing-and-images", () => {
     // embed is a void element in HTML, so it can hold no content to drop: it goes in empty.
     const tags = ["script", "style", "iframe", "object", "embed", "form", "svg", "math"];
     const body = tags
-      .map((tag, n) => `<p>keep-${n}</p>` + (tag === "embed" ? `<embed src="x.swf"/>` : `<${tag}>inner-${n}<b>child-${n}</b><p>para-${n}</p></${tag}>`))
+      .map(
+        (tag, n) =>
+          `<p>keep-${n}</p>` +
+          (tag === "embed"
+            ? `<embed src="x.swf"/>`
+            : `<${tag}>inner-${n}<b>child-${n}</b><p>para-${n}</p></${tag}>`),
+      )
       .join("\n");
     const html = await chapterHtml(body);
     for (const tag of tags) expect(html, tag).not.toMatch(new RegExp(`<${tag}`, "i"));
@@ -139,16 +194,24 @@ describe("07-sanitizing-and-images", () => {
   });
 
   it("Unknown wrapper elements are unwrapped", async () => {
-    const html = await chapterHtml(`<p>one <custom-box>words <custom-box>nested</custom-box></custom-box> <x:p>prefixed</x:p></p>`);
+    const html = await chapterHtml(
+      `<p>one <custom-box>words <custom-box>nested</custom-box></custom-box> <x:p>prefixed</x:p></p>`,
+    );
     expect(html).not.toMatch(/custom-box|<x:|x:p/);
     expect(html).toContain("words nested");
     expect(html).toContain("prefixed");
   });
 
   it("http and https links are kept with rel attributes", async () => {
-    const html = await chapterHtml(`<p><a href="https://example.org/">secure-link</a> <a href="http://example.org/plain">plain-link</a></p>`);
-    expect(html).toContain(`<a href="https://example.org/" rel="nofollow noopener noreferrer ugc">secure-link</a>`);
-    expect(html).toContain(`<a href="http://example.org/plain" rel="nofollow noopener noreferrer ugc">plain-link</a>`);
+    const html = await chapterHtml(
+      `<p><a href="https://example.org/">secure-link</a> <a href="http://example.org/plain">plain-link</a></p>`,
+    );
+    expect(html).toContain(
+      `<a href="https://example.org/" rel="nofollow noopener noreferrer ugc">secure-link</a>`,
+    );
+    expect(html).toContain(
+      `<a href="http://example.org/plain" rel="nofollow noopener noreferrer ugc">plain-link</a>`,
+    );
   });
 
   it("Other link schemes are removed", async () => {
@@ -172,10 +235,18 @@ describe("07-sanitizing-and-images", () => {
   it("Summary and notes are sanitized too", async () => {
     const payload = (m: string) =>
       `<p>keep-${m}</p><script>x('${m}')</script><p onclick="x('${m}')">onclick-${m}</p><p><a href="javascript:x('${m}')">link-${m}</a></p><style>p{display:none}</style><form><input name="f"/></form><p style="color:red">styled-${m}</p>`;
-    const work = await processEpub(ao3Epub({ summary: payload("sum"), notes: payload("note"), endNotes: payload("end") }));
-    for (const [field, m] of [[work.summaryHtml, "sum"], [work.notesHtml, "note"], [work.endNotesHtml, "end"]] as const) {
+    const work = await processEpub(
+      ao3Epub({ summary: payload("sum"), notes: payload("note"), endNotes: payload("end") }),
+    );
+    for (const [field, m] of [
+      [work.summaryHtml, "sum"],
+      [work.notesHtml, "note"],
+      [work.endNotesHtml, "end"],
+    ] as const) {
       expect(field, m).not.toBeNull();
-      expect(field).not.toMatch(/<script|<style|<form|<input|<img|<a[\s>]|javascript|style=|\son\w+\s*=|x\('/i);
+      expect(field).not.toMatch(
+        /<script|<style|<form|<input|<img|<a[\s>]|javascript|style=|\son\w+\s*=|x\('/i,
+      );
       expect(field).toContain(`keep-${m}`);
       expect(field).toContain(`link-${m}`);
       expect(field).toContain(`<p>onclick-${m}</p>`);
@@ -187,7 +258,11 @@ describe("07-sanitizing-and-images", () => {
     const received: ImageRef[] = [];
     const work = await processEpub(
       epubOf(`<p>fake <img src="images/cover.png"/></p><p>real <img src="images/p.png"/></p>`, [
-        { href: "images/cover.png", mediaType: "image/png", data: strToU8("<html><body>not an image</body></html>") },
+        {
+          href: "images/cover.png",
+          mediaType: "image/png",
+          data: strToU8("<html><body>not an image</body></html>"),
+        },
         PNG_MANIFEST,
       ]),
       { imageBase: IMAGE_BASE, onImage: (ref) => void received.push(ref) },
@@ -203,11 +278,15 @@ describe("07-sanitizing-and-images", () => {
     const big = pngOfSize(5 * MiB);
     const sizes: number[] = [];
     const work = await processEpub(
-      epubOf(`<p>big <img src="images/big.png" alt="big"/></p>`, [{ href: "images/big.png", mediaType: "image/png", data: big }]),
+      epubOf(`<p>big <img src="images/big.png" alt="big"/></p>`, [
+        { href: "images/big.png", mediaType: "image/png", data: big },
+      ]),
       { imageBase: IMAGE_BASE, onImage: (_ref, bytes) => void sizes.push(bytes.length) },
     );
     const key = await sha256Hex(big);
-    expect(work.images).toEqual([{ key, mediaType: "image/png", size: 5 * MiB, sourcePath: "images/big.png" }]);
+    expect(work.images).toEqual([
+      { key, mediaType: "image/png", size: 5 * MiB, sourcePath: "images/big.png" },
+    ]);
     expect(sizes).toEqual([5 * MiB]);
     expect(work.chapters[0]!.html).toContain(`<img src="${IMAGE_BASE}${key}"`);
   });
@@ -215,7 +294,9 @@ describe("07-sanitizing-and-images", () => {
   it("Image over 5 MB is not stored", async () => {
     const calls: number[] = [];
     const work = await processEpub(
-      epubOf(`<p>big <img src="images/big.png" alt="big"/></p>`, [{ href: "images/big.png", mediaType: "image/png", data: pngOfSize(5 * MiB + 1) }]),
+      epubOf(`<p>big <img src="images/big.png" alt="big"/></p>`, [
+        { href: "images/big.png", mediaType: "image/png", data: pngOfSize(5 * MiB + 1) },
+      ]),
       { imageBase: IMAGE_BASE, onImage: (_ref, bytes) => void calls.push(bytes.length) },
     );
     expect(work.images).toEqual([]);
@@ -230,7 +311,11 @@ describe("07-sanitizing-and-images", () => {
         `<link rel="stylesheet" href="styles/skin.css"/><style>@font-face { font-family: f; src: url(fonts/f.woff2) }</style>
 <div class="skin"><p class="skin">skin-text <img src="images/v.svg" alt="v"/> <img src="fonts/f.woff2" alt="f"/> <a href="styles/skin.css">css-link</a></p></div>`,
         [
-          { href: "images/v.svg", mediaType: "image/svg+xml", data: strToU8(`<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>`) },
+          {
+            href: "images/v.svg",
+            mediaType: "image/svg+xml",
+            data: strToU8(`<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>`),
+          },
           { href: "fonts/f.woff2", mediaType: "font/woff2", data: strToU8("wOF2fontbytes") },
           { href: "styles/skin.css", mediaType: "text/css", data: strToU8(".skin { color: red }") },
         ],
@@ -251,7 +336,10 @@ describe("07-sanitizing-and-images", () => {
 <form class="box" action="https://phish.example/login"><p>Session expired</p><input name="user"/><input type="password" name="pw"/><button>Log in again</button></form>
 <div style="position:fixed;top:0;left:0;width:100%;background:white"><p>Session expired, please sign in</p></div><p>after-box</p>`,
     );
-    expect(html).not.toMatch(/<form|<input|<button|<style|style=|position|phish\.example|Log in again/i);
-    for (const t of ["before-box", "after-box", "Session expired, please sign in"]) expect(html).toContain(t);
+    expect(html).not.toMatch(
+      /<form|<input|<button|<style|style=|position|phish\.example|Log in again/i,
+    );
+    for (const t of ["before-box", "after-box", "Session expired, please sign in"])
+      expect(html).toContain(t);
   });
 });

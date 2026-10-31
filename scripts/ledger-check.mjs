@@ -87,6 +87,8 @@ async function check() {
   const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
   const findings = [];
+  // `if_version` and `file_path` are added when the writes are batched, below.
+  /** @type {{ op: string, collection: string, doc_id: string, data?: object, group?: string, if_version?: unknown, file_path?: string }[]} */
   const writes = [];
   const say = (where, text) => findings.push(`${where}: ${text}`);
   const change = (collection, docId, data, why) => {
@@ -217,6 +219,7 @@ async function check() {
   const folded = new Map();
   for (const { id, ...stray } of strays) {
     const where = `log/${id}`;
+    // oxlint-disable-next-line deslop/no-runtime-typeof -- checks a field of the exported JSON before use
     const at = typeof stray.at === "string" ? stray.at : "";
     const day = DAY.test(at)
       ? at
@@ -257,7 +260,10 @@ async function check() {
   for (const line of findings) console.log(line);
 
   const versions = readJson(join(dir, "versions.json"), {});
-  const missing = writes.map((w) => `${w.collection}/${w.doc_id}`).filter((key) => !versions[key]);
+  const missing = writes.flatMap((w) => {
+    const key = `${w.collection}/${w.doc_id}`;
+    return versions[key] ? [] : [key];
+  });
   if (missing.length) {
     console.log(`versions.json has no version for ${missing.join(", ")}: add them and run again`);
     return 2;

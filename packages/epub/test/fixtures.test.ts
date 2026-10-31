@@ -23,6 +23,7 @@ interface Expected {
   opening: string;
 }
 
+// oxlint-disable-next-line deslop/no-known-value-widening -- each entry read as an Expected, by file name
 const EXPECTED: Record<string, Expected> = {
   "***REMOVED***": {
     workId: "***REMOVED***",
@@ -65,17 +66,24 @@ describe.skipIf(names.length === 0)("real AO3 fixtures (all present)", () => {
     expect(b).toEqual(a);
     expect(JSON.stringify(b)).toBe(JSON.stringify(a));
     expect(a.chapters.length).toBeGreaterThan(0);
-    for (const html of [a.summaryHtml, a.notesHtml, a.endNotesHtml, ...a.chapters.map((c) => c.html)]) {
+    for (const html of [
+      a.summaryHtml,
+      a.notesHtml,
+      a.endNotesHtml,
+      ...a.chapters.map((c) => c.html),
+    ]) {
       if (html !== null) expectClean(html);
     }
     // Recorded for the report: our word count vs AO3's.
-    console.log(`${name}: AO3 words ${a.stats.words}, counted ${a.chapters.reduce((n, c) => n + c.words, 0)}`);
+    console.log(
+      `${name}: AO3 words ${a.stats.words}, counted ${a.chapters.reduce((n, c) => n + c.words, 0)}`,
+    );
   });
 });
 
 for (const [name, want] of Object.entries(EXPECTED)) {
   describe.skipIf(!(name in fixtures))(`fixture ${name}`, () => {
-    let work: ParsedWork;
+    let work: ParsedWork | undefined;
     const load = async () => (work ??= await processEpub(fromBase64(fixtures[name]!)));
 
     it("reads the preface metadata", async () => {

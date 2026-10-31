@@ -1,4 +1,14 @@
-import { cleanText, find, findAll, hasClass, idOf, isBlankText, walk, type ElementNode, type Node } from "./dom";
+import {
+  cleanText,
+  find,
+  findAll,
+  hasClass,
+  idOf,
+  isBlankText,
+  walk,
+  type ElementNode,
+  type Node,
+} from "./dom";
 import type { NavPoint } from "./package";
 import { regionsById } from "./preface";
 
@@ -49,7 +59,12 @@ function firstReaching(nodes: readonly Node[], lo: number): number {
 }
 
 /** Calls `f` for each of `nodes` that overlaps [lo, hi), without visiting the others. */
-function eachInRange(nodes: readonly Node[], lo: number, hi: number, f: (n: Node) => void): void {
+function eachInRange<N extends Node>(
+  nodes: readonly N[],
+  lo: number,
+  hi: number,
+  f: (n: N) => void,
+): void {
   for (let i = firstReaching(nodes, lo); i < nodes.length && nodes[i]!.pos < hi; i++) f(nodes[i]!);
 }
 
@@ -57,13 +72,16 @@ function eachInRange(nodes: readonly Node[], lo: number, hi: number, f: (n: Node
 function cloneRange(node: Node, lo: number, hi: number, parent: ElementNode | null): Node {
   if (node.type === "text") return { ...node, parent };
   const copy: ElementNode = { ...node, attrs: { ...node.attrs }, children: [], parent };
-  eachInRange(node.children, lo, hi, (child) => copy.children.push(cloneRange(child, lo, hi, copy)));
+  eachInRange(node.children, lo, hi, (child) =>
+    copy.children.push(cloneRange(child, lo, hi, copy)),
+  );
   return copy;
 }
 
 /** Removes the chapter heading if it comes before any text; returns its text. */
 function takeLeadingHeading(nodes: Node[]): string | null {
-  let heading: ElementNode | null = null;
+  // SAFETY: widens the initial null, so TS doesn't read it as null after visit has run.
+  let heading = null as ElementNode | null;
   let blocked = false;
   const visit = (n: Node) => {
     if (heading || blocked) return;
@@ -100,7 +118,11 @@ function idIndex(root: ElementNode): Map<string, ElementNode> {
   return out;
 }
 
-function startsFromToc(docs: SpineDoc[], perDoc: Map<SpineDoc, ElementNode[]>, navPoints: NavPoint[]): Start[] | null {
+function startsFromToc(
+  docs: SpineDoc[],
+  perDoc: Map<SpineDoc, ElementNode[]>,
+  navPoints: NavPoint[],
+): Start[] | null {
   const byPath = new Map(docs.map((d) => [d.path, d]));
   const ids = new Map<SpineDoc, Map<string, ElementNode>>();
   const regionSet = new Set([...perDoc.values()].flat());
@@ -148,13 +170,16 @@ function startsFromHeadings(regions: ElementNode[]): Start[] | null {
 function rangeContent(scopes: ElementNode[], lo: number, hi: number): Node[] {
   const out: Node[] = [];
   eachInRange(scopes, lo, hi, (scope) => {
-    eachInRange((scope as ElementNode).children, lo, hi, (child) => out.push(cloneRange(child, lo, hi, null)));
+    eachInRange(scope.children, lo, hi, (child) => out.push(cloneRange(child, lo, hi, null)));
   });
   return out;
 }
 
 function hasText(nodes: Node[]): boolean {
-  return nodes.some((n) => cleanText(n) !== "" || (n.type === "element" && find(n, (e) => e.tag === "img") !== null));
+  return nodes.some(
+    (n) =>
+      cleanText(n) !== "" || (n.type === "element" && find(n, (e) => e.tag === "img") !== null),
+  );
 }
 
 function* build(scopes: ElementNode[], starts: Start[]): Generator<RawChapter> {
@@ -166,10 +191,16 @@ function* build(scopes: ElementNode[], starts: Start[]): Generator<RawChapter> {
   }
 }
 
-function* perFile(docs: SpineDoc[], perDoc: Map<SpineDoc, ElementNode[]>, hasRegions: boolean): Generator<RawChapter> {
+function* perFile(
+  docs: SpineDoc[],
+  perDoc: Map<SpineDoc, ElementNode[]>,
+  hasRegions: boolean,
+): Generator<RawChapter> {
   let n = 0;
   for (const doc of docs) {
-    const scopes = hasRegions ? perDoc.get(doc)! : [find(doc.root, (el) => el.tag === "body") ?? doc.root];
+    const scopes = hasRegions
+      ? perDoc.get(doc)!
+      : [find(doc.root, (el) => el.tag === "body") ?? doc.root];
     const nodes = rangeContent(scopes, 0, Number.POSITIVE_INFINITY);
     if (!hasText(nodes)) continue;
     const heading = takeLeadingHeading(nodes);
@@ -178,9 +209,16 @@ function* perFile(docs: SpineDoc[], perDoc: Map<SpineDoc, ElementNode[]>, hasReg
   }
 }
 
-function split(regions: ElementNode[], starts: Start[], method: "toc" | "headings", reviewReasons: string[]): ChapterSplit {
+function split(
+  regions: ElementNode[],
+  starts: Start[],
+  method: "toc" | "headings",
+  reviewReasons: string[],
+): ChapterSplit {
   if (hasText(rangeContent(regions, 0, starts[0]!.pos))) {
-    reviewReasons.push("content_before_first_chapter: text in #chapters before the first chapter start");
+    reviewReasons.push(
+      "content_before_first_chapter: text in #chapters before the first chapter start",
+    );
   }
   return { chapters: build(regions, starts), method, reviewReasons };
 }
