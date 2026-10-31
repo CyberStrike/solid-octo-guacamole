@@ -44,13 +44,53 @@ export default {
 };
 `;
 
-// Two projects (/tdd, Rules of the loop). Pure logic, such as the Turnstile
-// verifier and the `next` reduction, runs in Node. The Worker's HTTP surface
-// runs in workerd, through exports.default.fetch.
+/**
+ * The Worker in workerd, as wrangler.jsonc deploys it, with `bindings` over its
+ * own. The entry, compatibility date and bindings come from wrangler.jsonc, so
+ * the tests run the config that deploys. Postgres is the one the global setup
+ * starts, reached through a local Hyperdrive as in production.
+ */
+const worker = (bindings: Record<string, string> = {}) =>
+  cloudflareTest(({ inject }) => ({
+    wrangler: { configPath: "./wrangler.jsonc" },
+    miniflare: {
+      hyperdrives: { HYPERDRIVE: inject("databaseUrl") },
+      outboundService: outbound,
+      bindings: {
+        // Throwaway test values, not credentials.
+        BETTER_AUTH_SECRET: "test-only-auth-value-not-used-anywhere-else",
+        TURNSTILE_SECRET_KEY,
+        ...bindings,
+      },
+      serviceBindings: { EMAIL_SINK: "email-sink" },
+      workers: [
+        {
+          name: "email-sink",
+          modules: true,
+          script: EMAIL_SINK,
+          compatibilityDate: "2026-08-01",
+          queueConsumers: { email: { maxBatchSize: 1, maxBatchTimeout: 0 } },
+        },
+      ],
+    },
+  }));
+
+// What every workerd project shares. A project doesn't inherit the root's
+// timeouts; the first request loads Better Auth.
+const workerd = {
+  globalSetup: ["./test/global-setup.ts"],
+  testTimeout: 60_000,
+  hookTimeout: 60_000,
+};
+
+// Three projects. Pure logic, such as the Turnstile verifier and the `next`
+// reduction, runs in Node (/tdd, Rules of the loop). The Worker's HTTP surface
+// runs in workerd, through exports.default.fetch: `open` with PRELAUNCH off, and
+// `prelaunch` exactly as wrangler.jsonc deploys it.
 export default defineConfig({
   // The plugin resolves a module workerd asks it for through this root config's
-  // SSR environment, not the workers project's: pg's require of pg-cloudflare
-  // needs the plugin's conditions here too. The node project doesn't inherit them.
+  // SSR environment, not a project's: pg's require of pg-cloudflare needs the
+  // plugin's conditions here too. The node project doesn't inherit them.
   ssr: { resolve: { conditions: ["workerd", "worker", "module", "browser"] } },
   test: {
     projects: [
@@ -62,41 +102,22 @@ export default defineConfig({
         },
       },
       {
-        plugins: [
-          // The entry, compatibility date and bindings come from wrangler.jsonc, so
-          // the tests run the config that deploys. Postgres is the one the global
-          // setup starts, reached through a local Hyperdrive as in production.
-          cloudflareTest(({ inject }) => ({
-            wrangler: { configPath: "./wrangler.jsonc" },
-            miniflare: {
-              hyperdrives: { HYPERDRIVE: inject("databaseUrl") },
-              outboundService: outbound,
-              bindings: {
-                // Throwaway test values, not credentials.
-                BETTER_AUTH_SECRET: "test-only-auth-value-not-used-anywhere-else",
-                TURNSTILE_SECRET_KEY,
-              },
-              serviceBindings: { EMAIL_SINK: "email-sink" },
-              workers: [
-                {
-                  name: "email-sink",
-                  modules: true,
-                  script: EMAIL_SINK,
-                  compatibilityDate: "2026-08-01",
-                  queueConsumers: { email: { maxBatchSize: 1, maxBatchTimeout: 0 } },
-                },
-              ],
-            },
-          })),
-        ],
+        // The archive open: wrangler.jsonc with PRELAUNCH turned off. Other vars are kept.
+        plugins: [worker({ PRELAUNCH: "off" })],
         test: {
-          name: "workers",
+          name: "open",
           include: ["test/**/*.test.ts"],
-          exclude: ["test/**/*.node.test.ts"],
-          globalSetup: ["./test/global-setup.ts"],
-          // A project doesn't inherit the root's timeouts. The first request loads Better Auth.
-          testTimeout: 60_000,
-          hookTimeout: 60_000,
+          exclude: ["test/**/*.node.test.ts", "test/**/*.prelaunch.test.ts"],
+          ...workerd,
+        },
+      },
+      {
+        // Before launch: wrangler.jsonc exactly as it deploys.
+        plugins: [worker()],
+        test: {
+          name: "prelaunch",
+          include: ["test/**/*.prelaunch.test.ts"],
+          ...workerd,
         },
       },
     ],

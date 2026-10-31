@@ -2,7 +2,7 @@ import { createDb } from "@archive/db";
 import { isAPIError } from "better-auth/api";
 import type { Context } from "hono";
 import { makeAuth } from "./auth";
-import type { Env } from "./env";
+import type { Bindings } from "./env";
 import { checkEmailPage, forbiddenPage, signInPage } from "./pages";
 import type { SecurityVariables } from "./security";
 import { isSameOrigin, safeNext } from "./signin";
@@ -11,7 +11,7 @@ import { verifyTurnstile } from "./turnstile";
 // The longest address an email can be sent to (RFC 5321), as apps/mailer checks.
 const MAX_EMAIL = 254;
 
-type LoginContext = Context<{ Bindings: Env; Variables: SecurityVariables }>;
+type LoginContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
 
 /** `GET /login`: the sign-in form, carrying the page to come back to. */
 export const showSignIn = (c: LoginContext) =>

@@ -115,7 +115,8 @@ work_versions(id, work_id, upload_id, chapter_count, r2_prefix, created_at,
               checked_at NULL)        -- set when a moderator approves the version
 chapters     (work_id, version_id, n, title, words, r2_key)
 tags         (id, type, name, name_norm) -- type: fandom|relationship|character|freeform|warning|category|rating
-work_tags    (work_id, tag_id)
+work_tags    (work_id, tag_id,
+              position)  -- the tag's place in the work's tags, in the author's order
 uploads      (id, user_id, r2_key, sha256, bytes, status, lease_until,
               error_stage, error, work_id NULL, created_at)
 reports      (id, work_id, reporter_id, kind, body, status, created_at)  -- reporting needs an account;
@@ -151,8 +152,11 @@ re-uploads are caught at `/complete` by the file's SHA-256: the upload is marked
 
 **Tags.** AO3's tag wrangling (canonical tags and synonyms) can't be rebuilt in
 a week. Store tags exactly as written, plus a normalized form (`name_norm`:
-lowercased, whitespace and punctuation folded) used for matching. Moderators can
-merge synonyms later.
+in Unicode NFKC, lowercased, whitespace and punctuation folded) used for matching. Moderators can
+merge synonyms later. Relationship tags keep `/` and `&` when `name_norm` is
+computed, so "Kirk/Spock" and "Kirk & Spock" are different tags (whitespace
+and punctuation beside them still fold away, so "Kirk / Spock" matches
+"Kirk/Spock"); other tag types fold them like any punctuation.
 
 **Pseuds.** Opt-outs match on `pseud_norm`: the pseud in Unicode NFKC,
 case-folded, with leading and trailing whitespace trimmed and inner runs of

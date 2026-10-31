@@ -1,7 +1,9 @@
 import { createDb } from "@archive/db";
+import { createExecutionContext } from "cloudflare:test";
 import { env, exports } from "cloudflare:workers";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { parseMessage, type EmailMessage } from "../../mailer/src/message";
+import app from "../src/index";
 
 const BASE = "https://rarepair.fans";
 // SAFETY: the default export is the Worker under test, loaded from wrangler.jsonc's main.
@@ -325,5 +327,41 @@ describe("19-surge-controls-and-quotas", () => {
     expect(formTag(html)).not.toBeNull();
     expect(html).toContain('<p role="alert">');
     await expectNothingCreated("surge-turnstile@example.test", before);
+  });
+});
+
+describe("Sign-in failures", () => {
+  it("A failing sign-in request logs no address", async () => {
+    // The same app with a database nothing listens on: Better Auth's insert fails.
+    const unreachable = {
+      ...env,
+      HYPERDRIVE: { ...env.HYPERDRIVE, connectionString: "postgresql://u:p@127.0.0.1:9/none" },
+    };
+    const logged: unknown[][] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args) => {
+      logged.push(args);
+    });
+    try {
+      const request = new Request(`${BASE}/login`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          origin: BASE,
+          "sec-fetch-site": "same-origin",
+        },
+        body: new URLSearchParams({
+          email: "logged-nowhere@example.test",
+          "cf-turnstile-response": PASSING_TOKEN,
+        }).toString(),
+      });
+      const res = await app.fetch(request, unreachable, createExecutionContext());
+      expect(res.status).toBe(500);
+      expect(logged.length).toBeGreaterThan(0);
+      expect(JSON.stringify(logged.map((args) => args.map(String)))).not.toContain(
+        "logged-nowhere",
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

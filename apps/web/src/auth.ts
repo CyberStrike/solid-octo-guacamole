@@ -2,7 +2,7 @@ import { authSchema, type Database } from "@archive/db";
 import { betterAuth } from "better-auth";
 import { magicLink } from "better-auth/plugins";
 import type { Kysely } from "kysely";
-import type { Env } from "./env";
+import type { Bindings } from "./env";
 import { LINK_LIFETIME_MINUTES, SITE } from "./signin";
 
 /**
@@ -11,7 +11,7 @@ import { LINK_LIFETIME_MINUTES, SITE } from "./signin";
  * (ARCHITECTURE, Auth). Our routes call `auth.api.*`; `auth.handler`, with
  * Better Auth's own JSON endpoints, is not mounted.
  */
-export function makeAuth(env: Env, db: Kysely<Database>) {
+export function makeAuth(env: Bindings, db: Kysely<Database>) {
   return betterAuth({
     ...authSchema,
     // Fixed, never the request's host: sign-in links always go to rarepair.fans.

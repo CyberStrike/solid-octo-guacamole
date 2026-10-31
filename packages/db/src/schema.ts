@@ -73,10 +73,128 @@ export interface RateLimitTable {
   last_request: ColumnType<string, number | string, number | string>;
 }
 
+export type WorkStatus = "processing" | "live" | "hidden" | "removed";
+export type HiddenCause = "removal_request" | "reports" | "moderator";
+export type TagType =
+  | "fandom"
+  | "relationship"
+  | "character"
+  | "freeform"
+  | "warning"
+  | "category"
+  | "rating";
+/** The pipeline's statuses, then the rejection codes (ARCHITECTURE, Ingestion pipeline). */
+export type UploadStatus =
+  | "pending"
+  | "processing"
+  | "live"
+  | "held_for_review"
+  | "duplicate"
+  | "not_epub"
+  | "zip_bomb"
+  | "too_large"
+  | "not_ao3"
+  | "opted_out"
+  | "parse_failed";
+
+export interface WorkTable {
+  id: Generated<string>;
+  /** The URL key. */
+  ao3_work_id: number;
+  title: string;
+  summary_html: string | null;
+  rating: string | null;
+  language: string | null;
+  words: number | null;
+  chapters_count: number;
+  complete: boolean;
+  /** AO3's dates for the work, not the row's. */
+  published_at: Timestamp | null;
+  updated_at: Timestamp | null;
+  status: ColumnType<WorkStatus, WorkStatus | undefined, WorkStatus>;
+  /** Set while, and only while, the work is hidden. */
+  hidden_cause: HiddenCause | null;
+  /** NULL only while the first version is being written. */
+  current_version_id: string | null;
+  /** Preface labels the parser doesn't understand yet. Write it with `JSON.stringify`. */
+  raw_meta: ColumnType<Record<string, string>, string | undefined, string>;
+  /** Filled by search, not here. */
+  search: string | null;
+}
+
+export interface WorkAuthorTable {
+  work_id: string;
+  pseud: string;
+  /** NULL for an anonymous work, or a byline with no user link. */
+  ao3_user: string | null;
+}
+
+export interface WorkVersionTable {
+  id: Generated<string>;
+  work_id: string;
+  upload_id: string;
+  chapter_count: number;
+  /** `works/<ao3_work_id>/<upload_id>/`, with the trailing slash. */
+  r2_prefix: string;
+  created_at: CreatedTimestamp;
+  /** From the parser. Non-empty, with `checked_at` still NULL, shows the "may be imperfect" notice. */
+  review_reasons: ColumnType<string[], string[] | undefined, string[]>;
+  /** Set when a moderator approves the version. */
+  checked_at: Timestamp | null;
+}
+
+export interface ChapterTable {
+  work_id: string;
+  version_id: string;
+  n: number;
+  title: string;
+  words: number;
+  /** The fragment's whole R2 key. Readers use it as is. */
+  r2_key: string;
+}
+
+export interface TagTable {
+  id: Generated<string>;
+  type: TagType;
+  /** Exactly as written. */
+  name: string;
+  /** `normalizeTagName(type, name)`, used for matching. */
+  name_norm: string;
+}
+
+export interface WorkTagTable {
+  work_id: string;
+  tag_id: string;
+  /** The tag's place in the work's tags, in the author's order. */
+  position: number;
+}
+
+export interface UploadTable {
+  id: Generated<string>;
+  user_id: string;
+  r2_key: string;
+  /** NULL until `/complete` hashes the file. */
+  sha256: string | null;
+  bytes: number;
+  status: ColumnType<UploadStatus, UploadStatus | undefined, UploadStatus>;
+  lease_until: Timestamp | null;
+  error_stage: string | null;
+  error: string | null;
+  work_id: string | null;
+  created_at: CreatedTimestamp;
+}
+
 export interface Database {
   user: UserTable;
   session: SessionTable;
   account: AccountTable;
   verification: VerificationTable;
+  works: WorkTable;
+  work_authors: WorkAuthorTable;
+  work_versions: WorkVersionTable;
+  chapters: ChapterTable;
+  tags: TagTable;
+  work_tags: WorkTagTable;
+  uploads: UploadTable;
   rateLimit: RateLimitTable;
 }

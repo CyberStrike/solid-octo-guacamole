@@ -1,9 +1,11 @@
-// The Worker's bindings, typed for `env` from cloudflare:workers.
-type WebEnv = import("../src/env").Env;
+import type { Bindings } from "../src/env";
 
-declare namespace Cloudflare {
-  interface Env extends WebEnv {
-    /** Test only: what the `email` queue delivered, from vitest.config.ts's email-sink. */
-    EMAIL_SINK: Fetcher;
+// The env the tests see from cloudflare:workers: the Worker's own bindings (wrangler.jsonc).
+declare global {
+  namespace Cloudflare {
+    interface Env extends Bindings {
+      /** Test only: what the `email` queue delivered, from vitest.config.ts's email-sink. */
+      EMAIL_SINK: Fetcher;
+    }
   }
 }

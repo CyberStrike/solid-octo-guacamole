@@ -1,0 +1,88 @@
+/* The wait list pages' stylesheet, loaded after the site's (src/styles.ts). It sets
+   the web fonts: text and headings in Fraunces, the form's labels and button in
+   IBM Plex Mono. The site's palette, type scale, column and chrome stay as they are,
+   and the form rules apply only inside .waitlist.
+   Draft look, drafted from the spec without a canvas.
+   Its name carries the first 16 hex of its SHA-256: rename it after every edit. */
+
+@font-face {
+  font-family: "Fraunces";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/assets/waitlist/fonts/fraunces/fraunces.25e420d8c154303e.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/assets/waitlist/fonts/ibm-plex-mono/ibm-plex-mono-400.ba204497f16b6d33.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/assets/waitlist/fonts/ibm-plex-mono/ibm-plex-mono-500.33faf307fa6031fb.woff2")
+    format("woff2");
+}
+
+body {
+  font-family: "Fraunces", Georgia, serif;
+}
+
+h1,
+h2 {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 600;
+}
+
+.waitlist {
+  display: grid;
+  gap: calc(var(--space) * 3);
+  max-width: 34rem;
+  margin: calc(var(--space) * 8) 0;
+}
+
+.waitlist label,
+.waitlist button {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.02em;
+}
+
+.waitlist label {
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.waitlist input {
+  font: inherit;
+  padding: calc(var(--space) * 2) calc(var(--space) * 3);
+  border: 1px solid var(--muted);
+  border-radius: var(--space);
+  background: transparent;
+  color: inherit;
+}
+
+.waitlist button {
+  justify-self: start;
+  font-weight: 500;
+  border: 0;
+  border-radius: var(--space);
+  background: var(--accent);
+  color: var(--paper);
+  cursor: pointer;
+}
+
+.waitlist button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.note {
+  color: var(--muted);
+}
