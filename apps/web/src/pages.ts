@@ -5,6 +5,7 @@
 import { TURNSTILE_ORIGIN } from "./security";
 import { LINK_LIFETIME_MINUTES } from "./signin";
 import { STYLESHEET_PATH } from "./styles";
+import { EPUB_TYPE, MAX_UPLOAD_MB } from "./upload-limit";
 
 export const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
@@ -153,8 +154,8 @@ export const uploadPage = (nonce: string, siteKey: string) =>
     "Upload a work",
     `<noscript><p>Uploading needs JavaScript, for its anti-spam check and to send the file. Reading works without it.</p></noscript>
 <div id="upload" hidden>
-<label for="file">The work's EPUB file, 25 MB at most</label>
-<input id="file" type="file" name="file" accept=".epub,application/epub+zip">
+<label for="file">The work's EPUB file, ${MAX_UPLOAD_MB} MB at most</label>
+<input id="file" type="file" name="file" accept=".epub,${EPUB_TYPE}">
 <div class="cf-turnstile" data-sitekey="${escapeHtml(siteKey)}"></div>
 <button type="button">Upload</button>
 </div>

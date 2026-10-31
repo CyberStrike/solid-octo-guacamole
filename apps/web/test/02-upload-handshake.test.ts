@@ -157,10 +157,10 @@ describe("02-upload-handshake", () => {
 
   it("A declared size that is not a positive whole number is refused", async () => {
     const { userId, cookie } = await signIn("u1-bad-size@example.test");
-    for (const size of [undefined, "", "abc", "-1", "0", "1.5", "1e3", " 12", "0x10"]) {
-      const token = { "cf-turnstile-response": PASSING_TOKEN };
-      const res = await requestUpload(size === undefined ? token : { ...token, size }, { cookie });
-      await expectRefused(res, 400);
+    const token = { "cf-turnstile-response": PASSING_TOKEN };
+    await expectRefused(await requestUpload(token, { cookie }), 400);
+    for (const size of ["", "abc", "-1", "0", "1.5", "1e3", " 12", "0x10"]) {
+      await expectRefused(await requestUpload({ ...token, size }, { cookie }), 400);
     }
     expect(await uploadsOf(userId)).toEqual([]);
   });
@@ -173,7 +173,7 @@ describe("02-upload-handshake", () => {
       { origin: "https://www.rarepair.fans", "sec-fetch-site": "same-site" },
     ]) {
       const res = await requestUpload(fields, { cookie, ...headers });
-      expect(res.status).toBe(403);
+      await expectRefused(res, 403);
     }
     expect(await uploadsOf(userId)).toEqual([]);
   });

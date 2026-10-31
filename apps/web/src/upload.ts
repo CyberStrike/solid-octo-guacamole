@@ -1,14 +1,14 @@
 import { createDb, insertUpload } from "@archive/db";
-import type { Context } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import type { Bindings } from "./env";
 import { readForm } from "./login";
-import { forbiddenPage, uploadPage } from "./pages";
+import { uploadPage } from "./pages";
 import { presignPut } from "./presign";
 import type { SecurityVariables } from "./security";
 import type { SessionVariables } from "./session";
 import { isSameOrigin } from "./signin";
 import { verifyTurnstile } from "./turnstile";
-import { MAX_UPLOAD_BYTES } from "./upload-limit";
+import { EPUB_TYPE, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "./upload-limit";
 
 // ARCHITECTURE, Ingestion pipeline, step 1. The upload page's script calls
 // `POST /uploads` once per file, with a fresh Turnstile token each time, and PUTs
@@ -19,15 +19,15 @@ type UploadContext = Context<{
   Variables: SecurityVariables & SessionVariables;
 }>;
 
-/** The one type a presigned URL accepts (ARCHITECTURE, Ingestion pipeline). */
-export const EPUB_TYPE = "application/epub+zip";
-
-/** How long a presigned URL works: 10 minutes. */
-export const UPLOAD_URL_SECONDS = 600;
+// How long a presigned URL works: 10 minutes.
+const UPLOAD_URL_SECONDS = 600;
 
 // A declared size in bytes, as the plain decimal form only: Number() alone also
 // reads "0x10", "1e3" and " 12". No empty epub exists, so zero isn't one either.
 const SIZE = /^[1-9][0-9]*$/;
+
+// No cache keeps a reply: a URL in one can write to the bucket.
+const NO_STORE = { "Cache-Control": "no-store" };
 
 /** `GET /upload`: the upload page, or sign in first and come back. */
 export const showUpload = (c: UploadContext) =>
@@ -36,16 +36,25 @@ export const showUpload = (c: UploadContext) =>
     : c.html(uploadPage(c.get("nonce"), c.env.TURNSTILE_SITE_KEY));
 
 /**
+ * Refuses a `POST /uploads` from anywhere but a page on the site, with a JSON 403.
+ * It runs before the session middleware, so a refused request costs no lookup.
+ */
+export const sameOriginUpload: MiddlewareHandler = async (c, next) => {
+  if (!isSameOrigin(c.req.raw.headers)) {
+    return c.json({ error: "That request didn't come from rarepair." }, 403, NO_STORE);
+  }
+  await next();
+};
+
+/**
  * `POST /uploads`: an `uploads` row and a presigned PUT URL for it, as JSON
  * `{ id, url }`, or `{ error }` for the page to show. The body is a plain form:
  * `size`, the declared bytes, and `cf-turnstile-response`.
  */
 export async function requestUpload(c: UploadContext) {
-  // No cache keeps a reply: a URL in one can write to the bucket.
   const refuse = (status: 400 | 401 | 413 | 503, error: string) =>
-    c.json({ error }, status, { "Cache-Control": "no-store" });
+    c.json({ error }, status, NO_STORE);
 
-  if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
   // A script can't follow a sign-in redirect, so it gets a 401 to act on.
   const user = c.var.session?.user;
   if (user === undefined) return refuse(401, "Sign in to upload.");
@@ -53,6 +62,16 @@ export async function requestUpload(c: UploadContext) {
 
   const form = await readForm(c.req.raw);
   if (form === null) return refuse(413, "That request was too large. Please try again.");
+
+  // Before Turnstile, so a size that can't pass spends no token and no siteverify call.
+  const size = form.get("size") ?? "";
+  if (!SIZE.test(size)) {
+    return refuse(400, "The file's size is missing or not a whole number. Please try again.");
+  }
+  const bytes = Number(size);
+  if (bytes > MAX_UPLOAD_BYTES) {
+    return refuse(413, `That file is over the ${MAX_UPLOAD_MB} MB limit, so it can't be uploaded.`);
+  }
 
   const turnstile = await verifyTurnstile(form.get("cf-turnstile-response"), {
     secret: c.env.TURNSTILE_SECRET_KEY,
@@ -68,14 +87,7 @@ export async function requestUpload(c: UploadContext) {
       "The anti-spam check is not answering just now. Please try again in a minute.",
     );
   }
-
-  const size = form.get("size") ?? "";
-  if (!SIZE.test(size)) return refuse(400, "The file's size is missing. Please try again.");
-  const bytes = Number(size);
-  if (bytes > MAX_UPLOAD_BYTES) {
-    return refuse(413, "That file is over the 25 MB limit, so it can't be uploaded.");
-  }
-  // U4: the daily upload quota goes here, after the size is known.
+  // U4: the daily upload quota goes here, after the size and Turnstile.
 
   // The key is ours alone: nothing in it comes from the request.
   const id = crypto.randomUUID();
@@ -91,11 +103,12 @@ export async function requestUpload(c: UploadContext) {
     expiresSeconds: UPLOAD_URL_SECONDS,
     now: new Date(),
   });
-  const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
+  // One query, so one connection.
+  const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   try {
     await insertUpload(db, { id, userId: user.id, r2Key: key, bytes });
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }
-  return c.json({ id, url }, 200, { "Cache-Control": "no-store" });
+  return c.json({ id, url }, 200, NO_STORE);
 }

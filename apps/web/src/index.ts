@@ -14,7 +14,7 @@ import {
 } from "./security";
 import { sessionMiddleware } from "./session";
 import { STYLESHEET, STYLESHEET_PATH } from "./styles";
-import { requestUpload, showUpload } from "./upload";
+import { requestUpload, sameOriginUpload, showUpload } from "./upload";
 import { joinWaitlist } from "./waitlist";
 import { comingSoonPage } from "./waitlist-pages";
 import { showWork } from "./work-page";
@@ -47,7 +47,7 @@ app.post("/waitlist", joinWaitlist);
 app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));
 // The session middleware runs on these two routes only, until A4 mounts it on every page.
 app.get("/upload", sessionMiddleware, showUpload);
-app.post("/uploads", sessionMiddleware, requestUpload);
+app.post("/uploads", sameOriginUpload, sessionMiddleware, requestUpload);
 app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce"))));
 
 // The reader. Closed before launch, like every /works/ page.
