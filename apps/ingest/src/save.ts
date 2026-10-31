@@ -89,9 +89,7 @@ async function writeRows(
       chapters_count: work.chapters.length,
       chapters_total: total,
       complete:
-        work.stats.completed !== null ||
-        (work.stats.chapters.total !== null &&
-          work.stats.chapters.total === work.stats.chapters.posted),
+        work.stats.completed !== null || work.stats.chapters.total === work.stats.chapters.posted,
       published_at: dateOrNull(work.stats.published),
       updated_at:
         dateOrNull(work.stats.updated) ??
@@ -121,24 +119,42 @@ async function writeRows(
       .execute();
   }
 
-  // Upserted in the shared lock order, so concurrent ingests sharing tags can't deadlock.
-  const tags = uniqueBy(tagsOf(work), (t) => JSON.stringify([t.type, t.name]))
-    .map((tag, position) => ({ ...tag, position }))
-    .sort(compareTagKeys);
-  for (const tag of tags) {
-    const { id } = await trx
+  // A tag given twice keeps its first place.
+  const tagKey = (t: { type: TagType; name: string }) => JSON.stringify([t.type, t.name]);
+  const tags = uniqueBy(tagsOf(work), tagKey).map((tag, position) => ({ ...tag, position }));
+  if (tags.length > 0) {
+    // One statement, its rows in the shared lock order (Postgres takes them in VALUES order),
+    // so concurrent ingests sharing tags can't deadlock. The update makes RETURNING give an
+    // existing tag's id, and brings its `name_norm` up to the rule.
+    const rows = await trx
       .insertInto("tags")
-      .values({ type: tag.type, name: tag.name, name_norm: normalizeTagName(tag.type, tag.name) })
+      .values(
+        tags
+          .slice()
+          .sort(compareTagKeys)
+          .map((t) => ({
+            type: t.type,
+            name: t.name,
+            name_norm: normalizeTagName(t.type, t.name),
+          })),
+      )
       .onConflict((oc) =>
         oc
           .columns(["type", "name"])
           .doUpdateSet((eb) => ({ name_norm: eb.ref("excluded.name_norm") })),
       )
-      .returning("id")
-      .executeTakeFirstOrThrow();
+      .returning(["id", "type", "name"])
+      .execute();
+    const ids = new Map(rows.map((r) => [tagKey(r), r.id]));
+    const idOf = (t: { type: TagType; name: string }) => {
+      const id = ids.get(tagKey(t));
+      // Every row inserted or updated is returned: a miss is a bug here, not a bad file.
+      if (id === undefined) throw new Error("an upserted tag was not returned");
+      return id;
+    };
     await trx
       .insertInto("work_tags")
-      .values({ work_id: workId, tag_id: id, position: tag.position })
+      .values(tags.map((t) => ({ work_id: workId, tag_id: idOf(t), position: t.position })))
       .execute();
   }
 
@@ -168,13 +184,12 @@ async function writeRows(
     )
     .execute();
 
+  // The work's last write: it goes `live` with its version current.
   await trx
     .updateTable("works")
-    .set({ current_version_id: version.id })
+    .set({ current_version_id: version.id, status: "live" })
     .where("id", "=", workId)
     .execute();
-  // Last of the work's writes: readers see it only once its version is current.
-  await trx.updateTable("works").set({ status: "live" }).where("id", "=", workId).execute();
   // Fenced on the lease, as every ending write is: a job that lost its upload publishes
   // nothing, and the job that took it over records the outcome.
   const upload = await trx
@@ -190,8 +205,10 @@ async function writeRows(
 
 /** The AO3 work ID as the `works` key, an int4. A file whose ID doesn't fit is refused. */
 function workIdOf(work: ParsedWork): number {
-  const id = /^[1-9]\d{0,9}$/.test(work.ao3WorkId) ? Number(work.ao3WorkId) : 0;
-  if (id < 1 || id > MAX_INT4) throw new SaveRejected("bad_work_id");
+  const id = Number(work.ao3WorkId);
+  if (!/^[1-9]\d{0,9}$/.test(work.ao3WorkId) || id > MAX_INT4) {
+    throw new SaveRejected("bad_work_id");
+  }
   return id;
 }
 

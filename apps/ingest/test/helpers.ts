@@ -130,15 +130,21 @@ export function watchedWorker(steps: Partial<Steps> = {}) {
 /** An AO3 work ID no other test uses: one database serves every file, and works are keyed by it. */
 export const newWorkId = () => 1 + Math.floor(Math.random() * 2_000_000_000);
 
-/** The bucket step: the real bucket, with a `put` of `key` that fails as R2 down would. */
-export const failingPut =
-  (key: string): NonNullable<Steps["bucket"]> =>
+/** The bucket step: the real bucket, running `hook` with each key before its `put`. */
+export const beforePut =
+  (hook: (key: string) => Promise<void>): NonNullable<Steps["bucket"]> =>
   (real) => ({
     get: real.get.bind(real),
-    put: async (k, value, options) => {
-      if (k === key) throw new Error("injected R2 failure");
-      return real.put(k, value, options);
+    put: async (key, value, options) => {
+      await hook(key);
+      return real.put(key, value, options);
     },
+  });
+
+/** The bucket step: the real bucket, with a `put` of `key` that fails as R2 down would. */
+export const failingPut = (key: string) =>
+  beforePut(async (k) => {
+    if (k === key) throw new Error("injected R2 failure");
   });
 
 /**
@@ -212,17 +218,13 @@ export const liveWork = (ao3WorkId: number) => withDb((db) => getLiveWork(db, ao
 export function watchedPuts(ao3WorkId: number) {
   const probe = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 });
   const puts: { key: string; workExisted: boolean }[] = [];
-  const bucket: NonNullable<Steps["bucket"]> = (real) => ({
-    get: real.get.bind(real),
-    put: async (key, value, options) => {
-      const row = await probe
-        .selectFrom("works")
-        .select("id")
-        .where("ao3_work_id", "=", ao3WorkId)
-        .executeTakeFirst();
-      puts.push({ key, workExisted: row !== undefined });
-      return real.put(key, value, options);
-    },
+  const bucket = beforePut(async (key) => {
+    const row = await probe
+      .selectFrom("works")
+      .select("id")
+      .where("ao3_work_id", "=", ao3WorkId)
+      .executeTakeFirst();
+    puts.push({ key, workExisted: row !== undefined });
   });
   return { bucket, puts, close: () => probe.destroy() };
 }

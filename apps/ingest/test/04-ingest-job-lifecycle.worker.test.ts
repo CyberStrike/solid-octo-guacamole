@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 import { ao3Epub } from "../../../packages/epub/test/helpers";
 import {
+  beforePut,
   bucketKeys,
   bucketText,
   deliver,
@@ -178,12 +179,8 @@ describe("04-ingest-job-lifecycle", () => {
     let takenOver = null as Date | null;
     const { handler } = watchedWorker({
       // Another job claims the upload while this one writes R2, as after a lease ran out.
-      bucket: (real) => ({
-        get: real.get.bind(real),
-        put: async (key, value, options) => {
-          if (key.startsWith("originals/")) takenOver = await setLease(id, "1 hour");
-          return real.put(key, value, options);
-        },
+      bucket: beforePut(async (key) => {
+        if (key.startsWith("originals/")) takenOver = await setLease(id, "1 hour");
       }),
     });
 
