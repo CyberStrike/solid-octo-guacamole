@@ -55,17 +55,12 @@ export default {
 
     // Stored disposition is never echoed. An original's type is fixed; an image keeps
     // its stored type only when it is one of the four that ingest writes.
-    if (isOriginal) {
-      return respond(object.body, 200, {
-        "Cache-Control": IMMUTABLE,
-        "Content-Type": "application/epub+zip",
-        "Content-Disposition": "attachment",
-      });
-    }
     const stored = object.httpMetadata?.contentType ?? "";
     return respond(object.body, 200, {
       "Cache-Control": IMMUTABLE,
-      "Content-Type": IMAGE_TYPES.has(stored) ? stored : "application/octet-stream",
+      ...(isOriginal
+        ? { "Content-Type": "application/epub+zip", "Content-Disposition": "attachment" }
+        : { "Content-Type": IMAGE_TYPES.has(stored) ? stored : "application/octet-stream" }),
     });
   },
 } satisfies ExportedHandler<Env>;
