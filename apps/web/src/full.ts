@@ -43,6 +43,18 @@ export function streamParts(parts: Part[]): ReadableStream<Uint8Array> {
   const queue: (Part | undefined)[] = [...parts];
   let next = 0;
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  // Set when the reader leaves, so a pull still waiting on R2 opens nothing more.
+  let cancelled = false;
+  /** Cancels the open body and any opened ahead that the reader never reached. */
+  const release = async () => {
+    const open: Promise<void>[] = reader ? [reader.cancel()] : [];
+    reader = null;
+    for (let i = next; i < queue.length; i++) {
+      const part = queue[i];
+      if (part instanceof ReadableStream) open.push(part.cancel());
+    }
+    await Promise.allSettled(open);
+  };
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
       try {
@@ -50,6 +62,7 @@ export function streamParts(parts: Part[]): ReadableStream<Uint8Array> {
         for (;;) {
           if (reader) {
             const { done, value } = await reader.read();
+            if (cancelled) return;
             if (!done) return controller.enqueue(value);
             reader = null;
           }
@@ -60,22 +73,25 @@ export function streamParts(parts: Part[]): ReadableStream<Uint8Array> {
           if (part instanceof ReadableStream) body = part;
           else if (part instanceof Function) body = await part();
           else return controller.enqueue(encoder.encode(part ?? ""));
+          if (cancelled) {
+            await body?.cancel();
+            return;
+          }
           if (!body) throw new Error("A fragment is missing");
           reader = body.getReader();
         }
       } catch (error) {
+        // A reader who left is not an error.
+        if (cancelled) return;
         // The kind of error only: never the key, which names the work.
         console.error(`Entire work stream: ${error instanceof Error ? error.name : "unknown"}`);
         controller.error(error);
+        await release();
       }
     },
-    async cancel(reason) {
-      // The open body, and any opened ahead that the reader never reached.
-      await reader?.cancel(reason);
-      for (let i = next; i < queue.length; i++) {
-        const part = queue[i];
-        if (part instanceof ReadableStream) await part.cancel(reason);
-      }
+    async cancel() {
+      cancelled = true;
+      await release();
     },
   });
 }
@@ -104,10 +120,18 @@ export async function showFull(c: ReaderContext) {
   ) {
     return unavailable(c);
   }
-  // The first chapter is read before the 200, so R2 being down is a clean 503.
+  // The first chapter is read before the 200, so R2 being down is a clean 503. A version
+  // with no chapters can't be read either.
   const [head, ...rest] = chapters;
-  const first = head && (await openFragment(c.env.BUCKET, head.r2_key).catch(() => null));
-  if (head && !first) return unavailable(c);
+  if (!head) return unavailable(c);
+  const first = await openFragment(c.env.BUCKET, head.r2_key).catch(() => null);
+  if (!first) return unavailable(c);
+  const headers = { "Content-Type": "text/html; charset=UTF-8" };
+  // HEAD runs this handler too, and its body is dropped: read nothing more.
+  if (c.req.method === "HEAD") {
+    await first.cancel();
+    return c.body(null, 200, headers);
+  }
 
   const workTitle = live.work.title.trim() || "Untitled work";
   const { before, after } = layoutAround(`${workTitle}, entire work`, "", bar(workTitle));
@@ -116,15 +140,14 @@ export async function showFull(c: ReaderContext) {
   // markup between two fragments goes out as one part.
   const heading = (ch: { n: number; title: string }) =>
     `<h2 class="chapter-title" id="chapter-${ch.n}">${escapeHtml(chapterTitle(ch))}</h2>\n<article class="chapter">`;
-  const parts: Part[] = [`${before}${reviewNotice(version)}`];
-  if (head && first) parts.push(heading(head), first);
+  const parts: Part[] = [`${before}${reviewNotice(version)}${heading(head)}`, first];
   for (const ch of rest) {
     parts.push(`</article>\n${heading(ch)}`, () => openFragment(c.env.BUCKET, ch.r2_key));
   }
   parts.push(
-    `${head ? "</article>\n" : ""}<p class="back"><a href="/works/${id}">Back to the work page</a></p>${after}`,
+    `</article>\n<p class="back"><a href="/works/${id}">Back to the work page</a></p>${after}`,
   );
-  return c.body(streamParts(parts), 200, { "Content-Type": "text/html; charset=UTF-8" });
+  return c.body(streamParts(parts), 200, headers);
 }
 
 /** The slim top bar, as on a chapter page: the work title, the page's one h1, and settings. */

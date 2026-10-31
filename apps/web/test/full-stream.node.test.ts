@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { streamParts, type Part } from "../src/full";
 
 // The entire work's stream, on stub bodies: what workerd can't show, such as a reader
@@ -35,6 +35,9 @@ const stalled = () => {
   );
   return { stream, state };
 };
+
+/** Lets pending stream work run. */
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 /** The whole stream as text, decoded once at the end. */
 const readAll = (stream: ReadableStream<Uint8Array>) => new Response(stream).text();
@@ -86,5 +89,65 @@ describe("streamParts", () => {
       const stream = streamParts(["<a>", failing, "</a>"]);
       await expect(readAll(stream)).rejects.toThrow();
     }
+  });
+
+  it("cancels a fragment whose read was still on its way when the reader left", async () => {
+    const late = stalled();
+    let resolve: (stream: ReadableStream<Uint8Array>) => void = () => {};
+    const pending = new Promise<ReadableStream<Uint8Array>>((r) => (resolve = r));
+    const reader = streamParts([() => pending, "</a>"]).getReader();
+    const read = reader.read();
+    // The pull starts a task later: let it reach R2 before the reader leaves.
+    await tick();
+    await reader.cancel();
+    resolve(late.stream);
+    await read;
+    await tick();
+    expect(late.state.cancelled).toBe(true);
+  });
+
+  it("opens nothing more once the reader leaves mid-fragment", async () => {
+    const open = stalled();
+    const opened: string[] = [];
+    const reader = streamParts([
+      open.stream,
+      () => {
+        opened.push("next");
+        return Promise.resolve(body([]).stream);
+      },
+    ]).getReader();
+    await reader.read();
+    // The next pull waits on the stalled body; the reader leaves meanwhile.
+    const read = reader.read();
+    await tick();
+    await reader.cancel();
+    await read;
+    await tick();
+    expect(opened).toEqual([]);
+  });
+
+  it("logs nothing when the reader leaves", async () => {
+    const logged: unknown[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args) => logged.push(args));
+    try {
+      const reader = streamParts(["<a>", stalled().stream, "</a>"]).getReader();
+      await reader.read();
+      await reader.read();
+      const read = reader.read();
+      await tick();
+      await reader.cancel();
+      await read;
+      await tick();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(logged).toEqual([]);
+  });
+
+  it("cancels the fragments opened ahead when a fragment fails", async () => {
+    const ahead = body([new TextEncoder().encode("<p>ahead</p>")]);
+    const stream = streamParts([() => Promise.resolve(null), ahead.stream]);
+    await expect(readAll(stream)).rejects.toThrow();
+    expect(ahead.state.cancelled).toBe(true);
   });
 });

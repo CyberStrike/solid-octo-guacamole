@@ -36,6 +36,8 @@ const CHECKED = 21003;
 const MISSING_FIRST = 21004;
 /** Chapters 1 and 2 in R2, chapter 3 not. */
 const MISSING_LATER = 21005;
+/** Live, but its version's chapter rows are gone: a corrupt row ingest never writes. */
+const NO_CHAPTERS = 21008;
 /** 60 chapters. */
 const LONG = 21006;
 /** One chapter of several MB, multi-byte characters throughout. */
@@ -65,6 +67,8 @@ beforeAll(async () => {
     }
   }
   await seedWork(db, { ao3WorkId: MISSING_FIRST, tags: TAGS, chapters: 2 });
+  const empty = await seedWork(db, { ao3WorkId: NO_CHAPTERS, tags: TAGS, chapters: 1 });
+  await db.deleteFrom("chapters").where("version_id", "=", empty.versionId).execute();
   const later = await seedWork(db, {
     ao3WorkId: MISSING_LATER,
     tags: TAGS,
@@ -206,6 +210,21 @@ describe("entire work", () => {
     const res = await fetchW(fullUrl(MISSING_FIRST));
     expect(res.status).toBe(503);
     expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.text()).toBe("");
+  });
+
+  it("A live work with no chapters is an empty, uncached 503", async () => {
+    const res = await fetchW(fullUrl(NO_CHAPTERS));
+    expect(res.status).toBe(503);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.text()).toBe("");
+  });
+
+  it("HEAD answers with the page's headers and no body", async () => {
+    const res = await fetchW(fullUrl(W), { method: "HEAD" });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/^text\/html/);
+    expect(withoutNonce(res.headers.get("content-security-policy"))).toBe(STRICT);
     expect(await res.text()).toBe("");
   });
 
