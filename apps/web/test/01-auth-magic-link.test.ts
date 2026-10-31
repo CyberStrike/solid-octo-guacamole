@@ -439,4 +439,47 @@ describe("Sign-in failures", () => {
       for (const spy of spies) spy.mockRestore();
     }
   });
+
+  it("A failing rate limiter lets sign-in through and logs no address, IP or key", async () => {
+    // Both limits fail with an error naming what they were asked about.
+    const failing: RateLimit = {
+      limit: async ({ key }) => {
+        throw new Error(`limiter refused ${key}`);
+      },
+    };
+    const keys: string[] = [];
+    const recording: RateLimit = {
+      limit: async ({ key }) => {
+        keys.push(key);
+        return failing.limit({ key });
+      },
+    };
+    const broken = { ...env, LOGIN_IP_LIMIT: recording, LOGIN_EMAIL_LIMIT: recording };
+    const logged: string[] = [];
+    const spies = (["error", "warn", "log", "info", "debug"] as const).map((level) =>
+      vi.spyOn(console, level).mockImplementation((...args) => {
+        logged.push(args.map((arg) => inspect(arg, { depth: Infinity })).join(" "));
+      }),
+    );
+    try {
+      const ctx = createExecutionContext();
+      const request = loginRequest({
+        email: "limiter-down@example.test",
+        "cf-turnstile-response": PASSING_TOKEN,
+      });
+      const ip = request.headers.get("cf-connecting-ip") ?? "no client address";
+      const res = await app.fetch(request, broken, ctx);
+      await waitOnExecutionContext(ctx);
+
+      // Turnstile still guards the form, so the link is sent.
+      expect(res.status).toBe(200);
+      expect(await emailsTo("limiter-down@example.test")).toHaveLength(1);
+      expect(keys).toHaveLength(2);
+      expect(logged.length).toBeGreaterThan(0);
+      const log = logged.join("\n");
+      for (const secret of ["limiter-down", ip, ...keys]) expect(log).not.toContain(secret);
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+    }
+  });
 });
