@@ -62,11 +62,14 @@ export async function saveWork(
       .transaction()
       .execute((trx) => writeRows(trx, lease, work, ao3WorkId, prefix, chapters));
   } catch (error) {
+    // The save's own refusals and a lost lease pass through as they are.
+    if (error instanceof SaveRejected || error instanceof LeaseLost) throw error;
     const state = sqlState(error);
-    // Class 22 (data exception), 23 (integrity constraint) and 54 (program limit, such as an
-    // index row too large): the file's own data broke a rule, and will again. Anything else,
-    // such as a lost connection, is worth a retry.
-    if (state !== null && /^(22|23|54)/.test(state)) {
+    // Class 21 (cardinality, such as two of the file's tags landing on one row), 22 (data
+    // exception), 23 (integrity constraint) and 54 (program limit, such as an index row too
+    // large): the file's own data broke a rule, and will again. Anything else, such as a lost
+    // connection, is worth a retry.
+    if (state !== null && /^(21|22|23|54)/.test(state)) {
       throw new SaveRejected(`save_rejected_${state}`);
     }
     throw error;

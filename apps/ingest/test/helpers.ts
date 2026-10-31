@@ -127,8 +127,11 @@ export function watchedWorker(steps: Partial<Steps> = {}) {
   return { handler, parsed };
 }
 
-/** An AO3 work ID no other test uses: one database serves every file, and works are keyed by it. */
-export const newWorkId = () => 1 + Math.floor(Math.random() * 2_000_000_000);
+/**
+ * An AO3 work ID no other test uses: one database serves every file, and works are keyed by
+ * it. Above 10,000,000, clear of fixed IDs such as `ao3Epub`'s default and the scenarios'.
+ */
+export const newWorkId = () => 10_000_000 + Math.floor(Math.random() * 2_000_000_000);
 
 /** The bucket step: the real bucket, running `hook` with each key before its `put`. */
 export const beforePut =

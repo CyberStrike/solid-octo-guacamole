@@ -1,20 +1,30 @@
 import { describe, expect, it } from "vitest";
 import { ao3Epub } from "../../../packages/epub/test/helpers";
-import { bucketText, deliver, liveWork, pendingUpload, savedRows, uploadRow } from "./helpers";
+import {
+  bucketText,
+  deliver,
+  liveWork,
+  newWorkId,
+  pendingUpload,
+  savedRows,
+  uploadRow,
+} from "./helpers";
 
 describe("08-versioning-and-dedupe", () => {
   it("First upload creates the work", async () => {
-    // The scenario's own ID. No other test uses it, so no work has it yet.
+    // The scenario's 67890 stands for an ID no work has: here, one no other test uses, since a
+    // rerun on the same database (vitest watch) would find a fixed ID's work from the first run.
+    const workId = newWorkId();
     const id = await pendingUpload(
-      ao3Epub({ workId: 67890, stats: "Published: 2020-01-02 Words: 3 Chapters: 1/1" }),
+      ao3Epub({ workId, stats: "Published: 2020-01-02 Words: 3 Chapters: 1/1" }),
     );
-    expect((await savedRows(67890, id)).works).toEqual([]);
+    expect((await savedRows(workId, id)).works).toEqual([]);
 
     const result = await deliver([{ upload_id: id }]);
     // The same message again, as the queue may deliver it: the upload is live, so it is done.
     const again = await deliver([{ upload_id: id }]);
 
-    const { works, versions } = await savedRows(67890, id);
+    const { works, versions } = await savedRows(workId, id);
     expect(works).toHaveLength(1);
     expect(versions).toHaveLength(1);
     expect(works[0]?.current_version_id).toBe(versions[0]?.id);
@@ -25,9 +35,9 @@ describe("08-versioning-and-dedupe", () => {
     expect(again.explicitAcks).toEqual(["msg-0"]);
 
     // What the reader gets.
-    const live = await liveWork(67890);
+    const live = await liveWork(workId);
     expect(live?.work).toMatchObject({
-      ao3_work_id: 67890,
+      ao3_work_id: workId,
       title: "Synthetic Work",
       language: "English",
       words: 3,
@@ -40,8 +50,8 @@ describe("08-versioning-and-dedupe", () => {
     expect(live?.authors).toEqual([{ pseud: "someone", ao3_user: "someone" }]);
     expect(live?.chapters).toEqual([
       // Two words in the chapter, as the processor counts them; the work's total is the Stats line's.
-      { n: 1, title: "Synthetic Work", words: 2, r2_key: `works/67890/${id}/1.html` },
+      { n: 1, title: "Synthetic Work", words: 2, r2_key: `works/${workId}/${id}/1.html` },
     ]);
-    expect(await bucketText(`works/67890/${id}/1.html`)).toContain("marker-only-chapter text.");
+    expect(await bucketText(`works/${workId}/${id}/1.html`)).toContain("marker-only-chapter text.");
   });
 });
