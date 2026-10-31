@@ -123,7 +123,7 @@ describe("@archive/db/seed seedWork", () => {
     expect(work?.tags.map((x) => x.name)).toEqual(["Twice Seeded", "Between"]);
   });
 
-  it("Authors read back by pseud, then user; tags keep both canonical spellings", async () => {
+  it("Authors read back in the order given; tags keep both canonical spellings", async () => {
     const s = await seedWork(t.db, {
       authors: [
         { pseud: "Zed", ao3_user: "zed" },
@@ -138,12 +138,24 @@ describe("@archive/db/seed seedWork", () => {
     });
     const work = await getLiveWork(t.db, s.ao3WorkId);
     expect(work?.authors).toEqual([
-      { pseud: "Amy", ao3_user: "amy" },
-      { pseud: "Sam", ao3_user: null },
-      { pseud: "Sam", ao3_user: "bob" },
       { pseud: "Zed", ao3_user: "zed" },
+      { pseud: "Sam", ao3_user: "bob" },
+      { pseud: "Sam", ao3_user: null },
+      { pseud: "Amy", ao3_user: "amy" },
     ]);
     expect(work?.tags.map((x) => x.name)).toEqual([COMBINING, COMPOSED]);
+  });
+
+  it("A seed keeps the summary and updated date it was given", async () => {
+    const s = await seedWork(t.db, {
+      summary: "<p>Given summary.</p>",
+      updatedAt: "2024-03-05T00:00:00Z",
+    });
+    const none = await seedWork(t.db, { summary: null });
+    const work = await getLiveWork(t.db, s.ao3WorkId);
+    expect(work?.work.summary_html).toBe("<p>Given summary.</p>");
+    expect(work?.work.updated_at?.toISOString()).toBe("2024-03-05T00:00:00.000Z");
+    expect((await getLiveWork(t.db, none.ao3WorkId))?.work.summary_html).toBeNull();
   });
 
   it("A work nobody seeded is not found", async () => {

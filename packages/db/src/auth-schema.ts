@@ -35,4 +35,9 @@ export const authSchema = {
   verification: {
     fields: { expiresAt: "expires_at", ...timestamps },
   },
+  // Read only with `rateLimit.storage: "database"`. A config that sets other
+  // `rateLimit` options merges this into them, as with `user`.
+  rateLimit: {
+    fields: { lastRequest: "last_request" },
+  },
 } as const;

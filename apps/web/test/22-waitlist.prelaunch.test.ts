@@ -197,7 +197,7 @@ describe("22-waitlist", () => {
 
     // No other app page loads a web font. (WL2 and WL3 build the other wait list pages
     // on waitlistPage, which links the same stylesheet.)
-    for (const path of ["/login", "/login/confirm", "/about", "/terms", "/privacy"]) {
+    for (const path of ["/login", "/login/confirm?token=x", "/about", "/terms", "/privacy"]) {
       const other = await (await fetchW(path)).text();
       expect(other).not.toMatch(/\/assets\/waitlist\/|woff2|@font-face/);
     }
@@ -249,8 +249,9 @@ describe("22-waitlist", () => {
       ["/about", "GET"],
       ["/login", "GET"],
       ["/login", "POST"],
-      ["/login/confirm", "GET"],
-      ["/welcome/terms", "GET"],
+      ["/login/confirm?token=x", "GET"],
+      // Where the first admin signs in before launch.
+      ["/login/confirm", "POST"],
       ["/admin", "GET"],
       ["/admin/launch", "GET"],
       ["/robots.txt", "GET"],
@@ -262,6 +263,10 @@ describe("22-waitlist", () => {
       expect(res.status, `${method} ${path}`).not.toBe(302);
       expect(res.headers.get("location")).toBeNull();
     }
+    // The terms page is open too, and signed out it asks to sign in, not to wait.
+    const terms = await fetchW("/welcome/terms");
+    expect(terms.status).toBe(302);
+    expect(terms.headers.get("location")).toBe("/login?next=%2Fwelcome%2Fterms");
     // The static pages and their shared stylesheet are served in full.
     for (const path of ["/about", "/terms", "/privacy", STYLESHEET_PATH]) {
       expect((await fetchW(path)).status, path).toBe(200);

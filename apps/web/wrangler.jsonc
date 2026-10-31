@@ -4,6 +4,8 @@
   "name": "rarepair-web",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
+  // Better Auth needs AsyncLocalStorage, and pg needs Node's net and crypto (ARCHITECTURE, Auth).
+  "compatibility_flags": ["nodejs_compat"],
   "routes": [
     { "pattern": "rarepair.fans/*", "zone_name": "rarepair.fans" },
     { "pattern": "www.rarepair.fans/*", "zone_name": "rarepair.fans" },
@@ -19,13 +21,54 @@
     "binding": "ASSETS",
     "run_worker_first": true,
   },
+  // Neon Postgres. The id is a placeholder until the Hyperdrive config is created; tests replace
+  // the local connection string with their own database.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000000000000000000000000000",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
+    },
+  ],
+  // Chapter fragments, which the reader reads under works/ only. The same bucket
+  // apps/content serves images and originals from.
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "rarepair" }],
+  // Sign-in emails, sent by apps/mailer.
+  "queues": {
+    "producers": [{ "binding": "EMAIL", "queue": "email" }],
+  },
+  // The Workers rate-limiting binding on POST /login (ARCHITECTURE, Surge controls): per client
+  // IP and per email address, each over a 60-second window. src/rate-limit.ts keeps the period
+  // too, for Retry-After. A namespace_id is account-wide, and bindings sharing one share
+  // counters, so each limit takes its own from a reserved block: 1001-1009 sign-in,
+  // 1010-1019 uploads, 1020-1029 search, 1030-1039 removal requests, 1040-1049 the wait list.
+  "ratelimits": [
+    { "name": "LOGIN_IP_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
+    { "name": "LOGIN_EMAIL_LIMIT", "namespace_id": "1002", "simple": { "limit": 3, "period": 60 } },
+  ],
   "vars": {
     // "on" until the archive opens (ARCHITECTURE, Wait list): / is the coming-soon
     // page and other app pages redirect to it. Only "off" turns it off; a missing or
     // misspelt value keeps it on.
     "PRELAUNCH": "on",
-    // The coming-soon page's public Turnstile sitekey. This is Cloudflare's
-    // always-passes test sitekey: replace it with the real one before launch.
+    // The public Turnstile sitekey of the coming-soon and sign-in forms. This is Cloudflare's
+    // always-passes test sitekey: replace it with the real one before launch. Cloudflare
+    // refuses its tokens under a real secret key, so until then those forms fail closed.
     "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+    // The bucket presigned upload URLs PUT into, under uploads/ (src/presign.ts). It must be
+    // the BUCKET binding's bucket_name above, which /complete and ingest read uploads from.
+    "R2_BUCKET": "rarepair",
+  },
+  // Set with `wrangler secret put`. The R2 ones sign upload URLs: an R2 API token with Object
+  // Read and Write on the rarepair bucket only. Only its secret key is secret: every issued URL
+  // shows the access key id and the account id, which are here only to keep them out of the repo.
+  "secrets": {
+    "required": [
+      "BETTER_AUTH_SECRET",
+      "TURNSTILE_SECRET_KEY",
+      "R2_ACCOUNT_ID",
+      "R2_ACCESS_KEY_ID",
+      "R2_SECRET_ACCESS_KEY",
+    ],
   },
 }

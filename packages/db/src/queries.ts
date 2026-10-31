@@ -1,6 +1,6 @@
 // Typed reads and writes over the catalogue and uploads. Each takes the
 // caller's Kysely, so a Worker passes the one it made for the request.
-import type { Kysely, Selectable } from "kysely";
+import { sql, type ExpressionBuilder, type Kysely, type Selectable } from "kysely";
 import { jsonArrayFrom } from "kysely/helpers/postgres";
 import type {
   ChapterTable,
@@ -23,6 +23,7 @@ export type WorkSummary = Pick<
   | "language"
   | "words"
   | "chapters_count"
+  | "chapters_total"
   | "complete"
   | "published_at"
   | "updated_at"
@@ -31,12 +32,19 @@ export type WorkSummary = Pick<
 
 export interface LiveWork {
   work: WorkSummary;
+  /** In byline order. */
   authors: { pseud: string; ao3_user: string | null }[];
   /** In the author's order. */
   tags: Selectable<TagTable>[];
   version: Pick<
     Selectable<WorkVersionTable>,
-    "id" | "chapter_count" | "r2_prefix" | "created_at" | "review_reasons" | "checked_at"
+    | "id"
+    | "chapter_count"
+    | "chapter_total"
+    | "r2_prefix"
+    | "created_at"
+    | "review_reasons"
+    | "checked_at"
   >;
   /** The current version's chapters, by number. */
   chapters: Pick<Selectable<ChapterTable>, "n" | "title" | "words" | "r2_key">[];
@@ -51,6 +59,7 @@ const SUMMARY = [
   "works.language",
   "works.words",
   "works.chapters_count",
+  "works.chapters_total",
   "works.complete",
   "works.published_at",
   "works.updated_at",
@@ -80,6 +89,7 @@ export async function getLiveWork(
     .select([
       "work_versions.id as version_id",
       "work_versions.chapter_count",
+      "work_versions.chapter_total",
       "work_versions.r2_prefix",
       "work_versions.created_at",
       "work_versions.review_reasons",
@@ -89,7 +99,7 @@ export async function getLiveWork(
       jsonArrayFrom(
         eb
           .selectFrom("work_authors")
-          .select(["work_authors.pseud", "work_authors.ao3_user"])
+          .select(["work_authors.pseud", "work_authors.ao3_user", "work_authors.position"])
           .whereRef("work_authors.work_id", "=", "works.id"),
       ).as("authors"),
       jsonArrayFrom(
@@ -113,6 +123,7 @@ export async function getLiveWork(
   const {
     version_id,
     chapter_count,
+    chapter_total,
     r2_prefix,
     created_at,
     review_reasons,
@@ -124,48 +135,203 @@ export async function getLiveWork(
   } = row;
   return {
     work,
-    // By pseud, then user, by code unit: the same order in every database.
-    authors: authors.sort(
-      (a, b) =>
-        compareCodeUnits(a.pseud, b.pseud) || compareCodeUnits(a.ao3_user ?? "", b.ao3_user ?? ""),
-    ),
+    authors: authors
+      .sort((a, b) => a.position - b.position)
+      .map(({ pseud, ao3_user }) => ({ pseud, ao3_user })),
     tags: tags
       .sort((a, b) => a.position - b.position)
       .map(({ id, type, name, name_norm }) => ({ id, type, name, name_norm })),
-    version: { id: version_id, chapter_count, r2_prefix, created_at, review_reasons, checked_at },
+    version: {
+      id: version_id,
+      chapter_count,
+      chapter_total,
+      r2_prefix,
+      created_at,
+      review_reasons,
+      checked_at,
+    },
     chapters: chapters.sort((a, b) => a.n - b.n),
   };
 }
 
+/** A work as a listing's card shows it. */
+export type ListedWork = Pick<LiveWork, "work" | "authors" | "tags">;
+
+/**
+ * The names a listing of `name` matches: `name` under the tag rule, and `name`
+ * itself, since a tag link carries a stored `name_norm` and the rule isn't
+ * idempotent for a few letters (NFKC can compose what lowercasing left). Empty
+ * when it names no tag: it folds to nothing, or holds a NUL, which Postgres refuses.
+ */
+export function tagNameKeys(type: TagType, name: string): string[] {
+  const nameNorm = normalizeTagName(type, name);
+  if (nameNorm === "" || name.includes("\0")) return [];
+  return nameNorm === name ? [name] : [nameNorm, name];
+}
+
+/**
+ * How the live works carrying this tag spell it, each once, by code unit. Only
+ * live works count, so a hidden or removed work's spelling is never shown.
+ */
+export async function liveTagSpellings(
+  db: Kysely<Database>,
+  type: TagType,
+  name: string,
+): Promise<string[]> {
+  const keys = tagNameKeys(type, name);
+  if (keys.length === 0) return [];
+  const rows = await db
+    .selectFrom("tags")
+    .innerJoin("work_tags", "work_tags.tag_id", "tags.id")
+    .innerJoin("works", "works.id", "work_tags.work_id")
+    .select("tags.name")
+    .distinct()
+    .where("works.status", "=", "live")
+    .where("tags.type", "=", type)
+    .where("tags.name_norm", "in", keys)
+    .execute();
+  // By code unit, not by the database's collation.
+  return rows.map((r) => r.name).sort(compareCodeUnits);
+}
+
+/** The rating a page shows for a work with none, and the filter that also finds those. */
+export const NOT_RATED = "Not Rated";
+
+/** A page of a tag listing, and how many works the listing holds in all. */
+export interface TagListing {
+  works: ListedWork[];
+  total: number;
+}
+
+/**
+ * A listing's order: last updated (the updated date, else the published one),
+ * newest first; or word count, longest first.
+ */
+export type ListingSort = "updated" | "words";
+
+/** Which page of a listing to read, and in what order. Pages count from 1. */
+export interface ListingOptions {
+  sort?: ListingSort;
+  /** Only works with this rating. "Not Rated" also finds works with none, as a card shows them. */
+  rating?: string;
+  /** Only works that also carry this tag, matched as the listing's own is. One that names nothing matches nothing. */
+  tag?: { type: TagType; name: string };
+  /** Only complete works, or only works in progress. */
+  complete?: boolean;
+  /** Default 1. One below 1, or not a whole number, is the first. */
+  page?: number;
+  /** Default 20, also for one below 1 or not a whole number. */
+  pageSize?: number;
+}
+
+const PAGE_SIZE = 20;
+
+const isCount = (n: number) => Number.isSafeInteger(n) && n >= 1;
+
+type WorksWhere = ExpressionBuilder<Database, "works">;
+
+/** The work carries a tag of this type whose `name_norm` is one of `keys`. */
+const tagged = (eb: WorksWhere, type: TagType, keys: string[]) =>
+  eb.exists(
+    eb
+      .selectFrom("work_tags")
+      .innerJoin("tags", "tags.id", "work_tags.tag_id")
+      .select("work_tags.tag_id")
+      .whereRef("work_tags.work_id", "=", "works.id")
+      .where("tags.name_norm", "in", keys)
+      .where("tags.type", "=", type),
+  );
+
+const rated = (eb: WorksWhere, rating: string) =>
+  rating === NOT_RATED
+    ? eb.or([
+        eb("works.rating", "=", rating),
+        eb("works.rating", "is", null),
+        eb("works.rating", "=", ""),
+      ])
+    : eb("works.rating", "=", rating);
+
 /**
  * The `live` works carrying a tag of this type that matches `name` under the
- * tag rule, however each work spelled it.
+ * tag rule (`tagNameKeys`), however each work spelled it, with their bylines
+ * and tags: one page of them, and how many there are in all.
  */
 export async function listLiveWorksByTag(
   db: Kysely<Database>,
   type: TagType,
   name: string,
-): Promise<WorkSummary[]> {
-  const nameNorm = normalizeTagName(type, name);
-  // A name of only punctuation folds to nothing, which names no tag.
-  if (nameNorm === "") return [];
-  return db
+  { sort = "updated", rating, tag, complete, page = 1, pageSize = PAGE_SIZE }: ListingOptions = {},
+): Promise<TagListing> {
+  const keys = tagNameKeys(type, name);
+  const tagKeys = tag === undefined ? [] : tagNameKeys(tag.type, tag.name);
+  if (keys.length === 0 || (tag !== undefined && tagKeys.length === 0)) {
+    return { works: [], total: 0 };
+  }
+  const listed = (eb: WorksWhere) =>
+    eb.and([
+      eb("works.status", "=", "live"),
+      tagged(eb, type, keys),
+      ...(tag === undefined ? [] : [tagged(eb, tag.type, tagKeys)]),
+      ...(rating === undefined ? [] : [rated(eb, rating)]),
+      ...(complete === undefined ? [] : [eb("works.complete", "=", complete)]),
+    ]);
+  const { count } = await db
+    .selectFrom("works")
+    .select((eb) => eb.fn.countAll<string>().as("count"))
+    .where(listed)
+    .executeTakeFirstOrThrow();
+  const total = Number(count);
+  const size = isCount(pageSize) ? pageSize : PAGE_SIZE;
+  // A page past every safe integer is past the end, not the first.
+  const offset = page > Number.MAX_SAFE_INTEGER ? total : isCount(page) ? (page - 1) * size : 0;
+  if (offset >= total) return { works: [], total };
+  const byKey =
+    sort === "words" ? sql`works.words` : sql`coalesce(works.updated_at, works.published_at)`;
+  // The page is cut first, so the bylines and tags are built for its rows alone,
+  // not for every row an offset skips.
+  const pageRows = db
     .selectFrom("works")
     .select(SUMMARY)
-    .where("works.status", "=", "live")
-    .where((eb) =>
-      eb.exists(
+    .where(listed)
+    .orderBy(byKey, (ob) => ob.desc().nullsLast())
+    // AO3 work ID last: a total order, so pages read from one state of the works
+    // neither repeat nor skip one. (A work that changes between page loads can.)
+    .orderBy("works.ao3_work_id")
+    .limit(size)
+    .offset(offset);
+  const rows = await db
+    .selectFrom(pageRows.as("works"))
+    .selectAll("works")
+    .select((eb) => [
+      jsonArrayFrom(
+        eb
+          .selectFrom("work_authors")
+          .select(["work_authors.pseud", "work_authors.ao3_user", "work_authors.position"])
+          .whereRef("work_authors.work_id", "=", "works.id"),
+      ).as("authors"),
+      jsonArrayFrom(
         eb
           .selectFrom("work_tags")
           .innerJoin("tags", "tags.id", "work_tags.tag_id")
-          .select("work_tags.tag_id")
-          .whereRef("work_tags.work_id", "=", "works.id")
-          .where("tags.name_norm", "=", nameNorm)
-          .where("tags.type", "=", type),
-      ),
-    )
+          .select(["tags.id", "tags.type", "tags.name", "tags.name_norm", "work_tags.position"])
+          .whereRef("work_tags.work_id", "=", "works.id"),
+      ).as("tags"),
+    ])
+    // A subquery's order isn't kept, so the page is put in order again.
+    .orderBy(byKey, (ob) => ob.desc().nullsLast())
     .orderBy("works.ao3_work_id")
     .execute();
+  // As in getLiveWork, json_agg's order isn't promised, so the lists are sorted here.
+  const works = rows.map(({ authors, tags, ...work }) => ({
+    work,
+    authors: authors
+      .sort((a, b) => a.position - b.position)
+      .map(({ pseud, ao3_user }) => ({ pseud, ao3_user })),
+    tags: tags
+      .sort((a, b) => a.position - b.position)
+      .map(({ id, type, name, name_norm }) => ({ id, type, name, name_norm })),
+  }));
+  return { works, total };
 }
 
 /**

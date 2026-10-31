@@ -64,16 +64,28 @@ export interface VerificationTable {
   updated_at: CreatedTimestamp;
 }
 
+/** Better Auth's rate-limit counters, one row per limited key. */
+export interface RateLimitTable {
+  id: string;
+  key: string;
+  count: number;
+  /** Milliseconds since the epoch. A bigint, so pg reads it as a string. */
+  last_request: ColumnType<string, number | string, number | string>;
+}
+
 export type WorkStatus = "processing" | "live" | "hidden" | "removed";
 export type HiddenCause = "removal_request" | "reports" | "moderator";
-export type TagType =
-  | "fandom"
-  | "relationship"
-  | "character"
-  | "freeform"
-  | "warning"
-  | "category"
-  | "rating";
+/** Every tag type, as the `tags.type` check allows. */
+export const TAG_TYPES = [
+  "fandom",
+  "relationship",
+  "character",
+  "freeform",
+  "warning",
+  "category",
+  "rating",
+] as const;
+export type TagType = (typeof TAG_TYPES)[number];
 /** The pipeline's statuses, then the rejection codes (ARCHITECTURE, Ingestion pipeline). */
 export type UploadStatus =
   | "pending"
@@ -98,6 +110,8 @@ export interface WorkTable {
   language: string | null;
   words: number | null;
   chapters_count: number;
+  /** The planned total (AO3's y in x/y). NULL when unknown. */
+  chapters_total: number | null;
   complete: boolean;
   /** AO3's dates for the work, not the row's. */
   published_at: Timestamp | null;
@@ -118,6 +132,8 @@ export interface WorkAuthorTable {
   pseud: string;
   /** NULL for an anonymous work, or a byline with no user link. */
   ao3_user: string | null;
+  /** The author's place in the byline, from 0. Unique per work. */
+  position: number;
 }
 
 export interface WorkVersionTable {
@@ -125,6 +141,8 @@ export interface WorkVersionTable {
   work_id: string;
   upload_id: string;
   chapter_count: number;
+  /** The planned total as this version's preface gave it. NULL when unknown. */
+  chapter_total: number | null;
   /** `works/<ao3_work_id>/<upload_id>/`, with the trailing slash. */
   r2_prefix: string;
   created_at: CreatedTimestamp;
@@ -175,6 +193,94 @@ export interface UploadTable {
   created_at: CreatedTimestamp;
 }
 
+export type RequestKind = "remove_work" | "opt_out";
+
+export interface ReportTable {
+  id: Generated<string>;
+  work_id: string;
+  /** Reporting needs an account. */
+  reporter_id: string;
+  /** `wrong_version` ("This version is wrong") is the only value the docs name. */
+  kind: string;
+  /** The optional details. */
+  body: string | null;
+  /** `open` until a moderator acts. */
+  status: Generated<string>;
+  created_at: CreatedTimestamp;
+}
+
+/** A DMCA notice. */
+export interface TakedownTable {
+  id: Generated<string>;
+  work_id: string;
+  requester: string;
+  basis: string;
+  /** `pending` until a moderator acts. */
+  status: Generated<string>;
+  /** The moderator who acted. */
+  resolved_by: string | null;
+  created_at: CreatedTimestamp;
+}
+
+/** A remove-my-work or opt-out request from `/remove`. */
+export interface RequestTable {
+  id: Generated<string>;
+  kind: RequestKind;
+  /** Set for `remove_work`. */
+  work_id: string | null;
+  /** `normalizePseud(pseud)`, set for `opt_out`. */
+  pseud_norm: string | null;
+  /** As given. Match with `lower()` on both sides. */
+  contact_email: string;
+  statement: string;
+  /** `pending` until a moderator acts. */
+  status: Generated<string>;
+  /** Never the raw IP. */
+  ip_hash: string;
+  created_at: CreatedTimestamp;
+}
+
+/** Checked at ingest: an active row rejects a byline whose `normalizePseud` matches. */
+export interface OptoutTable {
+  id: Generated<string>;
+  pseud_norm: string;
+  /** Set when the request names an AO3 user. */
+  ao3_user: string | null;
+  request_id: string;
+  active: boolean;
+  created_at: CreatedTimestamp;
+}
+
+/** Matches a later request by email or by IP hash, and a report by its account's email. */
+export interface RequesterBlockTable {
+  id: Generated<string>;
+  /** As given. Match with `lower()` on both sides. */
+  contact_email: string | null;
+  ip_hash: string | null;
+  /** The moderator who blocked. */
+  created_by: string;
+  created_at: CreatedTimestamp;
+}
+
+/**
+ * The launch wait list (ARCHITECTURE, Wait list): only what the launch email needs.
+ * Tokens are stored as SHA-256 hex hashes, never as themselves.
+ */
+export interface WaitlistTable {
+  /** Trimmed and lowercased. */
+  email: string;
+  /** Cleared once confirmed. */
+  confirm_token_hash: string | null;
+  /** The latest confirmation email's time: its link lasts 7 days from it. */
+  confirm_sent_at: CreatedTimestamp;
+  /** Confirmation emails sent, 3 at most. */
+  confirm_count: Generated<number>;
+  confirmed_at: Timestamp | null;
+  notified_at: Timestamp | null;
+  unsubscribe_token_hash: string | null;
+  created_at: CreatedTimestamp;
+}
+
 export interface Database {
   user: UserTable;
   session: SessionTable;
@@ -187,4 +293,11 @@ export interface Database {
   tags: TagTable;
   work_tags: WorkTagTable;
   uploads: UploadTable;
+  rateLimit: RateLimitTable;
+  reports: ReportTable;
+  takedowns: TakedownTable;
+  requests: RequestTable;
+  optouts: OptoutTable;
+  requester_blocks: RequesterBlockTable;
+  waitlist: WaitlistTable;
 }

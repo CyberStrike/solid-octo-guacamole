@@ -37,12 +37,14 @@ export interface Ao3Spec {
   /** null leaves the "Posted originally" line out. */
   workId?: number | null;
   title?: string;
+  /** The byline's one pseud, also its user name: letters and digits only. */
+  pseud?: string;
   stats?: string;
   /** Extra `<dt>/<dd>` markup appended to the tag list. */
   extraDl?: string;
   /** The `Language:` value. */
   language?: string;
-  /** Inner markup of the byline `<div>`, after "by ". */
+  /** Inner markup of the byline `<div>`, after "by ". Replaces the pseud's link. */
   byline?: string;
   summary?: string;
   notes?: string;
@@ -58,6 +60,9 @@ export interface Ao3Spec {
 export function ao3Epub(spec: Ao3Spec = {}): Uint8Array {
   const workId = spec.workId === undefined ? 1000001 : spec.workId;
   const title = spec.title ?? "Synthetic Work";
+  const pseud = spec.pseud ?? "someone";
+  // It goes unescaped into a URL path, XHTML and the OPF.
+  if (!/^[A-Za-z0-9]+$/.test(pseud)) throw new Error(`pseud must be letters and digits: ${pseud}`);
   const stats = spec.stats ?? "Published: 2020-01-02 Words: 12";
   const files = spec.files ?? [
     {
@@ -88,7 +93,7 @@ export function ao3Epub(spec: Ao3Spec = {}): Uint8Array {
   </dl></div>
   <div class="calibre1">
     <h1 class="calibre6">${title}</h1>
-    <div class="byline">by ${spec.byline ?? '<a href="http://archiveofourown.org/users/someone/pseuds/someone" rel="author">someone</a>'}</div>
+    <div class="byline">by ${spec.byline ?? `<a href="http://archiveofourown.org/users/${pseud}/pseuds/${pseud}" rel="author">${pseud}</a>`}</div>
     <p class="calibre7">Summary</p>
     <blockquote class="userstuff">${spec.summary ?? '<p class="calibre7">A synthetic summary.</p>'}</blockquote>
     <p class="calibre7">Notes</p>
@@ -123,7 +128,7 @@ export function ao3Epub(spec: Ao3Spec = {}): Uint8Array {
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
     <dc:title>${title}</dc:title>
     <dc:language>en</dc:language>
-    <dc:creator opf:role="aut">someone</dc:creator>
+    <dc:creator opf:role="aut">${pseud}</dc:creator>
     <dc:identifier id="uuid_id" opf:scheme="uuid">00000000-0000-4000-8000-000000000000</dc:identifier>
     <dc:publisher>Archive of Our Own</dc:publisher>
   </metadata>

@@ -19,6 +19,8 @@ export interface SeedChapter {
 export interface SeedVersionOptions {
   /** A count, or each chapter. Default 1. */
   chapters?: number | SeedChapter[];
+  /** The planned total. Default null: unknown, and a current version replaces the work's total with it. */
+  chapterTotal?: number | null;
   reviewReasons?: string[];
 }
 
@@ -26,8 +28,12 @@ export interface SeedWorkOptions extends SeedVersionOptions {
   /** Default: a random one, so test files sharing a database don't collide. */
   ao3WorkId?: number;
   title?: string;
+  /** `summary_html`, as the sanitizer would leave it. Null for none. */
+  summary?: string | null;
   rating?: string | null;
   complete?: boolean;
+  /** AO3's last-updated date. Default 2020-02-01; null for none. */
+  updatedAt?: string | null;
   /** The uploader. Default: a new user. */
   userId?: string;
   authors?: { pseud: string; ao3_user: string | null }[];
@@ -101,11 +107,11 @@ export async function seedWork(
       .values({
         ao3_work_id: ao3WorkId,
         title: options.title ?? `Seeded work ${ao3WorkId}`,
-        summary_html: "<p>A seeded summary.</p>",
+        summary_html: options.summary === undefined ? "<p>A seeded summary.</p>" : options.summary,
         rating,
         language: "English",
         published_at: "2020-01-01T00:00:00Z",
-        updated_at: "2020-02-01T00:00:00Z",
+        updated_at: options.updatedAt === undefined ? "2020-02-01T00:00:00Z" : options.updatedAt,
         // The version below sets the counts as it becomes current.
         chapters_count: 0,
         complete: options.complete ?? true,
@@ -118,7 +124,7 @@ export async function seedWork(
     if (authors.length > 0) {
       await trx
         .insertInto("work_authors")
-        .values(authors.map((a) => ({ work_id: work.id, ...a })))
+        .values(authors.map((a, position) => ({ work_id: work.id, ...a, position })))
         .execute();
     }
     await addTags(trx, work.id, tags);
@@ -227,7 +233,7 @@ async function addVersion(
   work: { workId: string; ao3WorkId: number; userId: string },
   options: SeedVersionOptions & { current: boolean },
 ): Promise<SeededVersion> {
-  const { current, reviewReasons = [] } = options;
+  const { current, reviewReasons = [], chapterTotal = null } = options;
   const chapters = planChapters(options.chapters);
   // Chosen here rather than by the database, because the R2 keys name it.
   const uploadId = crypto.randomUUID();
@@ -250,6 +256,7 @@ async function addVersion(
       work_id: work.workId,
       upload_id: uploadId,
       chapter_count: chapters.length,
+      chapter_total: chapterTotal,
       r2_prefix: r2Prefix,
       review_reasons: reviewReasons,
     })
@@ -276,6 +283,7 @@ async function addVersion(
       .set({
         current_version_id: version.id,
         chapters_count: chapters.length,
+        chapters_total: chapterTotal,
         words: sum(chapters.map((c) => c.words)),
       })
       .where("id", "=", work.workId)
