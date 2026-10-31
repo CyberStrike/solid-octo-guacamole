@@ -1,0 +1,32 @@
+// The wait list's pages (ARCHITECTURE, Wait list), the only ones with web fonts.
+// They have their own shell, apart from pages.ts, until the shared layout (S1)
+// lands. The other wait list pages (WL2, WL3) reuse waitlistPage.
+//
+// Draft copy, written from specs/scenarios/mvp/22-waitlist.md for the operator to proof.
+
+import { TURNSTILE_ORIGIN } from "./security";
+
+const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
+
+/** A whole wait list page. Every argument is trusted markup from this file, never escaped. */
+export const waitlistPage = (title: string, body: string, head = "") => `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} · rarepair</title>${head}</head>
+<body><main>${body}</main></body>
+</html>`;
+
+/** The coming-soon page at / while PRELAUNCH is on, with the wait list form. */
+export const comingSoonPage = (nonce: string, siteKey: string) =>
+  waitlistPage(
+    "Coming soon",
+    `<h1>rarepair is coming soon</h1>
+<p>A temporary, community-run reading archive for fanworks. Upload the epub files you downloaded, and anyone can browse, search and read them in the browser.</p>
+<form method="post" action="/waitlist">
+<label for="email">Email address</label>
+<input id="email" name="email" type="email" autocomplete="email" required>
+<div class="cf-turnstile" data-sitekey="${siteKey}"></div>
+<button type="submit">Join the wait list</button>
+</form>
+<p>Your address gets one email when the archive opens, and nothing else.</p>`,
+    `<script src="${TURNSTILE_API}" nonce="${nonce}" async defer></script>`,
+  );

@@ -11,4 +11,21 @@
   // No second copy of the app on a workers.dev or preview URL.
   "workers_dev": false,
   "preview_urls": false,
+  // The wait list pages' fonts and stylesheet, under /assets/. The Worker runs first
+  // on every request and serves them through a route, so they get HSTS, the www 308
+  // and their Cache-Control from the Worker like every other response.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+  },
+  "vars": {
+    // "on" until the archive opens (ARCHITECTURE, Wait list): / is the coming-soon
+    // page and other app pages redirect to it. Only "off" turns it off; a missing or
+    // misspelt value keeps it on.
+    "PRELAUNCH": "on",
+    // The coming-soon page's public Turnstile sitekey. This is Cloudflare's
+    // always-passes test sitekey: replace it with the real one before launch.
+    "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
+  },
 }
