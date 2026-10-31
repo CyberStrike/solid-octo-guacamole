@@ -27,7 +27,7 @@ Adapted from the folio project's ledger.
   2. The builder runs `/gate merge` on it. That runs the full review ladder for its tier, then the one Copilot review and the handling of its findings (`/gate` §6). The builder pushes every fix, and replaces the PR body's *What was run* block with the merge gate's.
   3. A critical finding goes back into the PR, and the PR doesn't merge while one is open. One the builder can't fix with confidence goes up `/escalate`. The definition of critical is in `/gate` §6.
   4. Every other finding becomes a bug issue, and the builder reports `ready`. That is the engineer's status, not GitHub's ready for review: the builder leaves the PR a draft and never merges.
-  5. The orchestrator checks the PR (`/orchestrate` §5). If `main` has moved, the builder brings it in and reruns the `/gate` §3 checks, without Copilot again, and without the ladder unless it resolved a conflict by hand. Then the orchestrator marks the PR ready for review and merges it with `gh pr merge <n> --squash`, one PR at a time.
+  5. The orchestrator checks the PR (`/orchestrate` §5). If `main` has moved, it is brought in once, just before this PR merges, and the `/gate` §3 checks are rerun on the result. The orchestrator has an agent on a cheap model try the merge, which never resolves a conflict or fixes a check. A conflict or a failing check the PR caused goes back to the builder, with the ladder for a conflict it resolves by hand; a check `main` itself fails goes to the operator. Copilot isn't asked again. Then the orchestrator marks the PR ready for review and merges it with `gh pr merge <n> --squash`, one PR at a time.
   Never use auto-merge or `--force`, and never push to `main`. Outside `/orchestrate`, a PR merges only when the operator says so.
 - **Waves of items run under `/orchestrate`**, and every item is built test-first with `/tdd`.
 
@@ -62,7 +62,7 @@ Collections, with the fields `docs/ledger/page.html` reads:
     - `gating` or `review` (Testing)
     - `merged`, `done` or `closed` (Done; `closed` for an item that ended without merging)
   - `gates` names the items that must merge first: the issue's `Depends on:` line.
-- **`agents`**: one doc per explorer, builder, consultant, gate or reviewer. Fields:
+- **`agents`**: one doc per explorer, builder, consultant, gate or reviewer (the cheap agent that brings `main` in before a merge is a `gate`). Fields:
   - kind (`explorer`, `builder`, `consultant`, `gate` or `reviewer`), name, item (or task, for work with no item), model, lane, step, pr[], startedAt, finishedAt, note
   - the doc id is `<item or task>-<kind>`, with `-<n>` added for the second and later of the same kind: `E1-explorer`, `E1-builder`, `E1-consultant-2`. A relaunched agent gets a new id, so the first one's row stays.
   - status is `running`, `idle`, `finished` or `failed`. An agent that may still be sent more work, such as a builder whose PR is open, is `idle`; it's `finished` once that can't happen (its PR merged, or the item closed).
