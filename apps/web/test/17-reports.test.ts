@@ -90,14 +90,14 @@ const postReport = (
   });
 };
 
-/** How many reports work `ao3WorkId` has, from anyone. */
-const reportCount = async (ao3WorkId = W) =>
+/** How many reports W has, from anyone. */
+const reportCount = async () =>
   (
     await db
       .selectFrom("reports")
       .innerJoin("works", "works.id", "reports.work_id")
       .select((eb) => eb.fn.countAll<string>().as("n"))
-      .where("works.ao3_work_id", "=", ao3WorkId)
+      .where("works.ao3_work_id", "=", W)
       .executeTakeFirstOrThrow()
   ).n;
 

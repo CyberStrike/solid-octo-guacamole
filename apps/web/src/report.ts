@@ -157,22 +157,19 @@ export async function submitReport(c: ReportContext) {
     const reason = form.get("reason") ?? "";
     const details = form.get("details") ?? "";
     // The server checks, since the page has no script and a form can be posted by hand.
-    const kind = isKind(reason) ? reason : undefined;
-    const error =
-      kind === undefined
-        ? "Choose a reason."
-        : details.length > MAX_DETAILS
-          ? `Details can be up to ${MAX_DETAILS} characters.`
-          : undefined;
-    if (kind === undefined || error !== undefined) {
-      return c.html(reportPage(id, work.title, { error, kind, details }), 400);
+    if (!isKind(reason)) {
+      return c.html(reportPage(id, work.title, { error: "Choose a reason.", details }), 400);
+    }
+    if (details.length > MAX_DETAILS) {
+      const error = `Details can be up to ${MAX_DETAILS} characters.`;
+      return c.html(reportPage(id, work.title, { error, kind: reason, details }), 400);
     }
     await db
       .insertInto("reports")
       .values({
         work_id: work.id,
         reporter_id: session.user.id,
-        kind,
+        kind: reason,
         // Optional: details left empty, or only spaces, are none.
         body: details.trim() === "" ? null : details,
       })
