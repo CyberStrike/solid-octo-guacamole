@@ -1,6 +1,7 @@
 {
   "name": "solid-octo-guacamole",
   "private": true,
+  "type": "module",
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -8,6 +9,19 @@
   "scripts": {
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present"
+    "build": "npm run build --workspaces --if-present",
+    "lint": "oxlint --deny-warnings --report-unused-disable-directives",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check"
+  },
+  "overrides": {
+    "@oxlint/plugins": "1.90.0"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "1.90.0",
+    "ai-deslop": "0.4.9",
+    "oxfmt": "0.75.0",
+    "oxlint": "1.90.0",
+    "oxlint-tsgolint": "7.0.2005"
   }
 }
