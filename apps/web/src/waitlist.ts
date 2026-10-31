@@ -6,12 +6,12 @@ import { sql, type Kysely } from "kysely";
 import { isSendableAddress } from "../../mailer/src/message";
 import type { Bindings } from "./env";
 import { floorOf, padTo } from "./floor";
-import { MAX_EMAIL, readForm } from "./login";
+import { MAX_EMAIL, NO_STORE, readForm } from "./login";
 import { isPrelaunch } from "./prelaunch";
 import { emailKey, ipKey, isLimited, tooManyRequests, WAITLIST_WINDOW_SECONDS } from "./rate-limit";
 import type { SecurityVariables } from "./security";
 import { isSameOrigin, SITE } from "./signin";
-import { verifyTurnstile } from "./turnstile";
+import { TURNSTILE_ACTIONS, verifyTurnstile } from "./turnstile";
 import {
   comingSoonPage,
   waitlistCheckEmailPage,
@@ -136,7 +136,7 @@ async function join(c: WaitlistContext) {
   if (form === null) {
     // Nothing of it is shown back: the form comes again empty.
     const error = "That request was too large. Please try again.";
-    return c.html(comingSoonPage(nonce, siteKey, { error }), 413);
+    return c.html(comingSoonPage(nonce, siteKey, { error }), 413, NO_STORE);
   }
   const typed = form.get("email") ?? "";
   // What was typed comes back in the form, unless it's too long to be an address.
@@ -144,11 +144,13 @@ async function join(c: WaitlistContext) {
     c.html(
       comingSoonPage(nonce, siteKey, { email: typed.length > MAX_EMAIL ? "" : typed, error }),
       status,
+      NO_STORE,
     );
 
   const turnstile = await verifyTurnstile(form.get("cf-turnstile-response"), {
     secret: c.env.TURNSTILE_SECRET_KEY,
     hostname: new URL(c.req.url).hostname,
+    action: TURNSTILE_ACTIONS.waitlist,
     remoteIp: clientIp,
   });
   if (turnstile === "failed") {

@@ -2,27 +2,32 @@ import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
 const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
-// Cloudflare's published Turnstile test values: the always-pass secret and the dummy token.
-const TURNSTILE_SECRET_KEY = "1x0000000000000000000000000000000AA";
+// A throwaway secret, none of Cloudflare's published test secrets: under those the Worker
+// skips the action check (src/turnstile.ts), and the tests need it on.
+const TURNSTILE_SECRET_KEY = "test-only-turnstile-secret";
+// Cloudflare's published dummy token.
 const DUMMY_TOKEN = "XXXX.DUMMY.TOKEN.XXXX";
 
 /**
  * The Worker's outbound network in tests: siteverify passes the dummy token under
- * the test secret, as Cloudflare does, and everything else is blocked. Cloudflare
- * reports such a token as solved on "localhost"; this stand-in reports the host
- * the test chooses, so the host check can be tested. The dummy token passes for
- * rarepair.fans, or for the host after an "@" ("XXXX.DUMMY.TOKEN.XXXX@other.example");
- * "siteverify-down" gets a 503; any other token fails.
+ * the test secret, and everything else is blocked. Cloudflare reports such a token as
+ * solved on "localhost"; this stand-in reports the host and the action the test chooses,
+ * so the host and action checks can be tested. The token is the dummy token, then
+ * "#" and the action it was solved under, then optionally "@" and the host:
+ * "XXXX.DUMMY.TOKEN.XXXX#login@other.example". The host is rarepair.fans when left out.
+ * A token with no "#" is reported with no action. "siteverify-down" gets a 503;
+ * any other token fails.
  */
 async function outbound(request: Request): Promise<Response> {
   if (request.url !== SITEVERIFY) {
     return new Response("outbound network blocked in tests", { status: 599 });
   }
   const form = new URLSearchParams(await request.text());
-  const [token, hostname = "rarepair.fans"] = (form.get("response") ?? "").split("@");
+  const [solved = "", hostname = "rarepair.fans"] = (form.get("response") ?? "").split("@");
+  const [token, action] = solved.split("#");
   if (token === "siteverify-down") return new Response("unavailable", { status: 503 });
   if (form.get("secret") === TURNSTILE_SECRET_KEY && token === DUMMY_TOKEN) {
-    return Response.json({ success: true, hostname, "error-codes": [] });
+    return Response.json({ success: true, hostname, action, "error-codes": [] });
   }
   return Response.json({ success: false, "error-codes": ["invalid-input-response"] });
 }

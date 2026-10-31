@@ -422,6 +422,11 @@ can be snapshotted.
   allowance, `frame-src https://challenges.cloudflare.com`, for the challenge
   iframe. Turnstile's `api.js` loads through a nonced `<script>`, which
   `'strict-dynamic'` already covers. Reader and work pages never get it.
+- **Pages are never stored by a shared cache with their nonce.** The CSP
+  middleware sets `Cache-Control: private, no-store` on every HTML response
+  that has no `Cache-Control` of its own, so a zone Cache Rule or a proxy can't
+  hand one visitor's nonce to the next. A page that sets its own keeps it,
+  such as the tag listing's short private cache.
 - **What's left without an iframe:** content made to look like our own
   interface, such as a fake "log in again" box or a lookalike link. The
   sanitizer already blocks the main tools for that by stripping `<form>`,
@@ -713,7 +718,11 @@ markup: its inline `style` attributes become stylesheet rules, because
 
 - Turnstile on signup, login, upload, the wait list and `/remove` requests. Turnstile needs
   JavaScript, so those forms do too; reading, browsing and search work without
-  it.
+  it. Each form's widget names its own action (`login`, `waitlist`, `upload`,
+  and `remove` once that form exists) with `data-action`, and the Worker passes
+  a token only when siteverify reports that action and this host, so a token
+  solved on one form is refused by every other. Cloudflare's published test
+  secret keys, which don't promise an action, skip the action comparison only.
 - The Workers rate-limiting binding covers abuse throttling on login, the
   wait list, upload requests and search, keyed per IP and per user (per
   email for login and the wait list). It's approximate and counts
@@ -721,7 +730,9 @@ markup: its inline `style` attributes become stylesheet rules, because
   slowing abuse, but not for hard limits.
 - **Status codes.** A rate limit or quota that is hit returns **429** with
   `Retry-After` and a plain page saying when to try again. A failed or missing
-  Turnstile token returns **400** and shows the form again with an error, and
+  Turnstile token returns **400** and shows the form again with an error (as does
+  a 503 when Turnstile can't be reached and a 413 for a body too large; the form
+  may hold what was typed, so each is sent `Cache-Control: no-store`), and
   so does a form missing required fields (such as `/remove` without a contact
   email, or without a work or pseud). A sign-in POST from any other origin (a
   bad `Origin` / `Sec-Fetch-Site`, as in Auth) gets **403**. An upload request

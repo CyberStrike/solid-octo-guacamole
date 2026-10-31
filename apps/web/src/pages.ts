@@ -5,6 +5,7 @@
 import { TURNSTILE_ORIGIN } from "./security";
 import { LINK_LIFETIME_MINUTES } from "./signin";
 import { STYLESHEET_PATH } from "./styles";
+import { TURNSTILE_ACTIONS } from "./turnstile";
 import { EPUB_TYPE, MAX_UPLOAD_MB } from "./upload-limit";
 
 export const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
@@ -169,7 +170,7 @@ export const signInPage = (nonce: string, form: SignInForm) =>
 <label for="email">Email address</label>
 <input id="email" type="email" name="email" autocomplete="email" maxlength="254" required value="${escapeHtml(form.email ?? "")}">
 <input type="hidden" name="next" value="${escapeHtml(form.next)}">
-<div class="cf-turnstile" data-sitekey="${escapeHtml(form.siteKey)}"></div>
+<div class="cf-turnstile" data-sitekey="${escapeHtml(form.siteKey)}" data-action="${TURNSTILE_ACTIONS.login}"></div>
 <button type="submit">Email me a sign-in link</button>
 </form>
 <script nonce="${escapeHtml(nonce)}">document.getElementById("sign-in").hidden = false;</script>
@@ -189,7 +190,7 @@ export const uploadPage = (nonce: string, siteKey: string) =>
 <div id="upload" hidden>
 <label for="file">EPUB files, ${MAX_UPLOAD_MB} MB at most each</label>
 <input id="file" type="file" name="file" accept=".epub,${EPUB_TYPE}" multiple>
-<div class="cf-turnstile" data-sitekey="${escapeHtml(siteKey)}"></div>
+<div class="cf-turnstile" data-sitekey="${escapeHtml(siteKey)}" data-action="${TURNSTILE_ACTIONS.upload}"></div>
 <button type="button">Upload</button>
 </div>
 <script nonce="${escapeHtml(nonce)}">document.getElementById("upload").hidden = false;</script>`,

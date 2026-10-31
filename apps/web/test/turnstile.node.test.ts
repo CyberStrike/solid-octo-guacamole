@@ -39,7 +39,7 @@ interface Reply {
 }
 
 const answer = (body: Reply) => () => Response.json(body);
-const check = (fetch: TurnstileCheck["fetch"]) => ({
+const check = (fetch: TurnstileCheck["fetch"]): TurnstileCheck => ({
   secret: SECRET,
   hostname: "rarepair.fans",
   action: "login",
@@ -54,7 +54,9 @@ describe("19-surge-controls-and-quotas", () => {
     );
     expect(await verifyTurnstile("not-a-passing-token", check(failing.fetch))).toBe("failed");
 
-    const missing = siteverify(answer({ success: true, hostname: "rarepair.fans", action: "login" }));
+    const missing = siteverify(
+      answer({ success: true, hostname: "rarepair.fans", action: "login" }),
+    );
     for (const token of [null, ""]) {
       expect(await verifyTurnstile(token, check(missing.fetch))).toBe("failed");
     }
@@ -157,7 +159,7 @@ describe("verifyTurnstile", () => {
     }
     // The host is still checked.
     const cf = siteverify(answer({ success: true, hostname: "evil.example" }));
-    const secret = CLOUDFLARE_TEST_SECRETS[0];
+    const [secret = ""] = CLOUDFLARE_TEST_SECRETS;
     expect(await verifyTurnstile(TOKEN, { ...check(cf.fetch), secret })).toBe("failed");
   });
 });

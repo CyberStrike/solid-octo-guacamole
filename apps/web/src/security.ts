@@ -75,5 +75,9 @@ export const contentSecurityPolicy: MiddlewareHandler<{
       "Content-Security-Policy",
       hasTurnstile(c.req.path, c.env) ? `${policy}; ${TURNSTILE_FRAME}` : policy,
     );
+    // The nonce is fresh for this response, so a shared cache that kept the page would
+    // hand it to every visitor and it would protect nothing. A page that chose its own
+    // Cache-Control (the tag listing's short private one) keeps it.
+    if (!c.res.headers.has("Cache-Control")) c.header("Cache-Control", "private, no-store");
   }
 };

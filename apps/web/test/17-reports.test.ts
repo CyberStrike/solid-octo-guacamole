@@ -7,7 +7,7 @@ import {
   emailsTo,
   fetchW,
   nonceOf,
-  PASSING_TOKEN,
+  LOGIN_TOKEN,
   postLogin,
   signIn as signInAs,
   STRICT,
@@ -154,7 +154,7 @@ describe("17-reports-and-dmca", () => {
     const form = await (await fetchW(login.pathname + login.search)).text();
     expect(form).toContain(`<input type="hidden" name="next" value="${REPORT}">`);
     const next = login.searchParams.get("next")!;
-    const asked = await postLogin({ email, next, "cf-turnstile-response": PASSING_TOKEN });
+    const asked = await postLogin({ email, next, "cf-turnstile-response": LOGIN_TOKEN });
     expect(asked.status).toBe(200);
     const [sent] = await emailsTo(email);
     const link = new URL(sent!.url);
