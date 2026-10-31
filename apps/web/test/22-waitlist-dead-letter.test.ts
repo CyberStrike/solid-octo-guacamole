@@ -1,8 +1,9 @@
 import { createExecutionContext, createMessageBatch, getQueueResult } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { createDb } from "@archive/db";
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { deadLetteredLaunchEmails } from "../src/launch-dead-letter";
+import { consoleDuring } from "./helpers";
 
 // Runs in the "open" project. The handler is imported, as apps/mailer's tests import theirs:
 // the Worker's default export carries it as `queue` for Cloudflare to call.
@@ -35,39 +36,27 @@ const launch = (to: string) => ({
   url: "https://rarepair.fans/waitlist/unsubscribe?token=bye-token",
 });
 
+/** Delivers a batch to the handler: what the queue did with it, and every log line it wrote. */
 async function deliver(bodies: unknown[], bindings: Pick<Cloudflare.Env, "HYPERDRIVE"> = env) {
   const batch = createMessageBatch(
     "email-bulk-dlq",
     bodies.map((body, i) => ({ id: `msg-${i}`, timestamp: new Date(1000), attempts: 1, body })),
   );
   const ctx = createExecutionContext();
-  await deadLetteredLaunchEmails(batch, bindings, ctx);
-  return getQueueResult(batch, ctx);
+  const logs = await consoleDuring(() => deadLetteredLaunchEmails(batch, bindings, ctx));
+  return { result: await getQueueResult(batch, ctx), logs: logs.join("\n") };
 }
-
-function captureLogs() {
-  const lines: string[] = [];
-  for (const level of ["log", "info", "warn", "error", "debug"] as const) {
-    vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
-      // oxlint-disable-next-line deslop/no-runtime-typeof -- console takes any value; strings print bare
-      lines.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
-    });
-  }
-  return lines;
-}
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
 
 describe("22-waitlist", () => {
   it("A launch email that can't be sent is tried again", async () => {
     await queuedAddress("dead1@example.test");
     await queuedAddress("dead2@example.test");
     await queuedAddress("sent@example.test");
-    const logs = captureLogs();
 
-    const result = await deliver([launch("dead1@example.test"), launch("dead2@example.test")]);
+    const { result, logs } = await deliver([
+      launch("dead1@example.test"),
+      launch("dead2@example.test"),
+    ]);
 
     // Cleared, so the launch send queues them again; the address that was sent is left alone.
     expect(await notifiedAt("dead1@example.test")).toBeNull();
@@ -77,16 +66,14 @@ describe("22-waitlist", () => {
     expect(result.ackAll).toBe(true);
     expect(result.retryMessages).toEqual([]);
     // Counts only: no address in logs.
-    const text = logs.join("\n");
-    expect(text).toContain("waitlist.launch-dead-letter");
-    expect(text).not.toContain("example.test");
+    expect(logs).toContain("waitlist.launch-dead-letter");
+    expect(logs).not.toContain("example.test");
   });
 
   it("acks a body that is not a launch email, and clears nothing for it", async () => {
     await queuedAddress("keep@example.test");
-    const logs = captureLogs();
 
-    const result = await deliver([
+    const { result, logs } = await deliver([
       "not an object",
       {
         kind: "sign-in",
@@ -98,21 +85,20 @@ describe("22-waitlist", () => {
 
     expect(await notifiedAt("keep@example.test")).toEqual(NOTIFIED);
     expect(result.ackAll).toBe(true);
-    expect(logs.join("\n")).not.toContain("example.test");
+    expect(logs).not.toContain("example.test");
   });
 
   it("retries the batch, and logs no address, when the database can't be reached", async () => {
-    const logs = captureLogs();
     // SAFETY: the handler reads only HYPERDRIVE.connectionString, which this stand-in has; the
     // port is closed, so connecting fails.
     const unreachable = {
       HYPERDRIVE: { connectionString: "postgresql://nobody:nothing@127.0.0.1:1/none" },
     } as Pick<Cloudflare.Env, "HYPERDRIVE">;
 
-    const result = await deliver([launch("lost@example.test")], unreachable);
+    const { result, logs } = await deliver([launch("lost@example.test")], unreachable);
 
     expect(result.ackAll).toBe(false);
     expect(result.retryBatch.retry).toBe(true);
-    expect(logs.join("\n")).not.toContain("example.test");
+    expect(logs).not.toContain("example.test");
   });
 });

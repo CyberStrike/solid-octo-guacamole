@@ -21,33 +21,34 @@ export async function deadLetteredLaunchEmails(
     if (parsed?.kind === "waitlist-launch") addresses.add(parsed.to);
   }
 
-  let cleared = 0;
-  if (addresses.size > 0) {
-    const db = createDb({ connectionString: env.HYPERDRIVE.connectionString });
-    try {
-      const result = await db
-        .updateTable("waitlist")
-        .set({ notified_at: null })
-        .where("email", "in", [...addresses])
-        .executeTakeFirst();
-      cleared = Number(result.numUpdatedRows);
-    } catch (error) {
-      // The error's name only: Postgres can quote the row it failed on. Retried as a batch
-      // under this consumer's own max_retries.
-      const kind = error instanceof Error ? error.name : "unknown";
-      console.error({ event: "waitlist.launch-dead-letter", outcome: "failed", error: kind });
-      batch.retryAll();
-      return;
-    } finally {
-      ctx.waitUntil(db.destroy());
-    }
+  const event = "waitlist.launch-dead-letter";
+  if (addresses.size === 0) {
+    batch.ackAll();
+    console.warn({ event, outcome: "no launch email", messages: batch.messages.length });
+    return;
   }
 
-  batch.ackAll();
-  console.log({
-    event: "waitlist.launch-dead-letter",
-    outcome: "cleared",
-    messages: batch.messages.length,
-    cleared,
-  });
+  const db = createDb({ connectionString: env.HYPERDRIVE.connectionString });
+  try {
+    const result = await db
+      .updateTable("waitlist")
+      .set({ notified_at: null })
+      .where("email", "in", [...addresses])
+      .executeTakeFirst();
+    batch.ackAll();
+    console.log({
+      event,
+      outcome: "cleared",
+      messages: batch.messages.length,
+      cleared: Number(result.numUpdatedRows),
+    });
+  } catch (error) {
+    // The error's name only: Postgres can quote the row it failed on. Retried as a batch
+    // under this consumer's own max_retries.
+    const kind = error instanceof Error ? error.name : "unknown";
+    console.error({ event, outcome: "failed", error: kind });
+    batch.retryAll();
+  } finally {
+    ctx.waitUntil(db.destroy());
+  }
 }
