@@ -17,35 +17,51 @@ async function hashKey(prefix: string, value: string): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/** An IPv6 address with its dotted IPv4 tail, if any, written as the two hex groups it is. */
-function hexTail(address: string): string {
-  const at = address.lastIndexOf(":") + 1;
-  if (!address.includes(".", at)) return address;
-  const [a = 0, b = 0, c = 0, d = 0] = address.slice(at).split(".").map(Number);
-  const hex = (high: number, low: number) => ((high << 8) | low).toString(16);
-  return `${address.slice(0, at)}${hex(a, b)}:${hex(c, d)}`;
+// A dotted IPv4 address, each octet 0 to 255 in decimal without leading zeros.
+const OCTET = "(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)";
+const IPV4 = new RegExp(`^${OCTET}(?:\\.${OCTET}){3}$`);
+const HEX_GROUP = /^[0-9a-f]{1,4}$/;
+
+/**
+ * An IPv6 address's eight groups, a dotted IPv4 tail counting as the two it stands for,
+ * or null when it isn't an IPv6 address.
+ */
+function ipv6Groups(address: string): string[] | null {
+  let text = address.toLowerCase();
+  const at = text.lastIndexOf(":") + 1;
+  const last = text.slice(at);
+  if (last.includes(".")) {
+    if (!IPV4.test(last)) return null;
+    const [a = 0, b = 0, c = 0, d = 0] = last.split(".").map(Number);
+    text = `${text.slice(0, at)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const groups = (half = "") => (half === "" ? [] : half.split(":"));
+  const head = groups(halves[0]);
+  const tail = groups(halves[1]);
+  // A "::" stands for one group of zeros or more; without one there must be eight.
+  const zeros = 8 - head.length - tail.length;
+  if (halves.length === 2 ? zeros < 1 : zeros !== 0) return null;
+  const all = [...head, ...Array<string>(zeros).fill("0"), ...tail];
+  return all.every((group) => HEX_GROUP.test(group)) ? all : null;
 }
 
 /**
  * Who a client address stands for: an IPv4 address whole, and an IPv6 one by its /64, which
  * one subscriber commonly holds all of, written out in full however it was shortened. An
  * IPv4 address written as IPv6 (`::ffff:198.51.100.7`, or `::ffff:c633:6407`) is that IPv4
- * address.
+ * address. Anything that isn't an address stands for itself, so it never shares a real
+ * address's count.
  */
 function clientOf(address: string): string {
-  if (!address.includes(":")) return address;
-  const [head = "", tail] = hexTail(address.toLowerCase()).split("::");
-  const groups = (part = "") => (part === "" ? [] : part.split(":"));
-  const zeros = tail === undefined ? 0 : 8 - groups(head).length - groups(tail).length;
-  const all = [...groups(head), ...Array<string>(Math.max(0, zeros)).fill("0"), ...groups(tail)];
-  const [high = "", low = ""] = all.slice(6);
-  if (all.length === 8 && all.slice(0, 5).every((group) => Number.parseInt(group, 16) === 0)) {
-    if (all[5] === "ffff") {
-      const value = (Number.parseInt(high, 16) << 16) | Number.parseInt(low, 16);
-      return [24, 16, 8, 0].map((shift) => (value >>> shift) & 255).join(".");
-    }
-  }
-  return `${all
+  if (IPV4.test(address)) return address;
+  const groups = ipv6Groups(address);
+  if (groups === null) return `not an address: ${address}`;
+  const [high = 0, low = 0] = groups.slice(6).map((group) => Number.parseInt(group, 16));
+  const mapped = groups.slice(0, 5).every((group) => Number.parseInt(group, 16) === 0);
+  if (mapped && groups[5] === "ffff") return [high >> 8, high & 255, low >> 8, low & 255].join(".");
+  return `${groups
     .slice(0, 4)
     .map((group) => group.padStart(4, "0"))
     .join(":")}::/64`;

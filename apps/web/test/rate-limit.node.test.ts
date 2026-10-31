@@ -34,17 +34,36 @@ describe("ipKey", () => {
     const key = await loginIp("198.51.100.7");
     expect(await loginIp("::ffff:198.51.100.7")).toBe(key);
     expect(await loginIp("::FFFF:198.51.100.7")).toBe(key);
-    // Any other IPv6 address with a dotted tail is still keyed on its /64.
-    const v6 = await loginIp("2001:db8:1:2::c000:201");
-    expect(await loginIp("2001:db8:1:2::192.0.2.1")).toBe(v6);
-    expect(await loginIp("2001:db8:9:9::192.0.2.1")).not.toBe(v6);
-    expect(await loginIp("2001:db8:1:2::192.0.2.1")).not.toBe(await loginIp("192.0.2.1"));
     // In hex too: c633:6407 is 198.51.100.7.
     expect(await loginIp("::ffff:c633:6407")).toBe(key);
     expect(await loginIp("0:0:0:0:0:ffff:c633:6407")).toBe(key);
     const other = await loginIp("::ffff:203.0.113.9");
     expect(other).not.toBe(key);
     expect(other).not.toBe(await loginIp("::1"));
+  });
+
+  it("keys any other IPv6 address with a dotted tail on its /64", async () => {
+    const key = await loginIp("2001:db8:1:2::c000:201");
+    expect(await loginIp("2001:db8:1:2::192.0.2.1")).toBe(key);
+    expect(await loginIp("2001:DB8:1:2::192.0.2.9")).toBe(key);
+    expect(await loginIp("2001:db8:9:9::192.0.2.1")).not.toBe(key);
+    expect(await loginIp("2001:db8:1:2::192.0.2.1")).not.toBe(await loginIp("192.0.2.1"));
+  });
+
+  it("keys a value that isn't an address as itself, never as some real address", async () => {
+    for (const [bad, lookalike] of [
+      ["::ffff:1.2.3", "1.2.3.0"],
+      ["::ffff:1.2.3.4.5", "1.2.3.4"],
+      ["::ffff:256.0.0.1", "0.0.0.1"],
+      ["::ffff:1.256.0.0", "1.0.0.0"],
+      ["::ffff:0x7f.0.0.1", "127.0.0.1"],
+      ["::ffff:1.2.3.4%eth0", "1.2.3.0"],
+      ["::ffff:a.b.c.d", "0.0.0.0"],
+      ["1:2:3:4:5:6:7:1.2.3.4", "1:2:3:4::1"],
+      ["1::2::3", "1::3"],
+    ] as const) {
+      expect(await loginIp(bad)).not.toBe(await loginIp(lookalike));
+    }
   });
 
   it("gives every request without a client address one shared key, still limited", async () => {
