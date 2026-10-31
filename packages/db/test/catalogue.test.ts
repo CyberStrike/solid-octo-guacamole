@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { HiddenCause, TagType, UploadStatus, WorkStatus } from "../src/index";
 import { createTestDb, type TestDb } from "../src/testing";
 
 let t: TestDb;
@@ -91,5 +92,200 @@ describe("packages/db catalogue and uploads", () => {
       );
       expect(actual, `columns of ${table}`).toEqual(columns);
     }
+  });
+
+  it("Ids the insert leaves out are filled in", async () => {
+    const { id } = await addWork(100);
+    expect(id).toHaveLength(36);
+  });
+
+  it("A new upload is pending, with no hash yet", async () => {
+    await addUser("pending-uploader");
+    const row = await t.db
+      .insertInto("uploads")
+      .values({ user_id: "pending-uploader", r2_key: "uploads/x.epub", bytes: 10 })
+      .returning(["status", "sha256", "lease_until", "work_id"])
+      .executeTakeFirstOrThrow();
+    expect(row).toEqual({ status: "pending", sha256: null, lease_until: null, work_id: null });
+  });
+});
+
+let users = 0;
+async function addUser(id = `user-${++users}`) {
+  await t.db
+    .insertInto("user")
+    .values({ id, name: id, email: `${id}@example.test`, email_verified: true })
+    .execute();
+  return id;
+}
+
+async function addWork(ao3WorkId: number) {
+  return t.db
+    .insertInto("works")
+    .values({ ao3_work_id: ao3WorkId, title: "t", chapters_count: 1, complete: true })
+    .returning("id")
+    .executeTakeFirstOrThrow();
+}
+
+async function addVersion(workId: string, prefix = `works/${workId}/`) {
+  const userId = await addUser();
+  const upload = await t.db
+    .insertInto("uploads")
+    .values({ user_id: userId, r2_key: `uploads/${userId}.epub`, bytes: 1, work_id: workId })
+    .returning("id")
+    .executeTakeFirstOrThrow();
+  return t.db
+    .insertInto("work_versions")
+    .values({ work_id: workId, upload_id: upload.id, chapter_count: 1, r2_prefix: prefix })
+    .returning("id")
+    .executeTakeFirstOrThrow();
+}
+
+async function addTag(type: string, name: string) {
+  // SAFETY: the constraint tests pass values the TagType union refuses, to reach the CHECK.
+  const tagType = type as TagType;
+  return t.db
+    .insertInto("tags")
+    .values({ type: tagType, name, name_norm: name.toLowerCase() })
+    .returning("id")
+    .executeTakeFirstOrThrow();
+}
+
+describe("packages/db catalogue constraints", () => {
+  it("A second work with the same AO3 work ID is refused", async () => {
+    await addWork(200);
+    await expect(addWork(200)).rejects.toThrow(/unique/i);
+  });
+
+  it("A work status outside the Data model is refused", async () => {
+    const { id } = await addWork(201);
+    // SAFETY: "held" is outside WorkStatus on purpose: the CHECK must refuse it.
+    const status = "held" as WorkStatus;
+    await expect(
+      t.db.updateTable("works").set({ status }).where("id", "=", id).execute(),
+    ).rejects.toThrow(/check constraint/i);
+  });
+
+  it("A hidden work needs a hidden cause, and only a hidden work has one", async () => {
+    const { id } = await addWork(202);
+    const set = (status: WorkStatus, hidden_cause: HiddenCause | null) =>
+      t.db.updateTable("works").set({ status, hidden_cause }).where("id", "=", id).execute();
+    await expect(set("hidden", null)).rejects.toThrow(/check constraint/i);
+    await expect(set("live", "reports")).rejects.toThrow(/check constraint/i);
+    // SAFETY: an unknown cause is outside HiddenCause on purpose: the CHECK must refuse it.
+    await expect(set("hidden", "bored" as HiddenCause)).rejects.toThrow(/check constraint/i);
+    await set("hidden", "moderator");
+  });
+
+  it("An upload status outside the pipeline's is refused", async () => {
+    const userId = await addUser();
+    // SAFETY: "bogus" is outside UploadStatus on purpose: the CHECK must refuse it.
+    const status = "bogus" as UploadStatus;
+    await expect(
+      t.db
+        .insertInto("uploads")
+        .values({ user_id: userId, r2_key: "k", bytes: 1, status })
+        .execute(),
+    ).rejects.toThrow(/check constraint/i);
+  });
+
+  it("An upload for a user who doesn't exist is refused", async () => {
+    await expect(
+      t.db.insertInto("uploads").values({ user_id: "nobody", r2_key: "k", bytes: 1 }).execute(),
+    ).rejects.toThrow(/foreign key/i);
+  });
+
+  it("A version for a work that doesn't exist is refused", async () => {
+    await expect(addVersion("no-such-work")).rejects.toThrow(/foreign key/i);
+  });
+
+  it("A work's current version must be one of its own versions", async () => {
+    const mine = await addWork(203);
+    const other = await addWork(204);
+    const theirs = await addVersion(other.id);
+    await expect(
+      t.db
+        .updateTable("works")
+        .set({ current_version_id: theirs.id })
+        .where("id", "=", mine.id)
+        .execute(),
+    ).rejects.toThrow(/foreign key/i);
+  });
+
+  it("A chapter number appears once per version", async () => {
+    const work = await addWork(205);
+    const version = await addVersion(work.id);
+    const chapter = { work_id: work.id, version_id: version.id, n: 1, title: "", words: 1 };
+    await t.db
+      .insertInto("chapters")
+      .values({ ...chapter, r2_key: "a" })
+      .execute();
+    await expect(
+      t.db
+        .insertInto("chapters")
+        .values({ ...chapter, r2_key: "b" })
+        .execute(),
+    ).rejects.toThrow(/unique|duplicate key/i);
+  });
+
+  it("A tag type outside the seven is refused", async () => {
+    await expect(addTag("genre", "x")).rejects.toThrow(/check constraint/i);
+  });
+
+  it("A tag is one row per type and name as written", async () => {
+    await addTag("fandom", "Same Name");
+    await addTag("character", "Same Name");
+    await addTag("fandom", "same name");
+    await expect(addTag("fandom", "Same Name")).rejects.toThrow(/unique|duplicate key/i);
+  });
+
+  it("A work carries a tag once", async () => {
+    const work = await addWork(206);
+    const tag = await addTag("freeform", "Once");
+    const link = { work_id: work.id, tag_id: tag.id };
+    await t.db
+      .insertInto("work_tags")
+      .values({ ...link, position: 0 })
+      .execute();
+    await expect(
+      t.db
+        .insertInto("work_tags")
+        .values({ ...link, position: 1 })
+        .execute(),
+    ).rejects.toThrow(/unique|duplicate key/i);
+  });
+
+  it("Deleting a work deletes its authors, versions, chapters and tag links", async () => {
+    const work = await addWork(207);
+    const version = await addVersion(work.id);
+    const tag = await addTag("freeform", "Kept tag");
+    await t.db
+      .updateTable("works")
+      .set({ current_version_id: version.id })
+      .where("id", "=", work.id)
+      .execute();
+    await t.db
+      .insertInto("work_authors")
+      .values({ work_id: work.id, pseud: "p", ao3_user: null })
+      .execute();
+    await t.db
+      .insertInto("chapters")
+      .values({ work_id: work.id, version_id: version.id, n: 1, title: "", words: 1, r2_key: "k" })
+      .execute();
+    await t.db
+      .insertInto("work_tags")
+      .values({ work_id: work.id, tag_id: tag.id, position: 0 })
+      .execute();
+
+    await t.db.deleteFrom("works").where("id", "=", work.id).execute();
+
+    const left = await Promise.all(
+      (["work_authors", "work_versions", "chapters", "work_tags"] as const).map((table) =>
+        t.db.selectFrom(table).select("work_id").where("work_id", "=", work.id).execute(),
+      ),
+    );
+    expect(left).toEqual([[], [], [], []]);
+    const tags = await t.db.selectFrom("tags").select("id").where("id", "=", tag.id).execute();
+    expect(tags).toEqual([{ id: tag.id }]);
   });
 });
