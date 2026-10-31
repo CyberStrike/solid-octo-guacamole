@@ -47,4 +47,22 @@ describe("22-waitlist", () => {
 
     expect(html).toMatch(/one email when the archive opens, and nothing else/i);
   });
+
+  it("Coming-soon page without JavaScript explains the form needs it", async () => {
+    // workerd runs no page script, so this reads the HTML a browser with JavaScript off gets.
+    const html = await (await fetchW("/")).text();
+
+    // The rest of the page renders: noscript wraps only its message.
+    expect(html).toMatch(
+      /<noscript><p>[^<]*joining the wait list needs JavaScript[^<]*<\/p><\/noscript>/i,
+    );
+    expect(html.replace(/<noscript>.*?<\/noscript>/s, "")).toMatch(/rarepair is coming soon/i);
+
+    // Nothing can submit the form: its only submit button starts disabled, which also
+    // blocks submitting by pressing Enter in the email field.
+    const buttons = tags(html, "button");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]).toMatch(/\bdisabled\b/);
+    expect(tags(html, "input").filter((tag) => /type="(submit|image)"/.test(tag))).toEqual([]);
+  });
 });

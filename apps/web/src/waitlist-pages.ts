@@ -15,7 +15,11 @@ export const waitlistPage = (title: string, body: string, head = "") => `<!docty
 <body><main>${body}</main></body>
 </html>`;
 
-/** The coming-soon page at / while PRELAUNCH is on, with the wait list form. */
+/**
+ * The coming-soon page at / while PRELAUNCH is on, with the wait list form. Its button
+ * starts disabled and only Turnstile's callbacks enable it, so without JavaScript (and
+ * so without a token) the form can't be submitted at all, not even with Enter.
+ */
 export const comingSoonPage = (nonce: string, siteKey: string) =>
   waitlistPage(
     "Coming soon",
@@ -24,9 +28,14 @@ export const comingSoonPage = (nonce: string, siteKey: string) =>
 <form method="post" action="/waitlist">
 <label for="email">Email address</label>
 <input id="email" name="email" type="email" autocomplete="email" required>
-<div class="cf-turnstile" data-sitekey="${siteKey}"></div>
-<button type="submit">Join the wait list</button>
+<div class="cf-turnstile" data-sitekey="${siteKey}" data-callback="waitlistReady" data-expired-callback="waitlistExpired"></div>
+<button id="join" type="submit" disabled>Join the wait list</button>
 </form>
+<noscript><p>Joining the wait list needs JavaScript, for its anti-spam check.</p></noscript>
 <p>Your address gets one email when the archive opens, and nothing else.</p>`,
-    `<script src="${TURNSTILE_API}" nonce="${nonce}" async defer></script>`,
+    `<script nonce="${nonce}">
+function waitlistReady() { document.getElementById("join").disabled = false; }
+function waitlistExpired() { document.getElementById("join").disabled = true; }
+</script>
+<script src="${TURNSTILE_API}" nonce="${nonce}" async defer></script>`,
   );
