@@ -2,9 +2,13 @@
 // accepted the terms is sent to /welcome/terms from every page but a few, and
 // accepting there continues to the page it asked for.
 
-import type { MiddlewareHandler } from "hono";
+import { createDb } from "@archive/db";
+import type { Context, MiddlewareHandler } from "hono";
+import type { Bindings } from "./env";
+import { readForm } from "./login";
+import { forbiddenPage, welcomeTermsPage } from "./pages";
 import type { SessionVariables } from "./session";
-import { safeNext } from "./signin";
+import { isSameOrigin, safeNext } from "./signin";
 
 /** The terms page itself. */
 export const WELCOME_TERMS = "/welcome/terms";
@@ -49,3 +53,53 @@ export const termsGate: MiddlewareHandler<{ Variables: SessionVariables }> = asy
   const query = new URLSearchParams({ next: safeNext(url.pathname + url.search) });
   return c.redirect(`${WELCOME_TERMS}?${query.toString()}`, 302);
 };
+
+type TermsContext = Context<{ Bindings: Bindings; Variables: SessionVariables }>;
+
+/**
+ * Where accepting continues to: `next` reduced to a same-site path, and never the
+ * terms page again, which would only send the account on to its own `next`.
+ */
+function continueTo(next: string | null): string {
+  const path = safeNext(next);
+  return path === WELCOME_TERMS || path.startsWith(`${WELCOME_TERMS}?`) ? "/" : path;
+}
+
+/**
+ * `GET /welcome/terms`, after `requireSignIn`: the page to accept the terms, or, once
+ * they are accepted, straight on to `next`, so a bookmark never shows it again.
+ */
+export function showTerms(c: TermsContext) {
+  const next = continueTo(c.req.query("next") ?? null);
+  c.header("Cache-Control", "no-store");
+  if (c.var.session?.user.termsAcceptedAt != null) return c.redirect(next, 302);
+  return c.html(welcomeTermsPage(next));
+}
+
+/**
+ * `POST /welcome/terms`, after `requireSignIn`: sets `terms_accepted_at`, once, and
+ * continues to `next` with a 303. As on the sign-in forms, the origin is checked
+ * before the body is read, and `next` is reduced whatever the form says.
+ */
+export async function acceptTerms(c: TermsContext) {
+  if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
+  // A body too large to be our form is not read; accepting needs nothing from it.
+  const form = (await readForm(c.req.raw)) ?? new URLSearchParams();
+  const user = c.var.session?.user;
+  if (user !== undefined && user.termsAcceptedAt == null) {
+    const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
+    try {
+      // Only while still empty: accepting again keeps the first time.
+      await db
+        .updateTable("user")
+        .set({ terms_accepted_at: new Date() })
+        .where("id", "=", user.id)
+        .where("terms_accepted_at", "is", null)
+        .execute();
+    } finally {
+      c.executionCtx.waitUntil(db.destroy());
+    }
+  }
+  c.header("Cache-Control", "no-store");
+  return c.redirect(continueTo(form.get("next")), 303);
+}

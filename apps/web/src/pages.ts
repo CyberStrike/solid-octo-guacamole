@@ -87,6 +87,23 @@ export const termsPage = () =>
 </ul>`,
   );
 
+/**
+ * The one-time terms page a new account sees first: a summary, a link to the terms
+ * and a button that posts. No script, so it works with JavaScript off. `next` is
+ * already reduced to a same-site path.
+ */
+export const welcomeTermsPage = (next: string) =>
+  layout(
+    "Before you start",
+    `${DRAFT}
+<p>Welcome to rarepair. Before you go on, please read <a href="/terms">the terms</a> and accept them.</p>
+<p>In short: uploads that pass our checks are public, anyone can ask for a work to be removed, and we may remove any work or close any account to keep the site safe. The site is an unofficial, temporary stopgap that may change or close at any time.</p>
+<form method="post" action="/welcome/terms">
+<input type="hidden" name="next" value="${escapeHtml(next)}">
+<button type="submit">I accept the terms</button>
+</form>`,
+  );
+
 export const privacyPage = () =>
   layout(
     "Privacy",

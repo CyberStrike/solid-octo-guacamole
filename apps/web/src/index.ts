@@ -12,9 +12,9 @@ import {
   wwwToBareDomain,
   type SecurityVariables,
 } from "./security";
-import { sessionMiddleware, type SessionVariables } from "./session";
+import { requireSignIn, sessionMiddleware, type SessionVariables } from "./session";
 import { STYLESHEET, STYLESHEET_PATH } from "./styles";
-import { termsGate } from "./terms";
+import { acceptTerms, showTerms, termsGate, WELCOME_TERMS } from "./terms";
 import { joinWaitlist } from "./waitlist";
 import { comingSoonPage } from "./waitlist-pages";
 import { showWork } from "./work-page";
@@ -49,6 +49,8 @@ app.get("/login", showSignIn);
 app.post("/login", requestSignIn);
 app.get("/login/confirm", showConfirm);
 app.post("/login/confirm", confirmSignIn);
+app.get(WELCOME_TERMS, requireSignIn, showTerms);
+app.post(WELCOME_TERMS, requireSignIn, acceptTerms);
 app.post("/waitlist", joinWaitlist);
 // After launch, a stale link to the form goes home. Before it, nothing is at GET /waitlist.
 app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));

@@ -3,6 +3,7 @@ import type { MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { makeAuth, SESSION_COOKIE } from "./auth";
 import type { Bindings } from "./env";
+import { safeNext } from "./signin";
 
 /** A signed-in user and their session, as Better Auth reads them from the cookie. */
 export type Session = ReturnType<typeof makeAuth>["$Infer"]["Session"];
@@ -46,4 +47,22 @@ export const sessionMiddleware: MiddlewareHandler<{
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }
+};
+
+/**
+ * For a route that needs an account, after `sessionMiddleware`. Signed out, a GET
+ * or HEAD is sent to sign in with a 302, carrying the page as `next`; any other
+ * method gets a 303 to `/login` with no `next`, since a form post is no page to
+ * come back to. A route that must answer a script with 401 instead checks
+ * `c.var.session` itself.
+ */
+export const requireSignIn: MiddlewareHandler<{ Variables: SessionVariables }> = async (
+  c,
+  next,
+) => {
+  if (c.var.session != null) return next();
+  if (c.req.method !== "GET" && c.req.method !== "HEAD") return c.redirect("/login", 303);
+  const url = new URL(c.req.url);
+  const query = new URLSearchParams({ next: safeNext(url.pathname + url.search) });
+  return c.redirect(`/login?${query.toString()}`, 302);
 };
