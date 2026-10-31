@@ -23,13 +23,25 @@ describe("14 browse and home", () => {
       tags: [{ type: "fandom", name: "Harry Potter" }],
     });
 
-    const works = await listLiveWorksByTag(t.db, normalizeTagName("fandom", "Harry Potter"));
+    const works = await listLiveWorksByTag(t.db, "fandom", "Harry Potter");
 
     expect(works.map((w) => w.id).sort()).toEqual([a.workId, b.workId].sort());
     const names = await Promise.all(
       [a, b].map(async (s) => (await getLiveWork(t.db, s.ao3WorkId))?.tags[0]?.name),
     );
     expect(names).toEqual(["Harry Potter", "harry  potter!"]);
+  });
+});
+
+describe("packages/db tag listing", () => {
+  it("A tag listing holds only tags of its own type", async () => {
+    const fandom = await seedWork(t.db, { tags: [{ type: "fandom", name: "Listing Sherlock" }] });
+    await seedWork(t.db, { tags: [{ type: "character", name: "Listing Sherlock" }] });
+
+    const works = await listLiveWorksByTag(t.db, "fandom", "listing sherlock");
+
+    expect(normalizeTagName("character", "Listing Sherlock")).toBe("listing sherlock");
+    expect(works.map((w) => w.id)).toEqual([fandom.workId]);
   });
 });
 

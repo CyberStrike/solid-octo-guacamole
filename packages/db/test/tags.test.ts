@@ -30,7 +30,13 @@ describe("normalizeTagName", () => {
 
   it("Relationship tags keep / and & apart", () => {
     expect(normalizeTagName("relationship", "Kirk/Spock")).toBe("kirk/spock");
-    expect(normalizeTagName("relationship", "Kirk & Spock")).toBe("kirk & spock");
+    expect(normalizeTagName("relationship", "Kirk & Spock")).toBe("kirk&spock");
+  });
+
+  it("Whitespace around / and & in a relationship tag folds away", () => {
+    expect(normalizeTagName("relationship", "Kirk / Spock")).toBe("kirk/spock");
+    expect(normalizeTagName("relationship", "Kirk&Spock")).toBe("kirk&spock");
+    expect(normalizeTagName("relationship", "Kirk, / Spock")).toBe("kirk/spock");
   });
 
   it("Other tag types fold / and & like any punctuation", () => {

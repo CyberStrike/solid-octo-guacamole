@@ -97,8 +97,6 @@ export async function seedWork(
         // The version below sets the counts as it becomes current.
         chapters_count: 0,
         complete: options.complete ?? true,
-        status,
-        hidden_cause: options.hiddenCause ?? null,
       })
       .returning("id")
       .executeTakeFirstOrThrow();
@@ -112,6 +110,12 @@ export async function seedWork(
     await addTags(trx, work.id, options.tags ?? DEFAULT_TAGS);
     const seeded = { workId: work.id, ao3WorkId, userId };
     const version = await addVersion(trx, seeded, { ...options, current: true });
+    // Last, as ingest does: the work leaves `processing` once its version is current.
+    await trx
+      .updateTable("works")
+      .set({ status, hidden_cause: options.hiddenCause ?? null })
+      .where("id", "=", work.id)
+      .execute();
     return { ...seeded, ...version };
   });
 }

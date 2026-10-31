@@ -1,7 +1,15 @@
 // Typed reads and writes over the catalogue and uploads. Each takes the
 // caller's Kysely, so a Worker passes the one it made for the request.
 import type { Kysely, Selectable } from "kysely";
-import type { ChapterTable, Database, TagTable, WorkTable, WorkVersionTable } from "./schema";
+import type {
+  ChapterTable,
+  Database,
+  TagTable,
+  TagType,
+  WorkTable,
+  WorkVersionTable,
+} from "./schema";
+import { normalizeTagName } from "./tags";
 
 /** A work's own fields, as a page shows them. */
 export type WorkSummary = Pick<
@@ -105,11 +113,16 @@ export async function getLiveWork(
   };
 }
 
-/** The `live` works carrying a tag whose `name_norm` is this, however each spelled it. */
+/**
+ * The `live` works carrying a tag of this type that matches `name` under the
+ * tag rule, however each work spelled it.
+ */
 export async function listLiveWorksByTag(
   db: Kysely<Database>,
-  nameNorm: string,
+  type: TagType,
+  name: string,
 ): Promise<WorkSummary[]> {
+  const nameNorm = normalizeTagName(type, name);
   return db
     .selectFrom("works")
     .select(SUMMARY)
@@ -121,7 +134,8 @@ export async function listLiveWorksByTag(
           .innerJoin("tags", "tags.id", "work_tags.tag_id")
           .select("work_tags.tag_id")
           .whereRef("work_tags.work_id", "=", "works.id")
-          .where("tags.name_norm", "=", nameNorm),
+          .where("tags.name_norm", "=", nameNorm)
+          .where("tags.type", "=", type),
       ),
     )
     .orderBy("works.ao3_work_id")

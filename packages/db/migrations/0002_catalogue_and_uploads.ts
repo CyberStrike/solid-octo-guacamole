@@ -26,7 +26,9 @@ create table "works" (
   constraint "works_hidden_cause_check"
     check ("hidden_cause" in ('removal_request', 'reports', 'moderator')),
   constraint "works_hidden_cause_while_hidden"
-    check (("status" = 'hidden') = ("hidden_cause" is not null))
+    check (("status" = 'hidden') = ("hidden_cause" is not null)),
+  constraint "works_current_version_unless_processing"
+    check ("status" = 'processing' or "current_version_id" is not null)
 );
 
 create table "uploads" (
@@ -100,7 +102,8 @@ create table "work_tags" (
 create table "work_authors" (
   "work_id" text not null references "works" ("id") on delete cascade,
   "pseud" text not null,
-  "ao3_user" text
+  "ao3_user" text,
+  primary key ("work_id", "pseud")
 );
 
 create index "uploads_user_id_idx" on "uploads" ("user_id");
@@ -108,7 +111,6 @@ create index "uploads_sha256_idx" on "uploads" ("sha256");
 create index "uploads_work_id_idx" on "uploads" ("work_id");
 create index "works_current_version_id_idx" on "works" ("current_version_id");
 create index "work_versions_work_id_idx" on "work_versions" ("work_id");
-create index "tags_name_norm_idx" on "tags" ("name_norm");
+create index "tags_name_norm_idx" on "tags" ("name_norm", "type");
 create index "work_tags_tag_id_idx" on "work_tags" ("tag_id");
-create index "work_authors_work_id_idx" on "work_authors" ("work_id");
 `;

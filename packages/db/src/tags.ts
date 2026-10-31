@@ -9,7 +9,8 @@ const KEPT_IN_RELATIONSHIPS = /[/&]/u;
 /**
  * A tag's `name_norm`: NFKC, lowercased, each run of whitespace and Unicode
  * punctuation folded to one space, then trimmed. Relationship tags keep `/`
- * and `&`, so "Kirk/Spock" and "Kirk & Spock" stay different tags.
+ * and `&`, so "Kirk/Spock" and "Kirk & Spock" stay different tags, while
+ * "Kirk / Spock" and "Kirk/Spock" match.
  */
 export function normalizeTagName(type: TagType, name: string): string {
   const keep = type === "relationship";
@@ -20,11 +21,8 @@ export function normalizeTagName(type: TagType, name: string): string {
     .trim();
 }
 
-/**
- * Folds a run, keeping each `/` and `&` in it: other punctuation beside them
- * goes, and whitespace beside them collapses to one space as written.
- */
+/** Folds a run to the `/` and `&` in it, or to one space when it has neither. */
 function foldKeeping(run: string): string {
   if (!KEPT_IN_RELATIONSHIPS.test(run)) return " ";
-  return run.replace(/[^\s/&]/gu, "").replace(/\s+/gu, " ");
+  return run.replace(/[^/&]/gu, "");
 }

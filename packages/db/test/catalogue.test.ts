@@ -168,6 +168,12 @@ describe("packages/db catalogue constraints", () => {
 
   it("A hidden work needs a hidden cause, and only a hidden work has one", async () => {
     const { id } = await addWork(202);
+    const version = await addVersion(id);
+    await t.db
+      .updateTable("works")
+      .set({ current_version_id: version.id })
+      .where("id", "=", id)
+      .execute();
     const set = (status: WorkStatus, hidden_cause: HiddenCause | null) =>
       t.db.updateTable("works").set({ status, hidden_cause }).where("id", "=", id).execute();
     await expect(set("hidden", null)).rejects.toThrow(/check constraint/i);
@@ -253,6 +259,22 @@ describe("packages/db catalogue constraints", () => {
         .values({ ...link, position: 1 })
         .execute(),
     ).rejects.toThrow(/unique|duplicate key/i);
+  });
+
+  it("Only a work still processing may lack a current version", async () => {
+    const { id } = await addWork(209);
+    await expect(
+      t.db.updateTable("works").set({ status: "live" }).where("id", "=", id).execute(),
+    ).rejects.toThrow(/check constraint/i);
+  });
+
+  it("A work lists a pseud once", async () => {
+    const work = await addWork(210);
+    const author = { work_id: work.id, pseud: "twice", ao3_user: null };
+    await t.db.insertInto("work_authors").values(author).execute();
+    await expect(t.db.insertInto("work_authors").values(author).execute()).rejects.toThrow(
+      /unique|duplicate key/i,
+    );
   });
 
   it("Two of a work's tags can't share a position", async () => {
