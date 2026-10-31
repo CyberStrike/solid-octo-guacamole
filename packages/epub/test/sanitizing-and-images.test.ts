@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import { processEpub, type ImageRef } from "../src";
 import { ao3Epub, fromBase64, MiB } from "./helpers";
 
-// The sanitizer and image cases of specs/scenarios/mvp/07-sanitizing-and-images.md that issue #39 lists, through processEpub.
-// Chapter-link rewriting, content-origin image keys, signature sniffing of JPEG/GIF/WebP and key sharing live elsewhere or are tracked as issues.
+// The sanitizer and image cases of specs/scenarios/mvp/07-sanitizing-and-images.md that issues #39 and #4 list, through processEpub.
+// Content-origin image keys, signature sniffing of JPEG/GIF/WebP and key sharing live elsewhere or are tracked as issues.
 
 const PNG = fromBase64(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
@@ -26,6 +26,62 @@ async function chapterHtml(inner: string, extraManifest: Extra[] = []) {
   expect(work.chapters).toHaveLength(1);
   return work.chapters[0]!.html;
 }
+
+// Three chapters over three size-split files, as calibre writes them:
+//   file 0: chapter 1, then chapter 2 starting mid-file at #c2
+//   file 1: rest of chapter 2, then chapter 3 starting at #c3
+//   file 2: rest of chapter 3
+const SPLIT = [
+  "Three Parts_split_000.xhtml",
+  "Three Parts_split_001.xhtml",
+  "Three Parts_split_002.xhtml",
+] as const;
+
+/** Markup appended to a paragraph of each chapter, or to the summary. */
+interface Links {
+  c1?: string;
+  c2?: string;
+  c3?: string;
+  summary?: string;
+  workId?: number;
+}
+
+const threeChapters = (links: Links = {}) =>
+  ao3Epub({
+    workId: links.workId,
+    summary: links.summary,
+    stats: "Published: 2020-01-01 Chapters: 3/3 Words: 9",
+    files: [
+      {
+        name: SPLIT[0],
+        body: `<div id="chapters" class="userstuff1">
+  <div class="meta"><h2 class="toc-heading" id="c1">One</h2></div>
+  <div class="userstuff2"><p id="in-c1">marker-c1 ${links.c1 ?? ""}</p></div>
+  <div class="meta"><h2 class="toc-heading" id="c2">Two</h2></div>
+  <div class="userstuff2"><p>marker-c2-a ${links.c2 ?? ""}</p></div>
+</div>`,
+      },
+      {
+        name: SPLIT[1],
+        body: `<div id="chapters" class="userstuff1">
+  <div class="userstuff2"><p id="in-c2">marker-c2-b</p></div>
+  <div class="meta"><h2 class="toc-heading" id="c3">Three</h2></div>
+  <div class="userstuff2"><p id="in-c3">marker-c3-a ${links.c3 ?? ""}</p></div>
+</div>`,
+      },
+      {
+        name: SPLIT[2],
+        body: `<div id="chapters" class="userstuff1">
+  <div class="userstuff2"><p id="late-c3">marker-c3-b</p></div>
+</div>`,
+      },
+    ],
+    navPoints: [
+      { label: "1. One", src: encodeURI(SPLIT[0]) },
+      { label: "2. Two", src: `${encodeURI(SPLIT[0])}#c2` },
+      { label: "3. Three", src: `${encodeURI(SPLIT[1])}#c3` },
+    ],
+  });
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
@@ -341,5 +397,15 @@ describe("07-sanitizing-and-images", () => {
     );
     for (const t of ["before-box", "after-box", "Session expired, please sign in"])
       expect(html).toContain(t);
+  });
+
+  it("Links to another chapter of the same work are rewritten", async () => {
+    const work = await processEpub(
+      threeChapters({ c1: `<a href="Three%20Parts_split_001.xhtml#c3">go-three</a>` }),
+    );
+    const [c1, , c3] = work.chapters.map((c) => c.html);
+    expect(c1).toContain(`<a href="/works/1000001/chapters/3">go-three</a>`);
+    expect(c1).not.toMatch(/rel=|#|\.xhtml/);
+    expect(c3).toContain("marker-c3-a");
   });
 });

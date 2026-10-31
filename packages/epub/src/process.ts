@@ -114,6 +114,11 @@ async function run(
   files.clear(); // everything still needed is now parsed or held by `candidates`
   const used = new Map<string, ImageCandidate>();
   const imageBase = options.imageBase ?? "";
+  // Before anything is serialized, so links in the summary and notes resolve too.
+  const split = splitChapters(docs, pkg.navPoints);
+  // The chapter being serialized, so a link to it stays plain text; null outside chapters.
+  // SAFETY: widens the initial null, so TS doesn't read it as null inside the resolver.
+  let current = null as number | null;
   const ctx: SanitizeContext = {
     resolveImage(src, fromFile) {
       const target = resolveHref(dirOf(fromFile), src);
@@ -121,6 +126,13 @@ async function run(
       if (!candidate) return null;
       if (!used.has(candidate.ref.key)) used.set(candidate.ref.key, candidate);
       return imageBase + candidate.ref.key;
+    },
+    resolveChapterLink(href, fromFile) {
+      const target = resolveHref(dirOf(fromFile), href);
+      if (!target) return null;
+      const n = split.chapterFor(target.path || fromFile, target.anchor);
+      if (n === null || n === current) return null;
+      return `/works/${ao3WorkId}/chapters/${n}`;
     },
     // "See the end of the work/chapter for more notes" links point inside the epub.
     skip: (el) => hasClass(el, "endnote-link"),
@@ -136,15 +148,16 @@ async function run(
   }
   const notesHtml = html(preface.notes);
 
-  const split = splitChapters(docs, pkg.navPoints);
   if (split.method === "files")
     reviewReasons.push("chapters_one_per_file: no usable table of contents or chapter headings");
   reviewReasons.push(...split.reviewReasons);
   const chapters: Chapter[] = [];
   for (const c of split.chapters) {
+    current = chapters.length + 1;
     const body = serializeChildren(c.nodes, ctx).trim();
-    chapters.push({ n: chapters.length + 1, title: c.title, html: body, words: countWords(body) });
+    chapters.push({ n: current, title: c.title, html: body, words: countWords(body) });
   }
+  current = null;
   const endNotesHtml = html(preface.endNotes);
 
   // AO3 always sets a rating; without one the preface was not parsed (e.g. a

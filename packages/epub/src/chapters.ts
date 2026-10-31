@@ -37,6 +37,11 @@ export interface ChapterSplit {
   method: "toc" | "headings" | "files";
   /** Content the split could not place with confidence. */
   reviewReasons: string[];
+  /**
+   * The number (from 1) of the chapter holding the element with id `anchor`
+   * in spine file `path`, or null when no chapter holds it.
+   */
+  chapterFor(path: string, anchor: string | null): number | null;
 }
 
 interface Start {
@@ -209,7 +214,20 @@ function* perFile(
   }
 }
 
+/** Finds the element with id `anchor` in spine file `path`, indexing each file once. */
+function targets(docs: SpineDoc[]): (path: string, anchor: string) => ElementNode | null {
+  const byPath = new Map(docs.map((d) => [d.path, d]));
+  const ids = new Map<SpineDoc, Map<string, ElementNode>>();
+  return (path, anchor) => {
+    const doc = byPath.get(path);
+    if (!doc) return null;
+    if (!ids.has(doc)) ids.set(doc, idIndex(doc.root));
+    return ids.get(doc)!.get(anchor) ?? null;
+  };
+}
+
 function split(
+  docs: SpineDoc[],
   regions: ElementNode[],
   starts: Start[],
   method: "toc" | "headings",
@@ -220,7 +238,29 @@ function split(
       "content_before_first_chapter: text in #chapters before the first chapter start",
     );
   }
-  return { chapters: build(regions, starts), method, reviewReasons };
+  const target = targets(docs);
+  // Chapter i holds the #chapters content from starts[i - 1] up to starts[i].
+  const chapterAt = (pos: number): number | null => {
+    const region = regions[firstReaching(regions, pos)];
+    if (!region || region.pos > pos) return null; // outside #chapters: preface, afterword, end notes
+    let a = 0;
+    let b = starts.length;
+    while (a < b) {
+      const m = (a + b) >> 1;
+      if (starts[m]!.pos <= pos) a = m + 1;
+      else b = m;
+    }
+    return a === 0 ? null : a; // before the first start: in no chapter
+  };
+  return {
+    chapters: build(regions, starts),
+    method,
+    reviewReasons,
+    chapterFor(path, anchor) {
+      const el = anchor === null ? null : target(path, anchor);
+      return el ? chapterAt(el.pos) : null;
+    },
+  };
 }
 
 export function splitChapters(docs: SpineDoc[], navPoints: NavPoint[]): ChapterSplit {
@@ -241,11 +281,16 @@ export function splitChapters(docs: SpineDoc[], navPoints: NavPoint[]): ChapterS
     }
 
     const toc = startsFromToc(docs, perDoc, navPoints);
-    if (toc) return split(regions, toc, "toc", reviewReasons);
+    if (toc) return split(docs, regions, toc, "toc", reviewReasons);
     const headings = startsFromHeadings(regions);
-    if (headings) return split(regions, headings, "headings", reviewReasons);
+    if (headings) return split(docs, regions, headings, "headings", reviewReasons);
   }
 
   // Last resort: one chapter per spine file that has content.
-  return { chapters: perFile(docs, perDoc, regions.length > 0), method: "files", reviewReasons };
+  return {
+    chapters: perFile(docs, perDoc, regions.length > 0),
+    method: "files",
+    reviewReasons,
+    chapterFor: () => null,
+  };
 }
