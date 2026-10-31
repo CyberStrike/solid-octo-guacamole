@@ -34,6 +34,9 @@ describe("the email queue's message contract", () => {
     ["no token", "https://rarepair.fans/waitlist/confirm"],
     ["an empty token", "https://rarepair.fans/waitlist/confirm?token="],
     ["another parameter only", "https://rarepair.fans/waitlist/confirm?next=abc"],
+    ["another parameter too", "https://rarepair.fans/waitlist/confirm?token=abc&email=a%40b.test"],
+    ["two tokens", "https://rarepair.fans/waitlist/confirm?token=abc&token=def"],
+    ["a token that isn't base64url", "https://rarepair.fans/waitlist/confirm?token=a%40b.test"],
     ["javascript", "javascript:alert(1)"],
     ["not a URL", "not a url"],
     ["too long", `https://rarepair.fans/waitlist/confirm?token=${"x".repeat(2048)}`],
@@ -51,6 +54,9 @@ describe("the email queue's message contract", () => {
     ["inner whitespace", "read er@example.test"],
     ["no @", "reader.example.test"],
     ["over 254 characters", `${"a".repeat(250)}@example.test`],
+    ["a NUL", "read\u0000er@example.test"],
+    ["an escape", "read\u001ber@example.test"],
+    ["a DEL", "read\u007fer@example.test"],
   ])("refuses a wait list confirmation email to %s", (_, to) => {
     const url = "https://rarepair.fans/waitlist/confirm?token=abc";
     expect(parseMessage({ kind: "waitlist-confirm", to, url })).toBeNull();
@@ -58,9 +64,13 @@ describe("the email queue's message contract", () => {
 
   it("drops line breaks from a wait list link", () => {
     const parsed = parseMessage(
-      waitlist("https://rarepair.fans/waitlist/confirm?token=x\n\nInjected line\n"),
+      waitlist("https://rarepair.fans/waitlist/confirm?token=x\n\nInjected\n"),
     );
-    expect(parsed?.url).toBe("https://rarepair.fans/waitlist/confirm?token=xInjected%20line");
+    expect(parsed?.url).toBe("https://rarepair.fans/waitlist/confirm?token=xInjected");
+    // And a line with a space in it can't be smuggled into the token at all.
+    expect(
+      parseMessage(waitlist("https://rarepair.fans/waitlist/confirm?token=x\n\nInjected line\n")),
+    ).toBeNull();
   });
 });
 

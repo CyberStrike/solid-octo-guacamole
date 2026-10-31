@@ -30,8 +30,11 @@ const newToken = () =>
     .replaceAll("/", "_")
     .replaceAll("=", "");
 
-/** Lowercase hex SHA-256 of a token: what the table keeps instead of it. */
-const hashToken = async (token: string) =>
+/**
+ * Lowercase hex SHA-256 of a token: what the table keeps instead of it. The confirm route
+ * looks a row up by this.
+ */
+export const hashToken = async (token: string) =>
   [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token)))]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");

@@ -247,6 +247,9 @@ describe("22-waitlist", () => {
       `${local}@example.test,other-${marker}@example.test`,
       `${local} x@example.test`,
       `${local}\t@example.test`,
+      // Control characters, which Postgres or a mail header would choke on.
+      `${local}\u0000x@example.test`,
+      `${local}\u001bx@example.test`,
       ...'<>()",;:\\[]'.split("").map((ch) => `${local}${ch}x@example.test`),
     ];
     for (const email of refused) {

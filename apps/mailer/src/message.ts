@@ -27,10 +27,16 @@ const LINK_PATHS: Record<EmailMessage["kind"], string> = {
 
 /**
  * Whether the mailer sends to an address: a bare address only, with no display name and no
- * list, at most 254 characters. apps/web accepts a wait list address only if this would.
+ * list and no control characters, at most 254 characters. apps/web accepts a wait list
+ * address only if this would.
  */
 export const isSendableAddress = (to: string) =>
-  to.length <= 254 && /^[^\s@<>()",;:\\[\]]+@[^\s@<>()",;:\\[\]]+$/.test(to);
+  to.length <= 254 &&
+  // oxlint-disable-next-line no-control-regex -- control characters are what it refuses
+  /^[^\s@<>()",;:\\[\]\u0000-\u001f\u007f]+@[^\s@<>()",;:\\[\]\u0000-\u001f\u007f]+$/.test(to);
+
+// A wait list link carries its token and nothing else: base64url, as apps/web makes it.
+const WAITLIST_QUERY = /^\?token=[A-Za-z0-9_-]+$/;
 
 // Returns the message if its body keeps the contract, or null. A body that doesn't can never
 // be sent, so retrying it would only keep an address in the queue longer.
@@ -46,8 +52,8 @@ export function parseMessage(body: unknown): EmailMessage | null {
   const link = URL.parse(url);
   if (link === null || link.origin !== SITE || link.pathname !== LINK_PATHS[kind]) return null;
   if (link.username !== "" || link.password !== "" || link.hash !== "") return null;
-  // A wait list link without its token could confirm nothing.
-  if (kind === "waitlist-confirm" && !link.searchParams.get("token")) return null;
+  // A wait list link without its token could confirm nothing, and needs nothing more.
+  if (kind === "waitlist-confirm" && !WAITLIST_QUERY.test(link.search)) return null;
   // The parsed href, not the raw string: parsing drops line breaks that would add lines to the email.
   return { kind, to, url: link.href };
 }
