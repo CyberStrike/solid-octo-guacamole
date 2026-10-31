@@ -29,7 +29,8 @@ function stubResend(respond: (emails: unknown[]) => Response) {
   const calls: { url: string; emails: unknown[] }[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
-    const emails = JSON.parse(String(init?.body)) as unknown[];
+    // SAFETY: the Resend sender posts its batch as a JSON string.
+    const emails: unknown[] = JSON.parse(init?.body as string);
     calls.push({ url, emails });
     return respond(emails);
   });
@@ -62,6 +63,7 @@ function captureLogs() {
   const lines: string[] = [];
   for (const level of ["log", "info", "warn", "error", "debug"] as const) {
     vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+      // oxlint-disable-next-line deslop/no-runtime-typeof -- console takes any value; strings print bare
       lines.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
     });
   }
@@ -90,7 +92,10 @@ describe("mailer logs", () => {
     stubResend(respond());
     const logs = captureLogs();
 
-    await consume([signIn(1), { kind: "sign-in", to: "reader9@example.test", url: "http://x.test/" }]);
+    await consume([
+      signIn(1),
+      { kind: "sign-in", to: "reader9@example.test", url: "http://x.test/" },
+    ]);
 
     const text = logs.join("\n");
     expect(logs.length).toBeGreaterThan(0);
@@ -101,7 +106,9 @@ describe("mailer logs", () => {
 
   it("never logs an address or a link when the provider cannot be reached", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(
-      new TypeError("could not reach reader1@example.test for https://rarepair.fans/login/confirm?token=link-1"),
+      new TypeError(
+        "could not reach reader1@example.test for https://rarepair.fans/login/confirm?token=link-1",
+      ),
     );
     const logs = captureLogs();
 
@@ -143,9 +150,17 @@ describe("mailer failures", () => {
       { kind: "newsletter", to: "reader3@example.test", url: "https://rarepair.fans/" },
       { kind: "sign-in", to: "reader4@example.test", url: "javascript:alert(1)" },
       "not an object",
-      { kind: "sign-in", to: "reader5@example.test", url: "https://evil.example/login/confirm?token=x" },
+      {
+        kind: "sign-in",
+        to: "reader5@example.test",
+        url: "https://evil.example/login/confirm?token=x",
+      },
       { kind: "sign-in", to: "reader6@example.test", url: "https://rarepair.fans/upload" },
-      { kind: "sign-in", to: "reader7@example.test", url: "https://evil.example@rarepair.fans/login/confirm?token=x" },
+      {
+        kind: "sign-in",
+        to: "reader7@example.test",
+        url: "https://evil.example@rarepair.fans/login/confirm?token=x",
+      },
       { kind: "sign-in", to: "Support<reader8@example.test>", url: signIn(8).url },
       { kind: "sign-in", to: "reader9@example.test,other@example.test", url: signIn(9).url },
       { kind: "sign-in", to: `${"a".repeat(250)}@example.test`, url: signIn(10).url },
@@ -164,9 +179,14 @@ describe("mailer failures", () => {
     const calls = stubResend(accepted);
 
     await consume([
-      { kind: "sign-in", to: "reader1@example.test", url: "https://rarepair.fans/login/confirm?token=x\n\nInjected line\n" },
+      {
+        kind: "sign-in",
+        to: "reader1@example.test",
+        url: "https://rarepair.fans/login/confirm?token=x\n\nInjected line\n",
+      },
     ]);
 
+    // SAFETY: each email the mailer renders carries a text body.
     const [sent] = calls[0]!.emails as { text: string }[];
     expect(sent!.text).not.toContain("\nInjected line");
     expect(sent!.text).toContain("https://rarepair.fans/login/confirm?token=xInjected%20line");

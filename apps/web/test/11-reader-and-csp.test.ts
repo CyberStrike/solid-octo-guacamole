@@ -2,6 +2,7 @@ import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 const BASE = "https://rarepair.fans";
+// SAFETY: the default export is the Worker under test, loaded from wrangler.jsonc's main.
 const worker = (exports as any).default as Fetcher;
 
 const fetchW = (input: string, init: RequestInit = {}) =>
@@ -94,15 +95,12 @@ describe("11-reader-and-csp", () => {
     ];
     for (const method of ["GET", "HEAD", "POST", "PUT", "DELETE"]) {
       for (const [path, location] of cases) {
-        const res = await fetchW(`https://www.rarepair.fans${path}`, {
-          method,
-          ...(method === "POST" || method === "PUT"
-            ? {
-                headers: { "content-type": "application/x-www-form-urlencoded" },
-                body: "email=reader%40example.test",
-              }
-            : {}),
-        });
+        const init: RequestInit = { method };
+        if (method === "POST" || method === "PUT") {
+          init.headers = { "content-type": "application/x-www-form-urlencoded" };
+          init.body = "email=reader%40example.test";
+        }
+        const res = await fetchW(`https://www.rarepair.fans${path}`, init);
         expect(res.status).toBe(308);
         expect(res.headers.get("location")).toBe(location);
         // Not otherwise handled: no page, cookie or form action on www.
@@ -122,9 +120,7 @@ describe("11-reader-and-csp", () => {
 
   it("Page cannot be framed", async () => {
     for (const path of ["/", "/login", "/upload", "/remove"]) {
-      const directives = (await fetchW(path)).headers
-        .get("content-security-policy")
-        ?.split("; ");
+      const directives = (await fetchW(path)).headers.get("content-security-policy")?.split("; ");
       expect(directives).toContain("frame-ancestors 'none'");
     }
   });

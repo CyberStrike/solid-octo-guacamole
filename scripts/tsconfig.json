@@ -1,0 +1,17 @@
+{
+  // Not typechecked. It gives the type-aware lint rules the workspaces' strict null checks
+  // and noUncheckedIndexedAccess.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "allowJs": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["**/*.mjs", "**/*.js"]
+}

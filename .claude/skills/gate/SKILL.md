@@ -39,12 +39,13 @@ Run from the repo root:
 ```bash
 npm ci
 npm run lint
+npm run format:check
 npm run typecheck
 npm test
 npm run build
 ```
 
-The root `package.json` defines these four scripts across every workspace. Until a script exists, report it **not run: not defined yet**, never pass. A cache hit is not a run: pass the tool's force flag when the runner caches.
+The root `package.json` defines these scripts. `lint` (oxlint with ai-deslop's rules, `oxlint.config.ts`) and `format:check` (oxfmt, `.oxfmtrc.jsonc`) run once from the root over every workspace and `scripts/`; `npm run format` fixes what `format:check` finds. The other three run in each workspace with `--if-present`, which silently skips a workspace that lacks the script: report that workspace's check **not run: not defined yet**, never pass. A cache hit is not a run: pass the tool's force flag when the runner caches.
 
 A check that fails in a workspace the item should not have touched is a stop event, not a fix. Report it under *Deviations* with the failing output, and name the choice in the final report for the operator.
 
@@ -115,7 +116,7 @@ Root configuration, `wrangler` configs, dependencies, `scripts/`, `.github` and 
 
 ### docs — `docs/`, `*.md` or `.claude/` Markdown changed
 
-- When docs is the only protocol printed, typecheck, tests and build are reported not run: docs only. Beside any other protocol, the standing checks run as usual.
+- When docs is the only protocol printed, the standing checks are reported not run: docs only. Beside any other protocol, the standing checks run as usual.
 - A change to `docs/ARCHITECTURE.md` keeps the *Decisions so far* table consistent with the sections below it. A section that now disagrees with the table is a failure.
 
 ### Every protocol

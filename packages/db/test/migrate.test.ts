@@ -7,13 +7,14 @@ beforeAll(async () => {
   t = await createTestDb({ migrate: false });
 });
 afterAll(async () => {
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- unset if beforeAll failed
   await t?.close();
 });
 
 // Expected columns: Better Auth 1.7.14's core schema (its `getMigrations` for
 // Postgres with the magic-link plugin, mapped to snake_case), plus our five
 // `user` fields from ARCHITECTURE's Data model.
-const expected: Record<string, Record<string, { type: string; nullable: boolean }>> = {
+const expected = {
   user: {
     id: { type: "text", nullable: false },
     name: { type: "text", nullable: false },
@@ -61,7 +62,7 @@ const expected: Record<string, Record<string, { type: string; nullable: boolean 
     created_at: { type: "timestamptz", nullable: false },
     updated_at: { type: "timestamptz", nullable: false },
   },
-};
+} satisfies Record<string, Record<string, { type: string; nullable: boolean }>>;
 
 describe("packages/db migrations", () => {
   it("Every migration applies to an empty database", async () => {

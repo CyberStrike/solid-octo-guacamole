@@ -23,7 +23,8 @@ export default defineConfig({
               compatibilityDate: "2026-08-01",
               queueConsumers: ["email"],
               // No test reaches a real provider: a fetch that a test didn't stub gets this.
-              outboundService: () => new Response("outbound network blocked in tests", { status: 599 }),
+              outboundService: () =>
+                new Response("outbound network blocked in tests", { status: 599 }),
               bindings: {
                 // Throwaway test values, not credentials.
                 RESEND_API_KEY: "re_test_not_a_real_key",

@@ -72,5 +72,6 @@ export interface ProcessOptions {
    * the same order as `ParsedWork.images`. Keeps `ParsedWork` free of binary data.
    * Awaited one at a time: `processEpub` resolves after the last one has.
    */
+  // oxlint-disable-next-line deslop/no-unknown-returns -- any return is awaited and dropped, sync or async
   onImage?: (image: ImageRef, bytes: Uint8Array) => unknown;
 }

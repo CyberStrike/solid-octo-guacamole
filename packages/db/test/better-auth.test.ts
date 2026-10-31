@@ -9,6 +9,7 @@ beforeAll(async () => {
   t = await createTestDb();
 });
 afterAll(async () => {
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- unset if beforeAll failed
   await t?.close();
 });
 
@@ -47,7 +48,9 @@ describe("packages/db with Better Auth", () => {
     expect(sent).toHaveLength(1);
     const { token } = sent[0]!;
 
-    const pending = await t.db.selectFrom("verification").select(["identifier", "value", "expires_at"])
+    const pending = await t.db
+      .selectFrom("verification")
+      .select(["identifier", "value", "expires_at"])
       .execute();
     expect(pending).toHaveLength(1);
     // Stored hashed: neither column holds the token that was mailed.
@@ -60,8 +63,16 @@ describe("packages/db with Better Auth", () => {
 
     await auth.api.magicLinkVerify({ query: { token }, headers });
 
-    const user = await t.db.selectFrom("user")
-      .select(["id", "email", "email_verified", "terms_accepted_at", "warnings_off", "upload_quota_used"])
+    const user = await t.db
+      .selectFrom("user")
+      .select([
+        "id",
+        "email",
+        "email_verified",
+        "terms_accepted_at",
+        "warnings_off",
+        "upload_quota_used",
+      ])
       .where("email", "=", "reader@example.test")
       .executeTakeFirstOrThrow();
     expect(user).toMatchObject({
@@ -71,16 +82,22 @@ describe("packages/db with Better Auth", () => {
       upload_quota_used: 0,
     });
 
-    const sessions = await t.db.selectFrom("session").select(["user_id", "token"])
-      .where("user_id", "=", user.id).execute();
+    const sessions = await t.db
+      .selectFrom("session")
+      .select(["user_id", "token"])
+      .where("user_id", "=", user.id)
+      .execute();
     expect(sessions).toHaveLength(1);
 
     // Single use: the token's row is gone once the link is used, and using the
     // link again starts no second session.
     expect(await t.db.selectFrom("verification").select("id").execute()).toEqual([]);
     await auth.api.magicLinkVerify({ query: { token }, headers }).catch(() => undefined);
-    const after = await t.db.selectFrom("session").select("id")
-      .where("user_id", "=", user.id).execute();
+    const after = await t.db
+      .selectFrom("session")
+      .select("id")
+      .where("user_id", "=", user.id)
+      .execute();
     expect(after).toHaveLength(1);
   });
 });

@@ -34,6 +34,8 @@ check "integration" spikes/better-auth/src/worker.ts
 check "integration" packages/epub/package-lock.json
 check "integration" scripts/a.sh
 check "integration" package.json
+check "integration" oxlint.config.ts
+check "integration" .oxfmtrc.jsonc
 check "web integration" apps/web/wrangler.jsonc apps/web/src/a.ts
 check "integration" packages/epub/package.json
 check "epub ingest" packages/epub/src/sanitize.ts

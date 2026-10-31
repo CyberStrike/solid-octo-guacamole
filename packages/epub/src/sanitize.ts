@@ -5,19 +5,74 @@ import { decodeEntities, escapeAttr, escapeText, hasNamedEntity } from "./entiti
 // ever reach a page. Allowlist from ARCHITECTURE "Sanitizing".
 
 const ALLOWED = new Set([
-  "p", "br", "hr", "em", "strong", "i", "b", "u", "s", "sub", "sup", "blockquote",
-  "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "dl", "dt", "dd",
-  "table", "thead", "tbody", "tr", "th", "td", "span", "div", "a", "img", "abbr",
-  "small", "center",
+  "p",
+  "br",
+  "hr",
+  "em",
+  "strong",
+  "i",
+  "b",
+  "u",
+  "s",
+  "sub",
+  "sup",
+  "blockquote",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "ul",
+  "ol",
+  "li",
+  "dl",
+  "dt",
+  "dd",
+  "table",
+  "thead",
+  "tbody",
+  "tr",
+  "th",
+  "td",
+  "span",
+  "div",
+  "a",
+  "img",
+  "abbr",
+  "small",
+  "center",
 ]);
 
 const VOID_OUT = new Set(["br", "hr", "img"]);
 
 /** Dropped together with everything inside them. */
 const DROP = new Set([
-  "script", "style", "title", "head", "iframe", "object", "embed", "form", "svg", "math",
-  "noscript", "template", "textarea", "select", "button", "audio", "video", "canvas",
-  "applet", "frame", "frameset", "noframes", "noembed", "xmp", "plaintext",
+  "script",
+  "style",
+  "title",
+  "head",
+  "iframe",
+  "object",
+  "embed",
+  "form",
+  "svg",
+  "math",
+  "noscript",
+  "template",
+  "textarea",
+  "select",
+  "button",
+  "audio",
+  "video",
+  "canvas",
+  "applet",
+  "frame",
+  "frameset",
+  "noframes",
+  "noembed",
+  "xmp",
+  "plaintext",
 ]);
 
 /** Obsolete spellings of allowed elements. */
@@ -40,6 +95,7 @@ export interface SanitizeContext {
 export function safeHref(raw: string): string | null {
   const decoded = decodeEntities(raw);
   if (hasNamedEntity(decoded)) return null;
+  // oxlint-disable-next-line no-control-regex -- strips control characters on purpose, so none can hide a scheme
   const cleaned = decoded.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim();
   if (!/^https?:\/\//i.test(cleaned)) return null;
   let url: URL;
@@ -68,7 +124,8 @@ function allowedAttrs(tag: string, el: ElementNode): string {
   const lang = get("lang");
   if (lang && /^[A-Za-z]{1,8}(?:-[A-Za-z0-9]{1,8})*$/.test(lang)) add("lang", lang);
   const align = get("align")?.toLowerCase();
-  if (align === "left" || align === "right" || align === "center" || align === "justify") add("align", align);
+  if (align === "left" || align === "right" || align === "center" || align === "justify")
+    add("align", align);
   if (tag === "td" || tag === "th") {
     for (const name of ["colspan", "rowspan"]) {
       const v = get(name);
