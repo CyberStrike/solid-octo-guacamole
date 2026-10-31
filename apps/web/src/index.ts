@@ -13,7 +13,7 @@ import { sameOriginOnly, showReportForm, submitReport } from "./report";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
 import { pageState } from "./page-state";
 import { SETTINGS_SCRIPT, SETTINGS_SCRIPT_PATH } from "./reader-settings";
-import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
+import { closedBeforeLaunch, disableClosedLinks, isPrelaunch } from "./prelaunch";
 import {
   contentSecurityPolicy,
   strictTransportSecurity,
@@ -53,6 +53,8 @@ app.use(except("/assets/*", sessionMiddleware, termsGate));
 // The reader's settings, on every page. Inside the CSP, which keys on what it returns,
 // and after the terms gate, never in front of it.
 app.use(pageState);
+// Before launch, links to closed pages are shown disabled.
+app.use(disableClosedLinks);
 
 // The moderation area: every /admin URL goes through its gate (admin.ts).
 app.route("/admin", admin);

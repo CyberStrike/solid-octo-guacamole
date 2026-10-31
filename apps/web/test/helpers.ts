@@ -50,8 +50,11 @@ export async function emailsTo(to: string, { atLeast = 1 } = {}): Promise<EmailM
   }
 }
 
-// The token vitest.config.ts's siteverify stand-in passes, as Cloudflare's test secret does.
-export const PASSING_TOKEN = "XXXX.DUMMY.TOKEN.XXXX";
+// The tokens vitest.config.ts's siteverify stand-in passes, one for each form: the dummy
+// token as solved under that form's action. The other forms refuse it.
+export const LOGIN_TOKEN = "XXXX.DUMMY.TOKEN.XXXX#login";
+export const WAITLIST_TOKEN = "XXXX.DUMMY.TOKEN.XXXX#waitlist";
+export const UPLOAD_TOKEN = "XXXX.DUMMY.TOKEN.XXXX#upload";
 
 /** The headers a browser on rarepair.fans sends with the sign-in form. */
 const LOGIN_HEADERS = {
@@ -105,7 +108,7 @@ export async function signIn(
   { next = "/", acceptTerms: accept = false }: { next?: string; acceptTerms?: boolean } = {},
 ): Promise<string> {
   const before = (await emailsTo(email, { atLeast: 0 })).length;
-  expect((await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN })).status).toBe(200);
+  expect((await postLogin({ email, "cf-turnstile-response": LOGIN_TOKEN })).status).toBe(200);
   const sent = await emailsTo(email, { atLeast: before + 1 });
   const token = new URL(sent.at(-1)!.url).searchParams.get("token")!;
   const res = await postLogin({ token, next }, { url: "/login/confirm" });

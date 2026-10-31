@@ -4,7 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import {
   fetchW,
   nonceOf,
-  PASSING_TOKEN,
+  UPLOAD_TOKEN,
   postLogin,
   signIn as signInAs,
   TURNSTILE,
@@ -71,7 +71,7 @@ describe("01-auth-magic-link", () => {
     expect(page.headers.get("location")).toBe("/login?next=%2Fupload");
     expect(page.headers.get("cache-control")).toBe("no-store");
 
-    const res = await requestUpload({ size: "1000", "cf-turnstile-response": PASSING_TOKEN });
+    const res = await requestUpload({ size: "1000", "cf-turnstile-response": UPLOAD_TOKEN });
     await expectRefused(res, 401);
   });
 });
@@ -80,7 +80,7 @@ describe("02-upload-handshake", () => {
   it("Upload request returns a presigned PUT URL", async () => {
     const { userId, cookie } = await signIn("u1-presigned@example.test");
     const res = await requestUpload(
-      { size: "123456", "cf-turnstile-response": PASSING_TOKEN },
+      { size: "123456", "cf-turnstile-response": UPLOAD_TOKEN },
       { cookie },
     );
     expect(res.status).toBe(200);
@@ -104,7 +104,7 @@ describe("02-upload-handshake", () => {
   it("Declared size of exactly 25 MB is accepted", async () => {
     const { userId, cookie } = await signIn("u1-exactly-25@example.test");
     const res = await requestUpload(
-      { size: "26214400", "cf-turnstile-response": PASSING_TOKEN },
+      { size: "26214400", "cf-turnstile-response": UPLOAD_TOKEN },
       { cookie },
     );
     expect(res.status).toBe(200);
@@ -117,7 +117,7 @@ describe("02-upload-handshake", () => {
   it("Declared size over 25 MB is refused", async () => {
     const { userId, cookie } = await signIn("u1-over-25@example.test");
     const res = await requestUpload(
-      { size: "26214401", "cf-turnstile-response": PASSING_TOKEN },
+      { size: "26214401", "cf-turnstile-response": UPLOAD_TOKEN },
       { cookie },
     );
     expect(await expectRefused(res, 413)).toMatch(/over the 25 MB limit/);
@@ -125,11 +125,11 @@ describe("02-upload-handshake", () => {
   });
 
   it("Upload request without a session is refused", async () => {
-    const res = await requestUpload({ size: "1000", "cf-turnstile-response": PASSING_TOKEN });
+    const res = await requestUpload({ size: "1000", "cf-turnstile-response": UPLOAD_TOKEN });
     await expectRefused(res, 401);
     // A cookie that names no session is no session.
     const forged = await requestUpload(
-      { size: "1000", "cf-turnstile-response": PASSING_TOKEN },
+      { size: "1000", "cf-turnstile-response": UPLOAD_TOKEN },
       { cookie: "__Secure-better-auth.session_token=forged.value" },
     );
     await expectRefused(forged, 401);
@@ -156,7 +156,7 @@ describe("02-upload-handshake", () => {
 
   it("A declared size that is not a positive whole number is refused", async () => {
     const { userId, cookie } = await signIn("u1-bad-size@example.test");
-    const token = { "cf-turnstile-response": PASSING_TOKEN };
+    const token = { "cf-turnstile-response": UPLOAD_TOKEN };
     await expectRefused(await requestUpload(token, { cookie }), 400);
     for (const size of ["", "abc", "-1", "0", "1.5", "1e3", " 12", "0x10"]) {
       await expectRefused(await requestUpload({ ...token, size }, { cookie }), 400);
@@ -166,7 +166,7 @@ describe("02-upload-handshake", () => {
 
   it("An upload request from another site is refused", async () => {
     const { userId, cookie } = await signIn("u1-cross-site@example.test");
-    const fields = { size: "1000", "cf-turnstile-response": PASSING_TOKEN };
+    const fields = { size: "1000", "cf-turnstile-response": UPLOAD_TOKEN };
     for (const headers of [
       { origin: "https://evil.example", "sec-fetch-site": "cross-site" },
       { origin: "https://www.rarepair.fans", "sec-fetch-site": "same-site" },
@@ -191,7 +191,9 @@ describe("02-upload-handshake", () => {
     // Nothing on the page can send a file without the script: no form posts anywhere.
     expect(html).not.toMatch(/<form\b[^>]*\baction=/i);
     expect(html).toMatch(/<input[^>]*type="file"[^>]*accept="\.epub,application\/epub\+zip"/);
-    expect(html).toContain('<div class="cf-turnstile" data-sitekey="1x00000000000000000000AA">');
+    expect(html).toContain(
+      '<div class="cf-turnstile" data-sitekey="1x00000000000000000000AA" data-action="upload">',
+    );
     const scripts = html.match(/<script\b[^>]*>/g) ?? [];
     expect(scripts.length).toBeGreaterThan(0);
     for (const tag of scripts) expect(tag).toContain(`nonce="${nonceOf(csp)}"`);

@@ -3,7 +3,7 @@ import { seedWork } from "@archive/db/seed";
 import { env } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SESSION_COOKIE } from "../src/auth";
-import { emailsTo, fetchW, PASSING_TOKEN, postLogin } from "./helpers";
+import { emailsTo, fetchW, LOGIN_TOKEN, postLogin } from "./helpers";
 
 // One database serves every test file in the run, and each queue lists every open
 // item in it. So this file keeps to AO3 work IDs 14000 to 14099, gives every row a
@@ -20,7 +20,7 @@ afterAll(() => db.destroy());
  * session.test.ts's: A4 (#24) brings the shared one to helpers.ts.
  */
 async function signIn(email: string, role: string | null): Promise<string> {
-  expect((await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN })).status).toBe(200);
+  expect((await postLogin({ email, "cf-turnstile-response": LOGIN_TOKEN })).status).toBe(200);
   const [sent] = await emailsTo(email);
   const token = new URL(sent!.url).searchParams.get("token")!;
   const res = await postLogin({ token, next: "/" }, { url: "/login/confirm" });
