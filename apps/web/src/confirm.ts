@@ -7,6 +7,10 @@ import { confirmPage, forbiddenPage, signInFailedPage } from "./pages";
 import type { SecurityVariables } from "./security";
 import { isSameOrigin, safeNext } from "./signin";
 
+// Better Auth's tokens are 32 characters. Anything far longer was never issued, and
+// isn't put back into the page.
+const MAX_TOKEN = 256;
+
 type ConfirmContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
 
 /**
@@ -16,7 +20,7 @@ type ConfirmContext = Context<{ Bindings: Bindings; Variables: SecurityVariables
  */
 export function showConfirm(c: ConfirmContext) {
   const token = c.req.query("token") ?? "";
-  if (token === "") return c.redirect(REFUSED, 302);
+  if (token === "" || token.length > MAX_TOKEN) return c.redirect(REFUSED, 302);
   return c.html(confirmPage(token, safeNext(c.req.query("next") ?? null)), 200, {
     // The token is in the URL: keep it out of caches, and let a Referer carry only
     // the origin. Not no-referrer: under it the browser sends the page's own POST with

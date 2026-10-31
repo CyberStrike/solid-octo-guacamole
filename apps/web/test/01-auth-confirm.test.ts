@@ -268,6 +268,8 @@ describe("01-auth-magic-link", () => {
       "/login/confirm",
       "/login/confirm?token=",
       "/login/confirm?next=/works/1",
+      // Longer than any token, which is 32 characters: never put back into the page.
+      `/login/confirm?token=${"x".repeat(257)}`,
     ]) {
       const res = await fetchW(path);
       expect(res.status, path).toBe(302);
