@@ -59,6 +59,9 @@ async function main() {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+  for (const kind of Object.keys(configs)) {
+    console.log(await wrangler(["r2", "bucket", kind, "list", BUCKET]));
+  }
   return 0;
 }
 

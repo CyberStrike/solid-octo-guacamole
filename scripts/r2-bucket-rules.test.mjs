@@ -69,6 +69,24 @@ await test("CORS for the app origin", async (t) => {
   });
 });
 
+await test("Applying the bucket rules", async (t) => {
+  await t.test("Replaces both rule sets, then prints the bucket's current rules", () => {
+    const { code, stdout, calls } = run();
+    assert.equal(code, 0);
+    assert.deepEqual(
+      calls.map(({ args }) => args.map((arg, i) => (args[i - 1] === "--file" ? "<file>" : arg))),
+      [
+        ["r2", "bucket", "cors", "set", "rarepair", "--file", "<file>", "--force"],
+        ["r2", "bucket", "lifecycle", "set", "rarepair", "--file", "<file>", "--force"],
+        ["r2", "bucket", "cors", "list", "rarepair"],
+        ["r2", "bucket", "lifecycle", "list", "rarepair"],
+      ],
+    );
+    assert.match(stdout, /stub ran: r2 bucket cors list rarepair/);
+    assert.match(stdout, /stub ran: r2 bucket lifecycle list rarepair/);
+  });
+});
+
 await test("19-surge-controls-and-quotas", async (t) => {
   await t.test("Abandoned uploads expire", () => {
     const { code, calls } = run();
