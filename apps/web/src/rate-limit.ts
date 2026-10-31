@@ -17,6 +17,15 @@ async function hashKey(prefix: string, value: string): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** An IPv6 address with its dotted IPv4 tail, if any, written as the two hex groups it is. */
+function hexTail(address: string): string {
+  const at = address.lastIndexOf(":") + 1;
+  if (!address.includes(".", at)) return address;
+  const [a = 0, b = 0, c = 0, d = 0] = address.slice(at).split(".").map(Number);
+  const hex = (high: number, low: number) => ((high << 8) | low).toString(16);
+  return `${address.slice(0, at)}${hex(a, b)}:${hex(c, d)}`;
+}
+
 /**
  * Who a client address stands for: an IPv4 address whole, and an IPv6 one by its /64, which
  * one subscriber commonly holds all of, written out in full however it was shortened. An
@@ -25,8 +34,7 @@ async function hashKey(prefix: string, value: string): Promise<string> {
  */
 function clientOf(address: string): string {
   if (!address.includes(":")) return address;
-  if (address.includes(".")) return address.slice(address.lastIndexOf(":") + 1);
-  const [head = "", tail] = address.toLowerCase().split("::");
+  const [head = "", tail] = hexTail(address.toLowerCase()).split("::");
   const groups = (part = "") => (part === "" ? [] : part.split(":"));
   const zeros = tail === undefined ? 0 : 8 - groups(head).length - groups(tail).length;
   const all = [...groups(head), ...Array<string>(Math.max(0, zeros)).fill("0"), ...groups(tail)];

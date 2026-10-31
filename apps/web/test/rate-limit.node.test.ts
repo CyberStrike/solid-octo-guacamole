@@ -34,6 +34,11 @@ describe("ipKey", () => {
     const key = await loginIp("198.51.100.7");
     expect(await loginIp("::ffff:198.51.100.7")).toBe(key);
     expect(await loginIp("::FFFF:198.51.100.7")).toBe(key);
+    // Any other IPv6 address with a dotted tail is still keyed on its /64.
+    const v6 = await loginIp("2001:db8:1:2::c000:201");
+    expect(await loginIp("2001:db8:1:2::192.0.2.1")).toBe(v6);
+    expect(await loginIp("2001:db8:9:9::192.0.2.1")).not.toBe(v6);
+    expect(await loginIp("2001:db8:1:2::192.0.2.1")).not.toBe(await loginIp("192.0.2.1"));
     // In hex too: c633:6407 is 198.51.100.7.
     expect(await loginIp("::ffff:c633:6407")).toBe(key);
     expect(await loginIp("0:0:0:0:0:ffff:c633:6407")).toBe(key);
