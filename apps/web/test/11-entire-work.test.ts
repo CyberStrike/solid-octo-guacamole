@@ -239,6 +239,8 @@ describe("entire work", () => {
     ]) {
       const res = await fetchW(fullUrl(id));
       expect(res.status, id).toBe(404);
+      // The site's one not-found answer, uncached like every 404.
+      expect(res.headers.get("cache-control"), id).toBe("no-store");
       const html = await res.text();
       expect(html, id).toContain("<h1>Page not found</h1>");
       expect(html, id).not.toContain('<article class="chapter">');
