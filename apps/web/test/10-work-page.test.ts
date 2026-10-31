@@ -17,6 +17,10 @@ const CHECKED = 12348;
 const COAUTHORED = 12349;
 /** Markup in every stored string. */
 const HOSTILE = 12350;
+/** Its work row's chapter counts disagree with its current version's. */
+const REPOINTED = 12351;
+/** Stored with no author at all, as an epub without a byline can be. */
+const NO_BYLINE = 12352;
 
 // The site chrome test's check: names only as provenance, never in the page.
 const BRANDING = /AO3|OTW|Archive of Our Own|Organization for Transformative Works/i;
@@ -93,6 +97,15 @@ beforeAll(async () => {
     ],
     chapters: [{ title: "r1 <script>alert(4)</script>" }],
   });
+  // Two chapters of a planned four. The work row is then left saying 9/12, as it
+  // would after a moderator makes an earlier version current: the counts are the version's.
+  await seedWork(db, { ao3WorkId: REPOINTED, chapters: 2, chapterTotal: 4, tags: [...FEW_TAGS] });
+  await db
+    .updateTable("works")
+    .set({ chapters_count: 9, chapters_total: 12 })
+    .where("ao3_work_id", "=", REPOINTED)
+    .execute();
+  await seedWork(db, { ao3WorkId: NO_BYLINE, authors: [], tags: [...FEW_TAGS] });
   await db
     .updateTable("works")
     .set({ summary_html: LONG_SUMMARY })
@@ -114,20 +127,10 @@ const originalBlock = (html: string) => html.match(/<p class="original">[\s\S]*?
 
 const TAG = /<span class="visually-hidden">([^<]*): <\/span><a href="([^"]*)">([^<]*)<\/a>/g;
 
-/**
- * The tag list: each tag as [hidden label, href, name], the text between tags,
- * and the list's markup.
- */
+/** The tag list: its markup, and each tag as [hidden label, href, name]. */
 const tagList = (html: string) => {
   const list = html.match(/<p class="tags">([\s\S]*?)<\/p>/)?.[1] ?? "";
-  return {
-    html: list,
-    items: [...list.matchAll(TAG)].map((m) => [m[1], m[2], m[3]]),
-    separators: list
-      .split(TAG)
-      .filter((_, i) => i % 4 === 0)
-      .slice(1, -1),
-  };
+  return { html: list, items: [...list.matchAll(TAG)].map((m) => [m[1], m[2], m[3]]) };
 };
 
 /** The stylesheet a page links to, as the Worker serves it. */
@@ -161,10 +164,11 @@ describe("10-work-page", () => {
     ]) {
       expect(html).toContain(`>${tag}</a>`);
     }
-    // Stats: words, chapters posted of planned, in progress.
+    // Stats: words, chapters posted of planned, in progress, last updated.
     expect(html).toMatch(/6,000/);
     expect(html).toContain("5/7");
     expect(html).toMatch(/in progress/i);
+    expect(html.match(/<p class="stats">([^<]*)<\/p>/)?.[1]).toContain("Updated 2020-02-01");
     for (let n = 1; n <= 5; n++) expect(html).toContain(`r1 chapter ${n}`);
   });
 
@@ -248,10 +252,16 @@ describe("10-work-page", () => {
       ["Additional tag", "/tags/freeform/r1%20slow%20burn", "r1-Slow Burn"],
       ["Additional tag", "/tags/freeform/r1%20found%20family", "r1-Found Family"],
     ]);
-    expect(list.separators.every((s) => s === ", ")).toBe(true);
-    expect(list.separators).toHaveLength(6);
-    // The type is never carried by colour: no class or style on the links.
-    expect(list.html).not.toMatch(/<a [^>]*(class|style)=/);
+    // Nothing else in the list: the tags, comma-separated, and no class or style
+    // on a link to carry the type by colour.
+    expect(list.html).toBe(
+      list.items
+        .map(
+          ([label, href, name]) =>
+            `<span class="visually-hidden">${label}: </span><a href="${href}">${name}</a>`,
+        )
+        .join(", "),
+    );
     const css = await stylesheetOf(html);
     expect(css).toMatch(/\.tags\s*\{[^}]*font-size:\s*var\(--text-1\)/);
   });
@@ -324,6 +334,17 @@ describe("10-work-page, other works", () => {
     expect(html.match(/<p class="stats">([^<]*)<\/p>/)?.[1]).toContain("Chapters 1/?");
   });
 
+  it("The chapter counts are the current version's, as its chapter list is", async () => {
+    const { html } = await page(`/works/${REPOINTED}`);
+    expect(html.match(/<p class="stats">([^<]*)<\/p>/)?.[1]).toContain("Chapters 2/4");
+    expect(html.match(/\/works\/12351\/chapters\/\d+/g)).toHaveLength(2);
+  });
+
+  it("A work stored with no author is shown as Anonymous", async () => {
+    const { html } = await page(`/works/${NO_BYLINE}`);
+    expect(html.match(/<p class="authors">([^<]*)<\/p>/)?.[1]).toBe("by Anonymous");
+  });
+
   it("Stored text is escaped, never run as markup", async () => {
     const { html } = await page(`/works/${HOSTILE}`);
     expect(html).not.toMatch(/<script|<img|<b /);
@@ -367,6 +388,12 @@ describe("21-accessibility-and-no-js", () => {
       "Character",
       "Additional tag",
       "Additional tag",
+    ]);
+    // The fandoms, on their own line, are tag links too, and carry their label.
+    const fandoms = html.match(/<p class="fandoms">([\s\S]*?)<\/p>/)?.[1] ?? "";
+    expect([...fandoms.matchAll(TAG)].map((m) => [m[1], m[3]])).toEqual([
+      ["Fandom", "r1-Fandom One"],
+      ["Fandom", "r1-Fandom Two"],
     ]);
     const css = await stylesheetOf(html);
     const rule = css.match(/\.visually-hidden\s*\{[^}]*\}/)?.[0] ?? "";

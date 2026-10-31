@@ -176,7 +176,8 @@ article.chapter {
   font-size: var(--text-1);
 }
 
-/* Read by screen readers, not shown: a tag's type, for one. */
+/* any page: text for screen readers only, such as a tag's type */
+
 .visually-hidden {
   position: absolute;
   width: 1px;
