@@ -69,6 +69,7 @@ ${block("p", "fandoms", fandoms.map(tagLink).join(", "))}${block("section", "sum
 ${needsCheck ? `<p class="review-notice">Chapters may be imperfect; a moderator will check.</p>\n` : ""}<ol class="chapters">${chapters.map((ch) => `<li><a href="${base}/chapters/${ch.n}">${escapeHtml(ch.title)}</a></li>`).join("")}</ol>
 <p class="full"><a href="${base}/full">Read the entire work on one page</a></p>
 <p class="download"><a href="${originalHref(version.r2_prefix)}">Download original epub</a></p>
+<p class="report"><a href="${base}/report">Report</a></p>
 <p class="unofficial">rarepair is an unofficial stopgap, not the original archive: this copy is here while the original is offline.</p>
 <p class="original"><a href="https://archiveofourown.org/works/${work.ao3_work_id}">The original work</a>, where the credit belongs. The link works again once the original archive is back.</p>`,
   );

@@ -20,6 +20,20 @@ export const SESSION_COOKIE = "__Secure-better-auth.session_token";
 export function makeAuth(env: Bindings, db: Kysely<Database>) {
   return betterAuth({
     ...authSchema,
+    // Our columns that the session lookup returns with the user, so a page needs no
+    // query of its own. `input: false`: nothing a sign-in sends can set them.
+    user: {
+      ...authSchema.user,
+      additionalFields: {
+        // Null until the account accepts the terms on /welcome/terms (terms.ts).
+        termsAcceptedAt: {
+          type: "date",
+          required: false,
+          input: false,
+          fieldName: "terms_accepted_at",
+        },
+      },
+    },
     // Fixed, never the request's host: sign-in links always go to rarepair.fans.
     baseURL: SITE,
     trustedOrigins: [SITE],

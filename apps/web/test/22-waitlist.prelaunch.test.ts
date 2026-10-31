@@ -252,7 +252,6 @@ describe("22-waitlist", () => {
       ["/login/confirm?token=x", "GET"],
       // Where the first admin signs in before launch.
       ["/login/confirm", "POST"],
-      ["/welcome/terms", "GET"],
       ["/admin", "GET"],
       ["/admin/launch", "GET"],
       ["/robots.txt", "GET"],
@@ -264,6 +263,10 @@ describe("22-waitlist", () => {
       expect(res.status, `${method} ${path}`).not.toBe(302);
       expect(res.headers.get("location")).toBeNull();
     }
+    // The terms page is open too, and signed out it asks to sign in, not to wait.
+    const terms = await fetchW("/welcome/terms");
+    expect(terms.status).toBe(302);
+    expect(terms.headers.get("location")).toBe("/login?next=%2Fwelcome%2Fterms");
     // The static pages and their shared stylesheet are served in full.
     for (const path of ["/about", "/terms", "/privacy", STYLESHEET_PATH]) {
       expect((await fetchW(path)).status, path).toBe(200);

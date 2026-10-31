@@ -5,9 +5,10 @@ import { createDb, getLiveWork } from "@archive/db";
 import type { Context } from "hono";
 import type { Bindings } from "./env";
 import { escapeHtml, layout } from "./pages";
+import { reviewNotice } from "./review-notice";
 import type { SecurityVariables } from "./security";
 
-type ReaderContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
+export type ReaderContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
 
 const MAX_INT4 = 2_147_483_647;
 
@@ -15,7 +16,7 @@ const MAX_INT4 = 2_147_483_647;
  * A work ID or chapter number from a URL: plain ASCII digits with no leading zero,
  * within Postgres's int4. Null for anything else, so `007` is not chapter 7.
  */
-const positiveInt = (text: string | undefined) => {
+export const positiveInt = (text: string | undefined) => {
   if (text === undefined || !/^[1-9]\d{0,9}$/.test(text)) return null;
   const value = Number(text);
   return value <= MAX_INT4 ? value : null;
@@ -68,7 +69,7 @@ export async function showChapter(c: ReaderContext) {
   return c.html(
     layout(
       `${workTitle}, chapter ${n}`,
-      `${nav("top")}
+      `${reviewNotice(live.version)}${nav("top")}
 <h2 class="chapter-title">${escapeHtml(chapterTitle(chapter))}</h2>
 <article class="chapter">${fragment}</article>
 ${nav("bottom")}`,
@@ -95,7 +96,8 @@ const chaptersUrl = (id: number) => `/works/${id}/chapters`;
 const chapterUrl = (id: number, n: number) => `${chaptersUrl(id)}/${n}`;
 
 /** A chapter's title, or "Chapter n" when it has none, as the processor names one. */
-const chapterTitle = (ch: { n: number; title: string }) => ch.title.trim() || `Chapter ${ch.n}`;
+export const chapterTitle = (ch: { n: number; title: string }) =>
+  ch.title.trim() || `Chapter ${ch.n}`;
 
 /** The select's options, every chapter with the current one selected. */
 const chapterOptions = (n: number, chapters: { n: number; title: string }[]) =>
@@ -143,4 +145,4 @@ export function isFragmentKey(key: string, id: number, prefix: string) {
 }
 
 /** A chapter whose fragment can't be read: empty, uncached, and no detail. */
-const unavailable = (c: ReaderContext) => c.body(null, 503, { "Cache-Control": "no-store" });
+export const unavailable = (c: ReaderContext) => c.body(null, 503, { "Cache-Control": "no-store" });
