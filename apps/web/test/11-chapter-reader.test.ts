@@ -142,9 +142,7 @@ describe("11-reader-and-csp", () => {
     expect(rulesFor(css, "article.chapter").join("\n")).toMatch(/(^|[;\s])contain:\s*content;/);
     // Containment clips overflow, so wide content must fit or scroll rather than be cut off.
     expect(rulesFor(css, "article.chapter img").join("\n")).toMatch(/max-width:\s*100%;/);
-    for (const wide of ["article.chapter table", "article.chapter pre"]) {
-      expect(rulesFor(css, wide).join("\n"), wide).toMatch(/overflow-x:\s*auto;/);
-    }
+    expect(rulesFor(css, "article.chapter table").join("\n")).toMatch(/overflow-x:\s*auto;/);
   });
 
   it("Chapter nav at both ends", async () => {
@@ -320,6 +318,17 @@ describe("chapter reader", () => {
       "max-age=31536000; includeSubDomains",
     );
     expect(await res.text()).toBe("");
+  });
+
+  it("A one-chapter work has neither a previous nor a next link", async () => {
+    // Seeded and read inside this test: isolated storage undoes its R2 writes at the end.
+    const one = await seedWork(db, { ao3WorkId: 20004, tags: TAGS, chapters: 1 });
+    await putFragments(env.BUCKET, one.fragments);
+    const html = await htmlOf(chapterUrl(20004, 1));
+    expect(html).not.toMatch(/rel="prev"|rel="next"/);
+    const selects = html.match(/<select\b[\s\S]*?<\/select>/g) ?? [];
+    expect(selects).toHaveLength(2);
+    for (const select of selects) expect(select.match(/<option\b/g)).toHaveLength(1);
   });
 });
 

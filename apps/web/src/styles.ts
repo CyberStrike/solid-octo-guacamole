@@ -167,15 +167,13 @@ article.chapter {
 }
 
 /* The chapter reader (R2). Paint containment clips what overflows the chapter: long
-   words break through main's overflow-wrap, images shrink to fit, and tables and
-   preformatted text, the only other wide things the sanitizer keeps, scroll. */
+   words break through main's overflow-wrap, images shrink to fit, and wide tables scroll. */
 article.chapter img {
   max-width: 100%;
   height: auto;
 }
 
-article.chapter table,
-article.chapter pre {
+article.chapter table {
   display: block;
   max-width: 100%;
   overflow-x: auto;

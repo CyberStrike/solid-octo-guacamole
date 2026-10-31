@@ -59,8 +59,8 @@ export async function showChapter(c: ReaderContext) {
   const prev = live.chapters[at - 1]?.n ?? null;
   const next = live.chapters[at + 1]?.n ?? null;
   const nav = (end: "top" | "bottom") => chapterNav(id, prev, next, options, end);
-  // The slim top bar is the reader's only chrome of its own: the work title, which is
-  // the page's one h1, and the settings link. It scrolls away with the page.
+  // The slim top bar: the work title, which is the page's one h1, and the settings
+  // link. It scrolls away with the page.
   const workTitle = live.work.title.trim() || "Untitled work";
   const bar = `<div class="reader-bar"><h1>${escapeHtml(workTitle)}</h1><a href="/settings/reader">Reader settings</a></div>`;
   // The processor takes the chapter's heading out of the fragment and keeps it as its
