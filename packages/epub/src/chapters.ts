@@ -80,7 +80,8 @@ function cloneRange(node: Node, lo: number, hi: number, parent: ElementNode | nu
 
 /** Removes the chapter heading if it comes before any text; returns its text. */
 function takeLeadingHeading(nodes: Node[]): string | null {
-  let heading: ElementNode | null = null;
+  // SAFETY: widens the initial null, so TS doesn't read it as null after visit has run.
+  let heading = null as ElementNode | null;
   let blocked = false;
   const visit = (n: Node) => {
     if (heading || blocked) return;
@@ -99,7 +100,6 @@ function takeLeadingHeading(nodes: Node[]): string | null {
     n.children.forEach(visit);
   };
   nodes.forEach(visit);
-  // oxlint-disable-next-line typescript/no-unnecessary-condition -- visit sets heading, unseen by TS
   if (!heading) return null;
   const h: ElementNode = heading;
   const siblings = h.parent ? h.parent.children : nodes;

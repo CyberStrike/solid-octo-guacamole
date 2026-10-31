@@ -13,6 +13,7 @@ export default defineConfig({
   // typeAware runs through oxlint-tsgolint, one program per workspace tsconfig.
   options: deslopConfigs.recommended.options,
   rules: deslopConfigs.recommended.rules,
+  // The same paths as .oxfmtrc.jsonc's ignorePatterns: keep the two lists in step.
   ignorePatterns: [
     // Reference code with its own lockfile, not a workspace.
     "spikes/**",
@@ -40,29 +41,15 @@ export default defineConfig({
       },
     },
     {
-      // The queue message contract and Resend's answer: both validate a body from outside.
-      files: ["apps/mailer/src/message.ts", "apps/mailer/src/resend.ts"],
-      rules: {
-        // parseMessage and messageIds take the raw body; checking it is their job.
-        "deslop/no-unknown-parameters": "off",
-        // typeof is how they check each field of that body.
-        "deslop/no-runtime-typeof": "off",
-      },
-    },
-    {
+      // The email queue's message contract, where a body from outside is validated.
       files: ["apps/mailer/src/message.ts"],
       rules: {
-        // The raw message's fields, read before any of them is trusted.
+        // parseMessage takes the raw body; checking it is its job.
+        "deslop/no-unknown-parameters": "off",
+        // typeof is how it checks each field of that body.
+        "deslop/no-runtime-typeof": "off",
+        // The raw body's fields, read before any of them is trusted.
         "deslop/no-unsafe-dictionary-type": "off",
-      },
-    },
-    {
-      // No tsconfig covers scripts/, so tsgolint reads these plain JS files with default
-      // compiler options, under which an array element is never undefined: every `??` fallback
-      // in them reads as unnecessary.
-      files: ["scripts/**"],
-      rules: {
-        "typescript/no-unnecessary-condition": "off",
       },
     },
   ],

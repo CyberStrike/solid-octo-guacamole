@@ -87,6 +87,7 @@ async function check() {
   const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
   const findings = [];
+  /** @type {{ op: string, collection: string, doc_id: string, data?: object, group?: string }[]} */
   const writes = [];
   const say = (where, text) => findings.push(`${where}: ${text}`);
   const change = (collection, docId, data, why) => {

@@ -226,7 +226,8 @@ const MAX_POSTED_SIBLINGS = 8;
 function findWorkId(prefaces: ElementNode[]): string | null {
   let tried = 0;
   for (const region of prefaces) {
-    let id: string | null = null;
+    // SAFETY: widens the initial null, so TS doesn't read it as null after the walk has run.
+    let id = null as string | null;
     walk(region, (n) => {
       if (id !== null || tried >= MAX_POSTED_MATCHES) return false;
       if (n.type !== "text" || !n.parent || !POSTED.test(decodeEntities(n.raw))) return true;
@@ -247,7 +248,6 @@ function findWorkId(prefaces: ElementNode[]): string | null {
       }
       return true;
     });
-    // oxlint-disable-next-line typescript/no-unnecessary-condition -- the walk callback sets id, unseen by TS
     if (id !== null) return id;
   }
   return null;

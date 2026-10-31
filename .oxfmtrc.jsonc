@@ -4,6 +4,7 @@
   // trailing commas, two spaces.
   // Manifests keep their hand-written key order: a reorder would touch every package.json.
   "sortPackageJson": false,
+  // oxlint.config.ts ignores the same code paths: keep the two lists in step.
   "ignorePatterns": [
     // Reference code with its own lockfile, not a workspace.
     "spikes/**",
