@@ -105,5 +105,10 @@ describe("verifyTurnstile", () => {
 
     const garbled = siteverify(() => new Response("<html>", { status: 200 }));
     expect(await verifyTurnstile(TOKEN, check(garbled.fetch))).toBe("unavailable");
+
+    for (const body of ["null", "[]", '"ok"']) {
+      const odd = siteverify(() => new Response(body, { status: 200 }));
+      expect(await verifyTurnstile(TOKEN, check(odd.fetch))).toBe("unavailable");
+    }
   });
 });

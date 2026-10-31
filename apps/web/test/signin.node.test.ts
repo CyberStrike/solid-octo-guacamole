@@ -26,6 +26,13 @@ describe("safeNext", () => {
   it("gives the home page when there is no next", () => {
     expect(safeNext(null)).toBe("/");
   });
+
+  it("gives the home page for a next too long to fit in a sign-in link", () => {
+    expect(safeNext(`/works/1?q=${"a".repeat(1000)}`)).toBe("/");
+    expect(safeNext(`/works/1?q=${"a".repeat(400)}`)).toBe(`/works/1?q=${"a".repeat(400)}`);
+    // Measured as it ends up encoded.
+    expect(safeNext(`/works/1?q=${"é".repeat(200)}`)).toBe("/");
+  });
 });
 
 const headers = (init: Record<string, string>) => new Headers(init);

@@ -1,6 +1,6 @@
-// Minimal pages until the shared layout (S1) and the real sign-in, upload and
-// removal pages (A1, U3, X1) replace them. They exist so the Turnstile pages'
-// policy and nonced challenge script can be served and tested.
+// Minimal pages until the shared layout (S1) and the real upload and removal
+// pages (U3, X1) replace them, plus the sign-in pages. The minimal ones exist so
+// the Turnstile pages' policy and nonced challenge script can be served and tested.
 
 import { TURNSTILE_ORIGIN } from "./security";
 import { LINK_LIFETIME_MINUTES } from "./signin";

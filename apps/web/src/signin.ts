@@ -4,6 +4,9 @@
 /** The one origin sign-in forms are served from, and the base of every sign-in link. */
 export const SITE = "https://rarepair.fans";
 
+// The longest `next` kept, in characters as normalized and percent-encoded.
+const MAX_NEXT = 512;
+
 /** How long a sign-in link works (ARCHITECTURE, Auth). The pages say it too. */
 export const LINK_LIFETIME_MINUTES = 15;
 
@@ -22,7 +25,10 @@ export function safeNext(value: string | null): string {
   // Again after normalization: "/a/..//evil.example" passes the checks above but
   // normalizes to "//evil.example", a protocol-relative URL.
   if (url.pathname.startsWith("//")) return "/";
-  return url.pathname + url.search;
+  const path = url.pathname + url.search;
+  // The sign-in link carries it encoded again, and the mailer drops a link over
+  // 2048 characters: up to three times this, plus the token, still fits.
+  return path.length > MAX_NEXT ? "/" : path;
 }
 
 /**

@@ -32,7 +32,7 @@ export async function verifyTurnstile(
   const body = new URLSearchParams({ secret: check.secret, response: token });
   if (check.remoteIp) body.set("remoteip", check.remoteIp);
 
-  let reply: { success?: unknown; hostname?: unknown };
+  let reply: { success?: unknown; hostname?: unknown } | null;
   try {
     const res = await (check.fetch ?? fetch)(SITEVERIFY, { method: "POST", body });
     if (!res.ok) return "unavailable";
@@ -41,5 +41,7 @@ export async function verifyTurnstile(
     // Unreachable, or an answer that isn't JSON.
     return "unavailable";
   }
+  // JSON, but not the reply object Cloudflare sends.
+  if (reply === null || Array.isArray(reply) || !(reply instanceof Object)) return "unavailable";
   return reply.success === true && reply.hostname === check.hostname ? "passed" : "failed";
 }

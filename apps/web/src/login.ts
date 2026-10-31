@@ -8,6 +8,9 @@ import type { SecurityVariables } from "./security";
 import { isSameOrigin, safeNext } from "./signin";
 import { verifyTurnstile } from "./turnstile";
 
+// The longest address an email can be sent to (RFC 5321), as apps/mailer checks.
+const MAX_EMAIL = 254;
+
 type LoginContext = Context<{ Bindings: Env; Variables: SecurityVariables }>;
 
 /** `GET /login`: the sign-in form, carrying the page to come back to. */
@@ -60,10 +63,15 @@ export async function requestSignIn(c: LoginContext) {
     );
   }
 
+  // The mailer sends to no address longer than this, so no token is made for one.
+  if (email.length > MAX_EMAIL) return formAgain(400, "Enter a valid email address.");
+
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
   try {
     await makeAuth(c.env, db).api.signInMagicLink({
-      body: { email, callbackURL: next, metadata: { next } },
+      // `next` reaches the link through metadata (auth.ts); Better Auth's own
+      // callbackURL is for its verify endpoint, which isn't mounted.
+      body: { email, metadata: { next } },
       headers: c.req.raw.headers,
     });
   } catch (error) {

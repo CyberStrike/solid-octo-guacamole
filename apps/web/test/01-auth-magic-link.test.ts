@@ -244,16 +244,16 @@ describe("01-auth-magic-link", () => {
   });
 
   it("Requesting a link for an invalid address shows the form again", async () => {
-    const before = await verificationIds();
-    const res = await postLogin({
-      email: "not-an-address",
-      "cf-turnstile-response": PASSING_TOKEN,
-    });
-    expect(res.status).toBe(400);
-    const html = await res.text();
-    expect(formTag(html)).not.toBeNull();
-    expect(html).toContain('<p role="alert">Enter a valid email address.</p>');
-    expect(await verificationIds()).toEqual(before);
+    // The second is well formed but longer than the mailer sends to (254 characters).
+    for (const email of ["not-an-address", `${"a".repeat(60)}@${"b".repeat(200)}.example`]) {
+      const before = await verificationIds();
+      const res = await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN });
+      expect(res.status).toBe(400);
+      const html = await res.text();
+      expect(formTag(html)).not.toBeNull();
+      expect(html).toContain('<p role="alert">Enter a valid email address.</p>');
+      expect(await verificationIds()).toEqual(before);
+    }
   });
 });
 
