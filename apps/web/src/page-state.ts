@@ -42,6 +42,8 @@ export const pageState: MiddlewareHandler = async (c, next) => {
       for (const [name, value] of attributes) html.setAttribute(name, value);
     },
   });
+  // The page streams through, so the flash is cleared before the body is read: every
+  // app page is built by layout() or layoutAround(), with the banner to show it under.
   if (flash !== null) {
     let flashShown = false;
     rewriter.on("aside.banner", {
@@ -52,12 +54,8 @@ export const pageState: MiddlewareHandler = async (c, next) => {
         banner.after(`\n<p class="flash" role="status">${flash}</p>`, { html: true });
       },
     });
-  }
-  // The page streams through, the entire work included, so the flash is cleared before
-  // the body is read: every app page has the layout's banner to show it under.
-  c.res = rewriter.transform(c.res);
-  if (flash !== null) {
     c.header("Set-Cookie", CLEAR_FLASH_COOKIE, { append: true });
     c.header("Cache-Control", "no-store");
   }
+  c.res = rewriter.transform(c.res);
 };
