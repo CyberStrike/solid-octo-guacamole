@@ -15,7 +15,7 @@
       {
         "queue": "ingest",
         // About 5 uploads a batch (ARCHITECTURE, Surge controls). A batch's jobs run one after
-        // another, so one invocation holds one epub in memory at a time.
+        // another, so an invocation holds one epub and its parse in memory, not five.
         "max_batch_size": 5,
         "max_batch_timeout": 5,
         // At most two invocations at once: a flood waits in the backlog instead of opening

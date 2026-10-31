@@ -39,14 +39,15 @@ export async function runJob(deps: JobDeps, uploadId: string, attempt: number): 
       final
         ? {
             status: "parse_failed",
-            failure: { stage, error: errorCode(error instanceof Error ? error.name : "") },
+            failure: { stage, error: errorCode(error) },
           }
         : { status: "pending" },
     );
     return "retry";
   }
-  // Outside the job's try: if this write fails, the message is retried, and the rejection is
-  // found again, never recorded as the job's own failure.
+  // Outside the job's try: if this write fails, it is not recorded as the job's own failure.
+  // The message is retried and the rejection found again, unless this was the last attempt
+  // (#214).
   if (outcome !== null) await endLease(deps.db, lease, outcome);
   return "ack";
 }
@@ -88,9 +89,12 @@ async function run(
 }
 
 /**
- * A short code for `uploads.error`, which an uploader's page may show: the error's class
- * name, never its message, which can quote anything.
+ * A short code for a failure, for `uploads.error` (which an uploader's page may show) and the
+ * logs: the error's class, never its message, which can quote anything. The constructor's
+ * name, since pg's `DatabaseError` sets `name` to "error".
  */
-function errorCode(name: string): string {
+// oxlint-disable-next-line deslop/no-unknown-parameters -- a caught value is unknown by contract
+export function errorCode(error: unknown): string {
+  const name = error instanceof Error ? error.constructor.name : "";
   return /^[A-Za-z]{1,40}$/.test(name) ? name : "Error";
 }

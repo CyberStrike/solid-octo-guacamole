@@ -1,7 +1,7 @@
 import { createDb, type Database } from "@archive/db";
 import { processEpub } from "@archive/epub";
 import type { Kysely } from "kysely";
-import { runJob, type JobDeps, type Verdict } from "./job";
+import { errorCode, runJob, type JobDeps, type Verdict } from "./job";
 import { parseMessage } from "./message";
 
 export interface Env {
@@ -30,14 +30,14 @@ export function ingestWorker(steps: Partial<Steps> = {}) {
         // One job at a time needs one connection.
         db = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 });
       } catch (error) {
-        console.error({ event: "ingest.setup", error: errorName(error) });
+        console.error({ event: "ingest.setup", error: errorCode(error) });
         batch.retryAll();
         return;
       }
       const deps: JobDeps = { db, bucket: env.BUCKET, ...DEFAULT_STEPS, ...steps };
       let invalid = 0;
       try {
-        // One job at a time: an invocation holds one epub in memory.
+        // One job at a time: an invocation holds one epub and its parse in memory, not five.
         for (const message of batch.messages) {
           const parsed = parseMessage(message.body);
           if (parsed === null) {
@@ -54,7 +54,7 @@ export function ingestWorker(steps: Partial<Steps> = {}) {
             console.log({ ...line, verdict });
           } catch (error) {
             // Postgres down while claiming or recording: the queue tries again later.
-            console.error({ ...line, verdict, error: errorName(error) });
+            console.error({ ...line, verdict, error: errorCode(error) });
           }
           if (verdict === "ack") message.ack();
           else message.retry();
@@ -66,8 +66,5 @@ export function ingestWorker(steps: Partial<Steps> = {}) {
     },
   } satisfies ExportedHandler<Env>;
 }
-
-// oxlint-disable-next-line deslop/no-unknown-parameters -- a caught value is unknown by contract
-const errorName = (error: unknown) => (error instanceof Error ? error.name : "unknown");
 
 export default ingestWorker();

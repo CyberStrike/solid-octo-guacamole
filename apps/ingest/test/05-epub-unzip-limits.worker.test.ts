@@ -36,6 +36,18 @@ describe("05-epub-unzip-limits", () => {
     expect(result.retryMessages).toEqual([]);
   });
 
+  it("hands an object of exactly 25 MB to the processor", async () => {
+    const id = await pendingUpload(new Uint8Array(25 * MiB));
+    const { handler, parsed } = watchedWorker();
+
+    await deliver([{ upload_id: id }], { handler });
+
+    // A length, not the array: a failure would print 25 MB of bytes.
+    expect(parsed.length).toBe(1);
+    // Zeros are no zip: the processor, not the size check, rejects it.
+    expect((await uploadRow(id)).status).toBe("not_epub");
+  });
+
   it("records zip_bomb for an archive of more than 2,000 entries", async () => {
     const entries: Record<string, string> = {};
     for (let i = 0; i < 2_000; i++) entries[`f${i}.txt`] = "x";
