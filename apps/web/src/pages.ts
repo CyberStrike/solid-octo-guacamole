@@ -23,10 +23,10 @@ export const escapeHtml = (text: string) =>
 /**
  * A whole HTML document: skip link, temporary banner, header, one chrome h1 made
  * from the title, the body inside main, then the footer. The title is escaped.
- * The body and head are trusted markup from the caller (this file,
- * waitlist-pages.ts or reader.ts), never escaped; every caller escapes any value it
- * puts in them, except the reader's chapter fragment, which is trusted only because
- * the sanitizer wrote it. So is `heading`, which replaces the default h1 for a page
+ * The body and head are trusted markup from the caller (this file or a page
+ * module), never escaped; every caller escapes any value it puts in them, except the
+ * chapter fragments of reader.ts and full.ts, which are trusted only because the
+ * sanitizer wrote them. So is `heading`, which replaces the default h1 for a page
  * whose one h1 sits in other chrome, such as the reader's top bar.
  */
 export const layout = (

@@ -41,6 +41,8 @@ const NO_CHAPTERS = 21008;
 /** Chapter 3's row points outside the version's fragments, at an object that exists. */
 const BAD_KEY = 21009;
 const BAD_KEY_TARGET = `originals/${BAD_KEY}.epub`;
+/** A blank title, and an empty fragment between two others. */
+const EDGE = 21010;
 /** 60 chapters. */
 const LONG = 21006;
 /** One chapter of several MB, multi-byte characters throughout. */
@@ -72,6 +74,13 @@ beforeAll(async () => {
   await seedWork(db, { ao3WorkId: MISSING_FIRST, tags: TAGS, chapters: 2 });
   const empty = await seedWork(db, { ao3WorkId: NO_CHAPTERS, tags: TAGS, chapters: 1 });
   await db.deleteFrom("chapters").where("version_id", "=", empty.versionId).execute();
+  const edge = await seedWork(db, {
+    ao3WorkId: EDGE,
+    title: "  ",
+    tags: TAGS,
+    chapters: [{ html: "<p>R4-EDGE-1</p>" }, { html: "" }, { html: "<p>R4-EDGE-3</p>" }],
+  });
+  await putFragments(env.BUCKET, edge.fragments);
   const bad = await seedWork(db, {
     ao3WorkId: BAD_KEY,
     tags: TAGS,
@@ -217,7 +226,17 @@ describe("11-reader-and-csp", () => {
 // Not scenario cases: the orchestrator's rulings for /full, and what streaming promises.
 describe("entire work", () => {
   it("An unknown work or a malformed ID is the not-found page", async () => {
-    for (const id of ["21999", "0", "021001", "abc", "2147483648", "1e3", "%2B21001"]) {
+    // 2147483647 is the largest ID the database can hold: a well-formed miss.
+    for (const id of [
+      "21999",
+      "2147483647",
+      "0",
+      "021001",
+      "abc",
+      "2147483648",
+      "1e3",
+      "%2B21001",
+    ]) {
       const res = await fetchW(fullUrl(id));
       expect(res.status, id).toBe(404);
       const html = await res.text();
@@ -267,6 +286,14 @@ describe("entire work", () => {
     const html = await new Blob(seen).text();
     expect(html).toContain("R4-LATER-2-TEXT");
     expect(html).not.toContain("</main>");
+  });
+
+  it("An untitled work and an empty chapter still make a whole page", async () => {
+    const html = await htmlOf(fullUrl(EDGE));
+    expect(html).toContain("<title>Untitled work, entire work · rarepair</title>");
+    expect(html).toContain('<div class="reader-bar"><h1>Untitled work</h1>');
+    expect(articlesOf(html)).toEqual(["<p>R4-EDGE-1</p>", "", "<p>R4-EDGE-3</p>"]);
+    expect(html).toContain("</main>");
   });
 
   it("A work of 60 chapters comes out whole and in order", async () => {

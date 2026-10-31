@@ -36,6 +36,11 @@ export class MissingFragment extends Error {
   override name = "MissingFragment";
 }
 
+/** Logs the kind of error only: never its message or the key, which name the work. */
+// oxlint-disable-next-line deslop/no-unknown-parameters -- it takes whatever a catch caught, and reads only its name
+const logFailure = (error: unknown) =>
+  console.error(`Entire work stream: ${error instanceof Error ? error.name : "unknown"}`);
+
 /**
  * The parts as one byte stream, opened one at a time and only as the reader pulls, so a
  * reader who leaves stops the R2 reads. Fragment bytes pass through as they are; only
@@ -88,8 +93,7 @@ export function streamParts(parts: Part[]): ReadableStream<Uint8Array> {
       } catch (error) {
         // A reader who left is not an error.
         if (cancelled) return;
-        // The kind of error only: never the key, which names the work.
-        console.error(`Entire work stream: ${error instanceof Error ? error.name : "unknown"}`);
+        logFailure(error);
         controller.error(error);
         await release();
       }
@@ -129,7 +133,11 @@ export async function showFull(c: ReaderContext) {
   // with no chapters can't be read either.
   const [head, ...rest] = chapters;
   if (!head) return unavailable(c);
-  const first = await openFragment(c.env.BUCKET, head.r2_key).catch(() => null);
+  const bucket = c.env.BUCKET;
+  const first = await openFragment(bucket, head.r2_key).catch((error: Error) => {
+    logFailure(error);
+    return null;
+  });
   if (!first) return unavailable(c);
   const headers = { "Content-Type": "text/html; charset=UTF-8" };
   // HEAD runs this handler too, and its body is dropped: read nothing more.
@@ -146,8 +154,10 @@ export async function showFull(c: ReaderContext) {
   const heading = (ch: { n: number; title: string }) =>
     `<h2 class="chapter-title" id="chapter-${ch.n}">${escapeHtml(chapterTitle(ch))}</h2>\n<article class="chapter">`;
   const parts: Part[] = [`${before}${reviewNotice(version)}${heading(head)}`, first];
+  // Each later chapter keeps only its key and the bucket for the life of the stream.
   for (const ch of rest) {
-    parts.push(`</article>\n${heading(ch)}`, () => openFragment(c.env.BUCKET, ch.r2_key));
+    const key = ch.r2_key;
+    parts.push(`</article>\n${heading(ch)}`, () => openFragment(bucket, key));
   }
   parts.push(
     `</article>\n<p class="back"><a href="/works/${id}">Back to the work page</a></p>${after}`,
