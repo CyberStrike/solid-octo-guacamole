@@ -47,8 +47,6 @@ interface ListingQuery {
 const NARROWING_TYPES = ["freeform", "fandom", "relationship", "character"] as const;
 type NarrowingType = (typeof NARROWING_TYPES)[number];
 
-const COMPLETION: Record<string, boolean> = { yes: true, no: false };
-
 const SORTS: Record<ListingSort, string> = { updated: "Updated date", words: "Word count" };
 
 /** The ratings a work card shows; a work with none shows as "Not Rated". */
@@ -59,17 +57,15 @@ const isSort = (raw: string | undefined): raw is ListingSort =>
 
 /** The query string's sort and filters. A value the form can't send falls back to the default. */
 function queryOf(raw: Record<string, string>): ListingQuery {
+  const query: ListingQuery = { sort: isSort(raw.sort) ? raw.sort : "updated" };
+  if (raw.rating !== undefined && RATINGS.includes(raw.rating)) query.rating = raw.rating;
+  if (raw.complete === "yes" || raw.complete === "no") query.complete = raw.complete === "yes";
   const tagType = NARROWING_TYPES.find((t) => t === raw.tag_type) ?? NARROWING_TYPES[0];
-  const complete = raw.complete === undefined ? undefined : COMPLETION[raw.complete];
-  return {
-    sort: isSort(raw.sort) ? raw.sort : "updated",
-    ...(raw.rating !== undefined && RATINGS.includes(raw.rating) ? { rating: raw.rating } : {}),
-    ...(complete === undefined ? {} : { complete }),
-    // A tag that names nothing (it folds to nothing, or holds a NUL) narrows nothing.
-    ...(raw.tag !== undefined && tagNameKeys(tagType, raw.tag).length > 0
-      ? { tag: { type: tagType, name: raw.tag } }
-      : {}),
-  };
+  // A tag that names nothing (it folds to nothing, or holds a NUL) narrows nothing.
+  if (raw.tag !== undefined && tagNameKeys(tagType, raw.tag).length > 0) {
+    query.tag = { type: tagType, name: raw.tag };
+  }
+  return query;
 }
 
 /** The query's parameters that differ from the defaults, in a fixed order, then the page past the first. */
