@@ -54,28 +54,36 @@ function readCentralDirectory(bytes: Uint8Array): [string, string][] {
   const count = view.getUint16(eocd + 10, true);
   const size = view.getUint32(eocd + 12, true);
   const offset = view.getUint32(eocd + 16, true);
-  if (count === 0xffff || offset === 0xffffffff) throw new EpubError("not_epub", "ZIP64 archives are not supported");
-  if (count > LIMITS.maxEntries) throw new EpubError("zip_bomb", `More than ${LIMITS.maxEntries} entries`);
+  if (count === 0xffff || offset === 0xffffffff)
+    throw new EpubError("not_epub", "ZIP64 archives are not supported");
+  if (count > LIMITS.maxEntries)
+    throw new EpubError("zip_bomb", `More than ${LIMITS.maxEntries} entries`);
   if (offset + size > eocd) throw corrupt("central directory out of range");
 
   const names: [string, string][] = [];
   let declared = 0;
   let at = offset;
   for (let i = 0; i < count; i++) {
-    if (at + 46 > eocd || view.getUint32(at, true) !== 0x02014b50) throw corrupt("bad central directory entry");
+    if (at + 46 > eocd || view.getUint32(at, true) !== 0x02014b50)
+      throw corrupt("bad central directory entry");
     const entryBytes = view.getUint32(at + 24, true);
     const nameEnd = at + 46 + view.getUint16(at + 28, true);
     if (nameEnd > eocd) throw corrupt("bad central directory entry");
     const raw = bytes.subarray(at + 46, nameEnd);
     const decoded: [string, string] = [strFromU8(raw), strFromU8(raw, true)];
     for (const name of decoded) {
-      if (!isSafeName(name)) throw new EpubError("not_epub", `Unsafe entry name: ${JSON.stringify(name)}`);
+      if (!isSafeName(name))
+        throw new EpubError("not_epub", `Unsafe entry name: ${JSON.stringify(name)}`);
     }
     if (entryBytes > LIMITS.maxEntryBytes) {
-      throw new EpubError("zip_bomb", `Entry declares more than ${LIMITS.maxEntryBytes} bytes: ${decoded[0]}`);
+      throw new EpubError(
+        "zip_bomb",
+        `Entry declares more than ${LIMITS.maxEntryBytes} bytes: ${decoded[0]}`,
+      );
     }
     declared += entryBytes;
-    if (declared > LIMITS.maxTotalBytes) throw new EpubError("zip_bomb", `Archive declares more than ${LIMITS.maxTotalBytes} bytes`);
+    if (declared > LIMITS.maxTotalBytes)
+      throw new EpubError("zip_bomb", `Archive declares more than ${LIMITS.maxTotalBytes} bytes`);
     names.push(decoded);
     at = nameEnd + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
   }
@@ -100,7 +108,13 @@ function concat(chunks: Uint8Array[], size: number): Uint8Array {
  * neither are entries the processor cannot read (see READABLE).
  */
 export function unzipEpub(bytes: Uint8Array): Map<string, Uint8Array> {
-  if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b || bytes[2] !== 0x03 || bytes[3] !== 0x04) {
+  if (
+    bytes.length < 4 ||
+    bytes[0] !== 0x50 ||
+    bytes[1] !== 0x4b ||
+    bytes[2] !== 0x03 ||
+    bytes[3] !== 0x04
+  ) {
     throw new EpubError("not_epub", "Not a zip file");
   }
   const indexed = readCentralDirectory(bytes);
@@ -119,14 +133,22 @@ export function unzipEpub(bytes: Uint8Array): Map<string, Uint8Array> {
   const unzip = new Unzip((file) => {
     if (failure) return;
     entries++;
-    if (entries > LIMITS.maxEntries) return fail(new EpubError("zip_bomb", `More than ${LIMITS.maxEntries} entries`));
+    if (entries > LIMITS.maxEntries)
+      return fail(new EpubError("zip_bomb", `More than ${LIMITS.maxEntries} entries`));
     const name = file.name;
-    if (!isSafeName(name)) return fail(new EpubError("not_epub", `Unsafe entry name: ${JSON.stringify(name)}`));
+    if (!isSafeName(name))
+      return fail(new EpubError("not_epub", `Unsafe entry name: ${JSON.stringify(name)}`));
     // Two entries with one name could be read differently by different tools.
-    if (seen.has(name)) return fail(new EpubError("not_epub", `Duplicate entry: ${JSON.stringify(name)}`));
+    if (seen.has(name))
+      return fail(new EpubError("not_epub", `Duplicate entry: ${JSON.stringify(name)}`));
     seen.add(name);
     if ((file.originalSize ?? 0) > LIMITS.maxEntryBytes) {
-      return fail(new EpubError("zip_bomb", `Entry declares more than ${LIMITS.maxEntryBytes} bytes: ${name}`));
+      return fail(
+        new EpubError(
+          "zip_bomb",
+          `Entry declares more than ${LIMITS.maxEntryBytes} bytes: ${name}`,
+        ),
+      );
     }
 
     const isDir = name.endsWith("/");
@@ -136,14 +158,21 @@ export function unzipEpub(bytes: Uint8Array): Map<string, Uint8Array> {
     pending++;
     file.ondata = (err, data, final) => {
       if (failure) return;
-      if (err) return fail(new EpubError("not_epub", `Corrupt entry ${name}: ${err.message}`), file);
+      if (err)
+        return fail(new EpubError("not_epub", `Corrupt entry ${name}: ${err.message}`), file);
       size += data.length;
       total += data.length;
       if (size > LIMITS.maxEntryBytes) {
-        return fail(new EpubError("zip_bomb", `Entry inflates past ${LIMITS.maxEntryBytes} bytes: ${name}`), file);
+        return fail(
+          new EpubError("zip_bomb", `Entry inflates past ${LIMITS.maxEntryBytes} bytes: ${name}`),
+          file,
+        );
       }
       if (total > LIMITS.maxTotalBytes) {
-        return fail(new EpubError("zip_bomb", `Archive inflates past ${LIMITS.maxTotalBytes} bytes`), file);
+        return fail(
+          new EpubError("zip_bomb", `Archive inflates past ${LIMITS.maxTotalBytes} bytes`),
+          file,
+        );
       }
       if (data.length) chunks.push(data);
       if (final) {
@@ -167,13 +196,17 @@ export function unzipEpub(bytes: Uint8Array): Map<string, Uint8Array> {
       unzip.push(bytes.subarray(at, end), end === bytes.length);
     }
   } catch (e) {
-    if (!failure) throw new EpubError("not_epub", `Unreadable zip: ${(e as Error).message}`, { cause: e });
+    if (!failure)
+      throw new EpubError("not_epub", `Unreadable zip: ${(e as Error).message}`, { cause: e });
   }
   if (failure) throw failure;
   if (pending > 0) throw new EpubError("not_epub", "Truncated zip");
   // The index and the local headers must describe the same entries, or other
   // tools would see a different archive from the one checked here.
-  if (indexed.length !== seen.size || !indexed.every(([utf8, latin1]) => seen.has(utf8) || seen.has(latin1))) {
+  if (
+    indexed.length !== seen.size ||
+    !indexed.every(([utf8, latin1]) => seen.has(utf8) || seen.has(latin1))
+  ) {
     throw corrupt("central directory and local headers disagree");
   }
   return files;

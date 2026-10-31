@@ -1,5 +1,14 @@
 import {
-  boundedText, cleanText, find, findAll, findOutermost, hasClass, idOf, nextElementSibling, walk, type ElementNode,
+  boundedText,
+  cleanText,
+  find,
+  findAll,
+  findOutermost,
+  hasClass,
+  idOf,
+  nextElementSibling,
+  walk,
+  type ElementNode,
 } from "./dom";
 import { collapseWhitespace, decodeEntities } from "./entities";
 import type { Author, SeriesRef, Stats } from "./types";
@@ -33,7 +42,14 @@ export function workIdFromUrl(url: string): string | null {
   return WORK_URL.exec(url.trim())?.[1] ?? null;
 }
 
-type TagField = "rating" | "warnings" | "categories" | "fandoms" | "relationships" | "characters" | "freeforms";
+type TagField =
+  | "rating"
+  | "warnings"
+  | "categories"
+  | "fandoms"
+  | "relationships"
+  | "characters"
+  | "freeforms";
 
 // A Map, so a label such as "Constructor:" is not found on Object.prototype.
 const TAG_LABELS = new Map<string, TagField>([
@@ -68,7 +84,12 @@ function href(el: ElementNode): string {
 
 function tagList(dd: ElementNode): string[] {
   const links = findAll(dd, (el) => el.tag === "a");
-  const names = links.length > 0 ? links.map(cleanText) : cleanText(dd).split(",").map((s) => s.trim());
+  const names =
+    links.length > 0
+      ? links.map(cleanText)
+      : cleanText(dd)
+          .split(",")
+          .map((s) => s.trim());
   return names.filter((s) => s !== "");
 }
 
@@ -79,13 +100,18 @@ function parseSeries(dd: ElementNode): SeriesRef[] {
     if (node.type === "element" && node.tag === "a") {
       const part = /part\s+(\d+)\s+of\s*$/i.exec(collapseWhitespace(before));
       const id = /archiveofourown\.org\/series\/(\d+)/i.exec(href(node));
-      out.push({ name: cleanText(node), part: part ? Number(part[1]) : null, ao3SeriesId: id?.[1] ?? null });
+      out.push({
+        name: cleanText(node),
+        part: part ? Number(part[1]) : null,
+        ao3SeriesId: id?.[1] ?? null,
+      });
       before = "";
     } else {
       before += cleanText(node) + " ";
     }
   }
-  if (out.length === 0 && cleanText(dd) !== "") out.push({ name: cleanText(dd), part: null, ao3SeriesId: null });
+  if (out.length === 0 && cleanText(dd) !== "")
+    out.push({ name: cleanText(dd), part: null, ao3SeriesId: null });
   return out;
 }
 
@@ -99,9 +125,15 @@ function parseStats(text: string, rawMeta: Record<string, string>): Stats {
   };
   for (const [, key, value] of text.matchAll(/([A-Za-z][A-Za-z ]*?):\s*(\S+)/g)) {
     switch (key!.trim().toLowerCase()) {
-      case "published": stats.published = value!; break;
-      case "updated": stats.updated = value!; break;
-      case "completed": stats.completed = value!; break;
+      case "published":
+        stats.published = value!;
+        break;
+      case "updated":
+        stats.updated = value!;
+        break;
+      case "completed":
+        stats.completed = value!;
+        break;
       case "words": {
         const n = Number(value!.replace(/[,.\s]/g, ""));
         stats.words = Number.isFinite(n) ? n : null;
@@ -113,7 +145,8 @@ function parseStats(text: string, rawMeta: Record<string, string>): Stats {
         else rawMeta["Stats: Chapters"] = value!;
         break;
       }
-      default: rawMeta[`Stats: ${key!.trim()}`] = value!;
+      default:
+        rawMeta[`Stats: ${key!.trim()}`] = value!;
     }
   }
   return stats;
@@ -122,15 +155,29 @@ function parseStats(text: string, rawMeta: Record<string, string>): Stats {
 function parseAuthors(prefaces: ElementNode[]): Author[] {
   let byline: ElementNode | null = null;
   for (const region of prefaces) {
-    byline = find(region, (el) => hasClass(el, "byline")) ??
-      find(region, (el) => /^by\s/i.test(boundedText(el, LINE_CHARS) ?? "") && find(el, (a) => a.tag === "a" && /\bauthor\b/.test(a.attrs["rel"] ?? "")) !== null);
+    byline =
+      find(region, (el) => hasClass(el, "byline")) ??
+      find(
+        region,
+        (el) =>
+          /^by\s/i.test(boundedText(el, LINE_CHARS) ?? "") &&
+          find(el, (a) => a.tag === "a" && /\bauthor\b/.test(a.attrs["rel"] ?? "")) !== null,
+      );
     if (byline) break;
   }
   if (!byline) return [];
-  const links = findAll(byline, (el) => el.tag === "a" && (/\bauthor\b/.test(el.attrs["rel"] ?? "") || /\/users\//.test(href(el))));
+  const links = findAll(
+    byline,
+    (el) =>
+      el.tag === "a" && (/\bauthor\b/.test(el.attrs["rel"] ?? "") || /\/users\//.test(href(el))),
+  );
   if (links.length === 0) {
     // e.g. "by Anonymous": names with no profile links.
-    return cleanText(byline).replace(/^by\s+/i, "").split(/,\s*|\s+and\s+/).filter(Boolean).map((pseud) => ({ pseud, user: null }));
+    return cleanText(byline)
+      .replace(/^by\s+/i, "")
+      .split(/,\s*|\s+and\s+/)
+      .filter(Boolean)
+      .map((pseud) => ({ pseud, user: null }));
   }
   return links.map((a) => {
     const m = /\/users\/([^/?#]+)/.exec(href(a));
@@ -153,7 +200,10 @@ function parseAuthors(prefaces: ElementNode[]): Author[] {
 function headedBlock(scope: readonly ElementNode[], label: string): ElementNode | null {
   const want = label.toLowerCase();
   for (const region of scope) {
-    for (const heading of findAll(region, (el) => boundedText(el, LABEL_CHARS)?.toLowerCase() === want)) {
+    for (const heading of findAll(
+      region,
+      (el) => boundedText(el, LABEL_CHARS)?.toLowerCase() === want,
+    )) {
       const block = nextElementSibling(heading);
       if (block?.tag === "blockquote") return block;
     }
@@ -182,7 +232,11 @@ function findWorkId(prefaces: ElementNode[]): string | null {
       if (n.type !== "text" || !n.parent || !POSTED.test(decodeEntities(n.raw))) return true;
       tried++;
       const siblings = n.parent.children;
-      for (let i = siblings.indexOf(n) + 1, seen = 0; i < siblings.length && seen < MAX_POSTED_SIBLINGS; i++) {
+      for (
+        let i = siblings.indexOf(n) + 1, seen = 0;
+        i < siblings.length && seen < MAX_POSTED_SIBLINGS;
+        i++
+      ) {
         const s = siblings[i]!;
         if (s.type !== "element") continue;
         seen++;
@@ -203,13 +257,25 @@ export function parsePreface(roots: readonly ElementNode[]): Preface {
   // No prototype: labels come from the file, and may be "__proto__".
   const rawMeta: Record<string, string> = Object.create(null);
   const tags: Record<TagField, string[]> = {
-    rating: [], warnings: [], categories: [], fandoms: [], relationships: [], characters: [], freeforms: [],
+    rating: [],
+    warnings: [],
+    categories: [],
+    fandoms: [],
+    relationships: [],
+    characters: [],
+    freeforms: [],
   };
   let language: string | null = null;
   let series: SeriesRef[] = [];
   let stats: Stats | null = null;
 
-  const dl = prefaces.map((r) => find(r, (el) => el.tag === "dl" && hasClass(el, "tags")) ?? find(r, (el) => el.tag === "dl")).find(Boolean);
+  const dl = prefaces
+    .map(
+      (r) =>
+        find(r, (el) => el.tag === "dl" && hasClass(el, "tags")) ??
+        find(r, (el) => el.tag === "dl"),
+    )
+    .find(Boolean);
   if (dl) {
     let label: string | null = null;
     for (const node of dl.children) {
@@ -225,7 +291,9 @@ export function parsePreface(roots: readonly ElementNode[]): Preface {
       else if (key === "language") language = cleanText(node) || null;
       else if (key === "series") series = series.concat(parseSeries(node));
       else if (key === "stats") stats = parseStats(cleanText(node), rawMeta);
-      else rawMeta[label] = rawMeta[label] === undefined ? cleanText(node) : `${rawMeta[label]}, ${cleanText(node)}`;
+      else
+        rawMeta[label] =
+          rawMeta[label] === undefined ? cleanText(node) : `${rawMeta[label]}, ${cleanText(node)}`;
     }
   }
 
@@ -248,7 +316,10 @@ export function parsePreface(roots: readonly ElementNode[]): Preface {
     stats: stats ?? parseStats("", rawMeta),
     summary: headedBlock(prefaces, "Summary"),
     notes: headedBlock(prefaces, "Notes"),
-    endNotes: headedBlock(endNoteScope.length ? endNoteScope : regionsById(roots, "afterword"), "End Notes"),
+    endNotes: headedBlock(
+      endNoteScope.length ? endNoteScope : regionsById(roots, "afterword"),
+      "End Notes",
+    ),
     // A plain object for callers; fromEntries keeps "__proto__" as an own key.
     rawMeta: Object.fromEntries(Object.entries(rawMeta)),
   };

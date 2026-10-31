@@ -122,9 +122,7 @@ describe("11-reader-and-csp", () => {
 
   it("Page cannot be framed", async () => {
     for (const path of ["/", "/login", "/upload", "/remove"]) {
-      const directives = (await fetchW(path)).headers
-        .get("content-security-policy")
-        ?.split("; ");
+      const directives = (await fetchW(path)).headers.get("content-security-policy")?.split("; ");
       expect(directives).toContain("frame-ancestors 'none'");
     }
   });

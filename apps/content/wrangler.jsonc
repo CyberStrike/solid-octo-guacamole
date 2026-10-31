@@ -9,5 +9,5 @@
   "preview_urls": false,
   "routes": [{ "pattern": "content.rarepair.fans", "custom_domain": true }],
   "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "rarepair" }],
-  "observability": { "enabled": true, "traces": { "enabled": true } }
+  "observability": { "enabled": true, "traces": { "enabled": true } },
 }

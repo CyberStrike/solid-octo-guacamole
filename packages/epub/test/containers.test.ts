@@ -48,28 +48,42 @@ describe("hostile containers", () => {
     await expectEpubError(processEpub(ao3Epub({ mimetype: null })), "not_epub");
   });
 
-  it.each(["../evil.xhtml", "OEBPS/../../evil.xhtml", "/etc/evil.xhtml", "C:/evil.xhtml", "OEBPS\\evil.xhtml"])(
-    "rejects the entry name %s",
-    async (name) => {
-      await expectEpubError(processEpub(zipEntries({ [name]: "<p>x</p>" })), "not_epub");
-    },
-  );
+  it.each([
+    "../evil.xhtml",
+    "OEBPS/../../evil.xhtml",
+    "/etc/evil.xhtml",
+    "C:/evil.xhtml",
+    "OEBPS\\evil.xhtml",
+  ])("rejects the entry name %s", async (name) => {
+    await expectEpubError(processEpub(zipEntries({ [name]: "<p>x</p>" })), "not_epub");
+  });
 
   it("rejects an entry that inflates past 20 MB (30 MB of zeros)", async () => {
-    await expectEpubError(processEpub(zipEntries({ "big.bin": new Uint8Array(30 * MiB) })), "zip_bomb");
+    await expectEpubError(
+      processEpub(zipEntries({ "big.bin": new Uint8Array(30 * MiB) })),
+      "zip_bomb",
+    );
   });
 
   it("rejects an entry that inflates past 20 MB while declaring a small size", async () => {
     // Both headers declare 1 KiB, so only the streaming byte count can catch it.
     const zip = zipEntries({ "big.xhtml": new Uint8Array(30 * MiB) });
-    expect(patchHeaders(zip, "big.xhtml", (view, local, size) => view.setUint32(size, 1024, true))).toBe(2);
+    expect(
+      patchHeaders(zip, "big.xhtml", (view, local, size) => view.setUint32(size, 1024, true)),
+    ).toBe(2);
     await expectEpubError(processEpub(zip), "zip_bomb");
   });
 
   it("rejects a central directory that names a different entry than the local header", async () => {
     const zip = ao3Epub();
     // Central directory only: "toc.ncx" becomes "tox.ncx".
-    expect(patchHeaders(zip, "toc.ncx", (view, local, _size, nameAt) => local || view.setUint8(nameAt + 2, 0x78))).toBe(2);
+    expect(
+      patchHeaders(
+        zip,
+        "toc.ncx",
+        (view, local, _size, nameAt) => local || view.setUint8(nameAt + 2, 0x78),
+      ),
+    ).toBe(2);
     await expectEpubError(processEpub(zip), "not_epub");
   });
 
@@ -100,13 +114,18 @@ describe("hostile containers", () => {
   });
 
   it("flags a manifest image the unzipper does not read", async () => {
-    const work = await processEpub(ao3Epub({ extraManifest: [{ href: "images/p.bmp", mediaType: "image/bmp", data: "BM" }] }));
+    const work = await processEpub(
+      ao3Epub({ extraManifest: [{ href: "images/p.bmp", mediaType: "image/bmp", data: "BM" }] }),
+    );
     expect(work.reviewReasons).toEqual(["unread_manifest_item: images/p.bmp"]);
   });
 
   it("flags a spine itemref with no manifest item", async () => {
     const files = unzipSync(ao3Epub());
-    const opf = strFromU8(files["content.opf"]!).replace("</spine>", `<itemref idref="ghost"/></spine>`);
+    const opf = strFromU8(files["content.opf"]!).replace(
+      "</spine>",
+      `<itemref idref="ghost"/></spine>`,
+    );
     const { mimetype: _, ...rest } = files;
     const work = await processEpub(zipEntries({ ...rest, "content.opf": opf }));
     expect(work.reviewReasons).toEqual(['unknown_spine_item: "ghost"']);

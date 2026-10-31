@@ -13,7 +13,10 @@ export function fromBase64(b64: string): Uint8Array {
   return out;
 }
 
-export async function expectEpubError(promise: Promise<unknown>, code: EpubErrorCode): Promise<void> {
+export async function expectEpubError(
+  promise: Promise<unknown>,
+  code: EpubErrorCode,
+): Promise<void> {
   const err = await promise.then(
     () => null,
     (e: unknown) => e,
@@ -23,10 +26,14 @@ export async function expectEpubError(promise: Promise<unknown>, code: EpubError
 }
 
 /** Zips entries with an uncompressed `mimetype` first, as epubs require. */
-export function zipEntries(entries: Record<string, string | Uint8Array>, mimetype: string | null = "application/epub+zip"): Uint8Array {
+export function zipEntries(
+  entries: Record<string, string | Uint8Array>,
+  mimetype: string | null = "application/epub+zip",
+): Uint8Array {
   const z: Zippable = {};
   if (mimetype !== null) z["mimetype"] = [strToU8(mimetype), { level: 0 }];
-  for (const [name, data] of Object.entries(entries)) z[name] = typeof data === "string" ? strToU8(data) : data;
+  for (const [name, data] of Object.entries(entries))
+    z[name] = typeof data === "string" ? strToU8(data) : data;
   return zipSync(z);
 }
 
@@ -74,7 +81,10 @@ export function ao3Epub(spec: Ao3Spec = {}): Uint8Array {
   ];
   const navPoints = spec.navPoints ?? files.map((f) => ({ label: title, src: encodeURI(f.name) }));
 
-  const posted = workId === null ? "" : `<p class="message"><b class="calibre2">${title}</b><br class="calibre1"/>
+  const posted =
+    workId === null
+      ? ""
+      : `<p class="message"><b class="calibre2">${title}</b><br class="calibre1"/>
     Posted originally on the <a href="http://archiveofourown.org/">Archive of Our Own</a> at <a href="http://archiveofourown.org/works/${workId}">http://archiveofourown.org/works/${workId}</a>.</p>`;
 
   const preface = xhtml(`<div id="preface" class="calibre1">
@@ -100,15 +110,23 @@ export function ao3Epub(spec: Ao3Spec = {}): Uint8Array {
   </div>
 </div>`);
 
-  const afterword = xhtml(`<div id="afterword" class="calibre1"><h2 class="toc-heading">Afterword</h2>
-  <div id="endnotes"><p class="calibre7">End Notes</p><blockquote class="userstuff">${spec.endNotes ?? '<p>Synthetic end notes.</p>'}</blockquote></div>
+  const afterword =
+    xhtml(`<div id="afterword" class="calibre1"><h2 class="toc-heading">Afterword</h2>
+  <div id="endnotes"><p class="calibre7">End Notes</p><blockquote class="userstuff">${spec.endNotes ?? "<p>Synthetic end notes.</p>"}</blockquote></div>
   <p class="message">Please <a href="http://archiveofourown.org/works/${workId}/comments/new">drop by the archive and comment</a> to let the author know if you enjoyed their work!</p>
 </div>`);
 
-  const spine = ["Synthetic_preface.xhtml", ...files.map((f) => f.name), "Synthetic_afterword.xhtml"];
+  const spine = [
+    "Synthetic_preface.xhtml",
+    ...files.map((f) => f.name),
+    "Synthetic_afterword.xhtml",
+  ];
   const extras = spec.extraManifest ?? [];
   const manifest = [
-    ...spine.map((href, i) => `<item id="html${i}" href="${encodeURI(href)}" media-type="application/xhtml+xml"/>`),
+    ...spine.map(
+      (href, i) =>
+        `<item id="html${i}" href="${encodeURI(href)}" media-type="application/xhtml+xml"/>`,
+    ),
     ...extras.map((e, i) => `<item id="extra${i}" href="${e.href}" media-type="${e.mediaType}"/>`),
     `<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>`,
   ].join("\n    ");

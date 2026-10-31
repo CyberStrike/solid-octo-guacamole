@@ -11,7 +11,8 @@ const ORIGIN = "https://content.rarepair.fans";
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3, 4]);
 const EPUB = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 9, 8, 7, 6]);
 
-const IMAGE_KEY = "works/123456/img/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+const IMAGE_KEY =
+  "works/123456/img/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
 const MISSING_IMAGE_KEY = "works/123456/img/" + "0".repeat(64);
 const ORIGINAL_KEY = "originals/01J9ZQ4K7M3XYV8T2W5R6N0B1C";
 
@@ -93,7 +94,9 @@ describe("09-content-origin", () => {
     await E.BUCKET.put(fragment, html, { httpMetadata: { contentType: "text/html" } });
     await E.BUCKET.put("uploads/01J9ZQ4K7M3XYV8T2W5R6N0B1C", EPUB);
     await E.BUCKET.put("index.html", html, { httpMetadata: { contentType: "text/html" } });
-    await E.BUCKET.put("works/123456/img/.hidden", PNG, { httpMetadata: { contentType: "image/png" } });
+    await E.BUCKET.put("works/123456/img/.hidden", PNG, {
+      httpMetadata: { contentType: "image/png" },
+    });
     await E.BUCKET.put("originals/.hidden", EPUB);
     // Image keys that are not a SHA-256 hex digest, so not versioned by their key.
     const unversioned = ["works/123456/img/cover.png", `works/123456/img/${"A".repeat(64)}`];
