@@ -125,6 +125,7 @@ describe("17-reports-and-dmca", () => {
     const res = await fetchW(REPORT, { headers: { cookie } });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/^text\/html/);
+    expect(res.headers.get("cache-control")).toBe("no-store");
     const html = await res.text();
     expect(html).toContain(`<form class="report-form" method="post" action="${REPORT}">`);
     expect(html).toContain("x4 Work W");
@@ -284,6 +285,8 @@ describe("report form checks", () => {
     for (const fields of refused) {
       const res = await postReport(fields, { cookie });
       expect(res.status, JSON.stringify(fields)).toBe(400);
+      // It holds what the reader typed, so it is kept out of caches.
+      expect(res.headers.get("cache-control")).toBe("no-store");
       const html = await res.text();
       expect(html).toContain('<p role="alert">Choose a reason.</p>');
       expect(html).toContain(`<form class="report-form" method="post" action="${REPORT}">`);
@@ -332,6 +335,14 @@ describe("report form checks", () => {
       { kind: "other", body: `${"a".repeat(999)}\n${"b".repeat(1000)}`, status: "open" },
       { kind: "other", body: wide, status: "open" },
     ]);
+  });
+
+  it("A NUL in the details, which no one types, is dropped rather than failing", async () => {
+    const email = "x4-nul@example.test";
+    const cookie = await signIn(email);
+    const res = await postReport({ reason: "other", details: "x4\u0000details" }, { cookie });
+    expect(res.status).toBe(200);
+    expect(await reportsBy(email)).toEqual([{ kind: "other", body: "x4details", status: "open" }]);
   });
 
   it("A body too large to be the form is refused, and nothing of it shown back", async () => {

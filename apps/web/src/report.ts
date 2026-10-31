@@ -51,11 +51,20 @@ const liveWork = (db: Db, ao3WorkId: number) =>
 
 /**
  * Whether the account is banned. Read from the database, not the session: the
- * session's user has no `banned_at`, and a ban must hold at once.
+ * session's user has no `banned_at`, and a ban must hold at once. An account with
+ * no row can't report either.
  */
-const isBanned = async (db: Db, userId: string) =>
-  (await db.selectFrom("user").select("banned_at").where("id", "=", userId).executeTakeFirst())
-    ?.banned_at != null;
+const isBanned = async (db: Db, userId: string) => {
+  const user = await db
+    .selectFrom("user")
+    .select("banned_at")
+    .where("id", "=", userId)
+    .executeTakeFirst();
+  return user === undefined || user.banned_at !== null;
+};
+
+/** Report pages that hold what the reader typed, or depend on who they are, stay out of caches. */
+const NO_STORE = { "Cache-Control": "no-store" };
 
 const bannedPage = () =>
   layout("Report not sent", `<p>You can't send reports from this account.</p>`);
@@ -128,8 +137,8 @@ export async function showReportForm(c: ReportContext) {
   try {
     const work = await liveWork(db, id);
     if (!work) return c.notFound();
-    if (await isBanned(db, session.user.id)) return c.html(bannedPage(), 403);
-    return c.html(reportPage(id, work.title));
+    if (await isBanned(db, session.user.id)) return c.html(bannedPage(), 403, NO_STORE);
+    return c.html(reportPage(id, work.title), 200, NO_STORE);
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }
@@ -158,24 +167,29 @@ export async function submitReport(c: ReportContext) {
   try {
     const work = await liveWork(db, id);
     if (!work) return c.notFound();
-    if (await isBanned(db, session.user.id)) return c.html(bannedPage(), 403);
+    if (await isBanned(db, session.user.id)) return c.html(bannedPage(), 403, NO_STORE);
 
     const form = await readForm(c.req.raw, MAX_REPORT_BODY);
     // Nothing of it is shown back: the form comes again empty.
     if (form === null) {
       const error = "That report was too large. Please try again.";
-      return c.html(reportPage(id, work.title, { error }), 413);
+      return c.html(reportPage(id, work.title, { error }), 413, NO_STORE);
     }
     const reason = form.get("reason") ?? "";
     // A browser submits each line break as CRLF, but the form's maxlength counts it as one.
-    const details = (form.get("details") ?? "").replaceAll("\r\n", "\n");
+    // A NUL is never typed, and Postgres text can't hold one.
+    const details = (form.get("details") ?? "").replaceAll("\r\n", "\n").replaceAll("\u0000", "");
     // The server checks, since the page has no script and a form can be posted by hand.
     if (!isKind(reason)) {
-      return c.html(reportPage(id, work.title, { error: "Choose a reason.", details }), 400);
+      return c.html(
+        reportPage(id, work.title, { error: "Choose a reason.", details }),
+        400,
+        NO_STORE,
+      );
     }
     if (details.length > MAX_DETAILS) {
       const error = `Details can be up to ${MAX_DETAILS} characters.`;
-      return c.html(reportPage(id, work.title, { error, kind: reason, details }), 400);
+      return c.html(reportPage(id, work.title, { error, kind: reason, details }), 400, NO_STORE);
     }
     await db
       .insertInto("reports")
@@ -190,5 +204,5 @@ export async function submitReport(c: ReportContext) {
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }
-  return c.html(reportedPage(), 200, { "Cache-Control": "no-store" });
+  return c.html(reportedPage(), 200, NO_STORE);
 }
