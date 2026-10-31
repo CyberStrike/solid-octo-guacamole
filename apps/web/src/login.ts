@@ -51,10 +51,13 @@ export async function requestSignIn(c: LoginContext) {
     remoteIp: c.req.header("cf-connecting-ip") ?? null,
   });
   if (turnstile === "failed") {
-    return formAgain(400, "The anti-spam check didn't pass. Please try again.");
+    return formAgain(400, "The anti-spam check did not pass. Please try again.");
   }
   if (turnstile === "unavailable") {
-    return formAgain(503, "The anti-spam check isn't answering just now. Please try again.");
+    return formAgain(
+      503,
+      "The anti-spam check is not answering just now. Please try again in a minute.",
+    );
   }
 
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });

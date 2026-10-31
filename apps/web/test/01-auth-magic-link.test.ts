@@ -60,6 +60,26 @@ async function emailsTo(to: string, { atLeast = 1 } = {}) {
   }
 }
 
+let sentinels = 0;
+
+/**
+ * Whether anything was queued for `to`. The queue delivers in order, one message
+ * a batch, so once a later request's email has arrived, an earlier one's would have.
+ */
+async function queuedFor(to: string): Promise<boolean> {
+  const sentinel = `sentinel-${++sentinels}@example.test`;
+  const res = await postLogin({ email: sentinel, "cf-turnstile-response": PASSING_TOKEN });
+  expect(res.status).toBe(200);
+  expect(await emailsTo(sentinel)).toHaveLength(1);
+  return (await emailsTo(to, { atLeast: 0 })).length > 0;
+}
+
+/** Shows that a refused request left nothing behind: no token and no email. */
+async function expectNothingCreated(to: string, before: Set<string>) {
+  expect(await verificationIds()).toEqual(before);
+  expect(await queuedFor(to)).toBe(false);
+}
+
 describe("01-auth-magic-link", () => {
   it("Sign-in page shows an email form", async () => {
     const res = await fetchW("/login?next=%2Fworks%2F1");
@@ -138,5 +158,111 @@ describe("01-auth-magic-link", () => {
     expect(elsewhere.status).toBe(200);
     const [other] = await emailsTo("queued-elsewhere@example.test");
     expect(new URL(other!.url).origin).toBe("https://rarepair.fans");
+  });
+
+  it("Check-your-email page sets expectations", async () => {
+    const res = await postLogin({
+      email: "expectations@example.test",
+      "cf-turnstile-response": PASSING_TOKEN,
+    });
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("<h1>Check your email</h1>");
+    expect(html).toContain("It lasts 15 minutes.");
+    expect(html).toContain("The link can take a minute to arrive during busy periods.");
+  });
+
+  it("Login request without Turnstile is refused", async () => {
+    const cases: [string, Record<string, string>][] = [
+      ["no-turnstile@example.test", {}],
+      ["empty-turnstile@example.test", { "cf-turnstile-response": "" }],
+      ["failing-turnstile@example.test", { "cf-turnstile-response": "a-failing-token" }],
+      // Solved, but for another host than the one the form was posted to.
+      [
+        "other-host-turnstile@example.test",
+        { "cf-turnstile-response": `${PASSING_TOKEN}@evil.example` },
+      ],
+    ];
+    for (const [email, turnstile] of cases) {
+      const before = await verificationIds();
+      const res = await postLogin({ email, next: "/works/1", ...turnstile });
+
+      expect(res.status).toBe(400);
+      const html = await res.text();
+      // The form again, with an error, keeping what was typed and where to go back to.
+      expect(formTag(html)).not.toBeNull();
+      expect(html).toContain(
+        '<p role="alert">The anti-spam check did not pass. Please try again.</p>',
+      );
+      expect(html).toContain(`value="${email}"`);
+      expect(html).toMatch(/name="next" value="\/works\/1"/);
+      await expectNothingCreated(email, before);
+    }
+  });
+
+  it("Cross-site login request is refused", async () => {
+    const cases: [string, Record<string, string>][] = [
+      ["evil-origin@example.test", { origin: "https://evil.example" }],
+      ["content-origin@example.test", { origin: "https://content.rarepair.fans" }],
+      ["same-site@example.test", { "sec-fetch-site": "same-site" }],
+      ["cross-site@example.test", { "sec-fetch-site": "cross-site" }],
+    ];
+    for (const [email, headers] of cases) {
+      const before = await verificationIds();
+      const res = await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN }, { headers });
+      expect(res.status).toBe(403);
+      await expectNothingCreated(email, before);
+    }
+
+    // Neither header at all (the brief's ruling): refused too.
+    const before = await verificationIds();
+    const bare = await fetchW("/login", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        email: "no-headers@example.test",
+        "cf-turnstile-response": PASSING_TOKEN,
+      }).toString(),
+    });
+    expect(bare.status).toBe(403);
+    await expectNothingCreated("no-headers@example.test", before);
+  });
+
+  it("Requesting a link while Turnstile can't be reached is refused", async () => {
+    const before = await verificationIds();
+    const res = await postLogin({
+      email: "turnstile-down@example.test",
+      "cf-turnstile-response": "siteverify-down",
+    });
+    expect(res.status).toBe(503);
+    const html = await res.text();
+    expect(formTag(html)).not.toBeNull();
+    expect(html).toContain('<p role="alert">');
+    await expectNothingCreated("turnstile-down@example.test", before);
+  });
+
+  it("Requesting a link for an invalid address shows the form again", async () => {
+    const before = await verificationIds();
+    const res = await postLogin({
+      email: "not-an-address",
+      "cf-turnstile-response": PASSING_TOKEN,
+    });
+    expect(res.status).toBe(400);
+    const html = await res.text();
+    expect(formTag(html)).not.toBeNull();
+    expect(html).toContain('<p role="alert">Enter a valid email address.</p>');
+    expect(await verificationIds()).toEqual(before);
+  });
+});
+
+describe("19-surge-controls-and-quotas", () => {
+  it("Turnstile guards login and signup", async () => {
+    const before = await verificationIds();
+    const res = await postLogin({ email: "surge-turnstile@example.test" });
+    expect(res.status).toBe(400);
+    const html = await res.text();
+    expect(formTag(html)).not.toBeNull();
+    expect(html).toContain('<p role="alert">');
+    await expectNothingCreated("surge-turnstile@example.test", before);
   });
 });
