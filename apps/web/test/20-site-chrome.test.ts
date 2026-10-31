@@ -1,0 +1,151 @@
+import { exports } from "cloudflare:workers";
+import { describe, expect, it } from "vitest";
+
+const BASE = "https://rarepair.fans";
+// SAFETY: the default export is the Worker under test, loaded from wrangler.jsonc's main.
+const worker = (exports as any).default as Fetcher;
+
+const fetchW = (input: string, init: RequestInit = {}) =>
+  worker.fetch(new URL(input, BASE).toString(), { redirect: "manual", ...init });
+
+// Later tickets add their pages (reader, admin) here.
+const LEGAL = ["/about", "/terms", "/privacy"];
+const APP_PAGES = ["/login", "/upload", "/remove", ...LEGAL, "/no-such-page"];
+
+const htmlOf = async (path: string) => (await fetchW(path)).text();
+
+const count = (html: string, pattern: RegExp) => (html.match(pattern) ?? []).length;
+
+const stylesheetHref = (html: string) =>
+  html.match(/<link rel="stylesheet" href="([^"]+)"/)?.[1] ?? null;
+
+const stylesheetOf = async () => {
+  const href = stylesheetHref(await htmlOf("/about"));
+  const res = await fetchW(href ?? "/missing.css");
+  expect(res.status).toBe(200);
+  return res.text();
+};
+
+describe("20-site-chrome-and-legal", () => {
+  it("Temporary banner on every page", async () => {
+    for (const path of APP_PAGES) {
+      const html = await htmlOf(path);
+      const banners = html.match(/<[a-z]+ class="banner"[^>]*>[\s\S]*?<\/[a-z]+>/g) ?? [];
+      expect(banners, path).toHaveLength(1);
+      expect(banners[0]).toMatch(/unofficial/i);
+      expect(banners[0]).toContain('<a href="/about">');
+      expect(html.indexOf('class="banner"'), path).toBeLessThan(html.indexOf("<main"));
+    }
+  });
+
+  it("No AO3 or OTW branding", async () => {
+    const branding = /AO3|OTW|Archive of Our Own|Organization for Transformative Works/i;
+    for (const path of APP_PAGES) {
+      expect(await htmlOf(path), path).not.toMatch(branding);
+    }
+    expect(await stylesheetOf()).not.toMatch(branding);
+  });
+
+  it("About, terms and privacy pages", async () => {
+    for (const path of LEGAL) {
+      const res = await fetchW(path);
+      const html = await res.text();
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("content-type")).toMatch(/^text\/html/);
+      expect(res.headers.get("set-cookie")).toBeNull();
+      expect(count(html, /<h1\b/g)).toBe(1);
+      expect(html).not.toMatch(/<script/i);
+      expect(html).toMatch(/Draft/);
+    }
+  });
+
+  it("The terms and privacy pages say what the archive does", async () => {
+    expect(await htmlOf("/terms")).toMatch(/removal|remove/i);
+    expect(await htmlOf("/privacy")).toMatch(/wait list/i);
+  });
+
+  it("Footer links to removal", async () => {
+    for (const path of APP_PAGES) {
+      const html = await htmlOf(path);
+      const footer = html.match(/<footer\b[\s\S]*?<\/footer>/)?.[0] ?? "";
+      expect(footer, path).toContain('<a href="/remove">Remove my work</a>');
+    }
+  });
+
+  it("Not-found page", async () => {
+    const res = await fetchW("/no-such-page");
+    const html = await res.text();
+    expect(res.status).toBe(404);
+    expect(html).toMatch(/<form role="search" method="get" action="\/search">/);
+    expect(html).toMatch(/<label for="q">[^<]+<\/label>\s*<input type="search" id="q" name="q"/);
+    expect(html).toMatch(/<button type="submit">/);
+    expect(html).toMatch(/<main[\s\S]*<a href="\/">[\s\S]*<\/main>/);
+  });
+});
+
+describe("21-accessibility-and-no-js", () => {
+  it("Skip link, landmarks and one h1 in the page chrome", async () => {
+    for (const path of APP_PAGES) {
+      const html = await htmlOf(path);
+      expect(count(html, /<h1\b/g), path).toBe(1);
+      expect(count(html, /<header\b/g), path).toBe(1);
+      expect(count(html, /<main\b/g), path).toBe(1);
+      expect(count(html, /<footer\b/g), path).toBe(1);
+      expect(html).toContain('<main id="main">');
+      const firstLink = html.match(/<a\b[^>]*>/)?.[0];
+      expect(firstLink).toBe('<a class="skip" href="#main">');
+    }
+  });
+
+  it("Focus rings always visible", async () => {
+    const css = await stylesheetOf();
+    expect(css).toMatch(/:focus-visible\s*\{[^}]*outline:[^;}]*var\(--accent\)[^}]*outline-offset/);
+    expect(css).toMatch(/\.skip:focus/);
+    expect(css).not.toMatch(/outline:\s*(none|0)\b/);
+  });
+
+  it("No web fonts", async () => {
+    const css = await stylesheetOf();
+    expect(css).not.toMatch(/@font-face|url\(/);
+    expect(css).toContain('system-ui, -apple-system, "Segoe UI", Roboto, sans-serif');
+    expect(css).toContain('Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif');
+    for (const path of APP_PAGES) {
+      const html = await htmlOf(path);
+      expect(html.match(/<link\b[^>]*>/g) ?? [], path).toHaveLength(1);
+      expect(html).not.toMatch(/<style\b|style="/);
+    }
+  });
+
+  it("Reduced motion respected", async () => {
+    const css = await stylesheetOf();
+    const block =
+      css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{[\s\S]*?\}\s*\}/)?.[0] ?? "";
+    expect(block).toMatch(/scroll-behavior:\s*auto/);
+    expect(block).toMatch(/animation:\s*none/);
+    expect(block).toMatch(/transition:\s*none/);
+    expect(css.replace(block, "")).not.toMatch(/scroll-behavior:\s*smooth/);
+  });
+
+  it("Interface type and rhythm", async () => {
+    const css = await stylesheetOf();
+    expect(css).toMatch(/html\s*\{[^}]*font-size:\s*16px/);
+    expect(css).toMatch(/body\s*\{[^}]*line-height:\s*1\.45/);
+    for (const px of [13, 16, 20, 25, 31, 39]) expect(css).toContain(`${px}px`);
+    expect(css).toMatch(/--space:\s*4px/);
+    expect(css).toMatch(/article\.chapter\s*\{[^}]*line-height:\s*1\.6[^}]*max-width:\s*66ch/);
+    expect(css).toMatch(/border-(top|bottom):\s*1px solid/);
+  });
+
+  it("The stylesheet is served from the page's own origin, cached for good", async () => {
+    const href = stylesheetHref(await htmlOf("/about"));
+    expect(href).toMatch(/^\/assets\/site\.[0-9a-f]+\.css$/);
+    const res = await fetchW(href ?? "");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/^text\/css/);
+    expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("strict-transport-security")).toMatch(/max-age/);
+    expect(res.headers.get("set-cookie")).toBeNull();
+    expect((await fetchW("/assets/site.0000.css")).status).toBe(404);
+  });
+});
