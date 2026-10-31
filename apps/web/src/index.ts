@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { assetRoute } from "./assets";
+import { showTagListing } from "./listing";
 import type { Bindings } from "./env";
 import { requestSignIn, showSignIn } from "./login";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
@@ -40,6 +41,8 @@ app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce")
 app.get("/about", (c) => c.html(aboutPage()));
 app.get("/terms", (c) => c.html(termsPage()));
 app.get("/privacy", (c) => c.html(privacyPage()));
+
+app.get("/tags/:type/:name", showTagListing);
 
 // The URL carries a hash of the content, so the response never changes under it.
 app.get(STYLESHEET_PATH, (c) =>
