@@ -1,4 +1,5 @@
 import { createDb, insertUpload, type Database } from "@archive/db";
+import { seedWork, type SeedWorkOptions } from "@archive/db/seed";
 import { processEpub } from "@archive/epub";
 import { createExecutionContext, createMessageBatch, getQueueResult } from "cloudflare:test";
 import { env } from "cloudflare:workers";
@@ -124,4 +125,86 @@ export function watchedWorker(steps: Partial<Steps> = {}) {
     },
   });
   return { handler, parsed };
+}
+
+/**
+ * An opt-out with `pseudNorm` as given, and the `opt_out` request it comes from. Returns the
+ * opt-out's id. The text is synthetic.
+ */
+export function addOptOut(
+  pseudNorm: string,
+  { active = true }: { active?: boolean } = {},
+): Promise<string> {
+  return withDb(async (db) => {
+    const request = await db
+      .insertInto("requests")
+      .values({
+        kind: "opt_out",
+        pseud_norm: pseudNorm,
+        contact_email: "requester@example.test",
+        statement: "A synthetic statement.",
+        ip_hash: "test-ip-hash",
+      })
+      .returning("id")
+      .executeTakeFirstOrThrow();
+    const optOut = await db
+      .insertInto("optouts")
+      .values({ pseud_norm: pseudNorm, request_id: request.id, active })
+      .returning("id")
+      .executeTakeFirstOrThrow();
+    return optOut.id;
+  });
+}
+
+/** Reverses the opt-out, as a moderator does for a mistaken one. */
+export const deactivateOptOut = (id: string) =>
+  withDb((db) => db.updateTable("optouts").set({ active: false }).where("id", "=", id).execute());
+
+/** A DMCA notice on the work, in the notice's `status`. */
+export const addTakedown = (workId: string, status: string) =>
+  withDb((db) =>
+    db
+      .insertInto("takedowns")
+      .values({ work_id: workId, requester: "A rights holder", basis: "A stated basis", status })
+      .execute(),
+  );
+
+/** A work seeded as ingest leaves it (`@archive/db/seed`). */
+export const seededWork = (options: SeedWorkOptions) => withDb((db) => seedWork(db, options));
+
+/** Whether any work has the AO3 work ID. */
+export const workExists = (ao3WorkId: number) =>
+  withDb(async (db) => {
+    const row = await db
+      .selectFrom("works")
+      .select("id")
+      .where("ao3_work_id", "=", ao3WorkId)
+      .executeTakeFirst();
+    return row !== undefined;
+  });
+
+/** A lowercase token, to keep a test's pseud its own on the shared database. */
+export const token = () => crypto.randomUUID().slice(0, 8);
+
+/** An AO3 work ID no other test uses: an int4, well above `ao3Epub`'s default. */
+export const freshAo3WorkId = () => 100_000_000 + Math.floor(Math.random() * 2_000_000_000);
+
+/**
+ * The queue handler with the byline `pseuds` over the epub's own (the synthetic epubs all carry
+ * one byline), or the epub's own when none are given. `saved` gets the id of each upload the
+ * job saves.
+ */
+export function savingWorker(...pseuds: string[]) {
+  const saved: string[] = [];
+  const process: Steps["process"] = async (bytes) => {
+    const work = await processEpub(bytes);
+    return pseuds.length === 0
+      ? work
+      : { ...work, authors: pseuds.map((pseud) => ({ pseud, user: null })) };
+  };
+  const { handler } = watchedWorker({
+    process,
+    save: async (upload) => void saved.push(upload.id),
+  });
+  return { handler, saved };
 }

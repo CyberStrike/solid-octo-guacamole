@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { zipEntries } from "../../../packages/epub/test/helpers";
-import { deliver, pendingUpload, uploadRow } from "./helpers";
+import { ao3Epub, zipEntries } from "../../../packages/epub/test/helpers";
+import {
+  addOptOut,
+  addTakedown,
+  deliver,
+  freshAo3WorkId,
+  pendingUpload,
+  savingWorker,
+  seededWork,
+  token,
+  uploadRow,
+  workExists,
+} from "./helpers";
 
 /** A well-formed epub with no AO3 preface, carrying `metadata` in its OPF. Synthetic text. */
 const prefacelessEpub = (metadata: string) =>
@@ -49,5 +60,42 @@ describe("06-ao3-preface-and-chapters", () => {
       prefacelessEpub(`<dc:source>https://archiveofourown.org/works/6</dc:source>
         <dc:contributor opf:role="bkp">FanFicFare [https://github.com/JimmXinu/FanFicFare]</dc:contributor>`),
     );
+  });
+});
+
+/** Ingests the upload with `handler`, and expects it rejected as `opted_out`, never saved. */
+async function expectOptedOut(id: string, { handler, saved }: ReturnType<typeof savingWorker>) {
+  const result = await deliver([{ upload_id: id }], { handler });
+
+  const row = await uploadRow(id);
+  expect(row.status).toBe("opted_out");
+  expect(row.error_stage).toBe("process");
+  expect(row.error).toBe("opted_out");
+  expect(row.work_id).toBeNull();
+  expect(row.lease_until).toBeNull();
+  // Before anything is written: the save step never ran.
+  expect(saved).toEqual([]);
+  expect(result.explicitAcks).toEqual(["msg-0"]);
+  expect(result.retryMessages).toEqual([]);
+}
+
+describe("06-ao3-preface-and-chapters: opt-outs and takedowns", () => {
+  it("Opted-out pseud is rejected", async () => {
+    const t = token();
+    await addOptOut(`moon child ${t}`);
+    const workId = freshAo3WorkId();
+    const id = await pendingUpload(ao3Epub({ workId }));
+
+    await expectOptedOut(id, savingWorker(`Moon Child ${t}`));
+    expect(await workExists(workId)).toBe(false);
+  });
+
+  it("Work under takedown is rejected", async () => {
+    const workId = freshAo3WorkId();
+    const removed = await seededWork({ ao3WorkId: workId, status: "removed" });
+    await addTakedown(removed.workId, "removed");
+    const id = await pendingUpload(ao3Epub({ workId }));
+
+    await expectOptedOut(id, savingWorker());
   });
 });
