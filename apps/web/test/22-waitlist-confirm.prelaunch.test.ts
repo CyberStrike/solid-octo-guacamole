@@ -166,6 +166,8 @@ describe("22-waitlist", () => {
       ["unknown", "A".repeat(43)],
       ["empty", ""],
       ["malformed", "not base64url!!"],
+      ["one short", "A".repeat(42)],
+      ["one long", "A".repeat(44)],
       ["too long", "A".repeat(300)],
     ];
     for (const [name, token] of cases) {

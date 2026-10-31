@@ -16,8 +16,7 @@ import {
 // The tokens we issue are 43 base64url characters (waitlist.ts newToken). Anything
 // longer or of another alphabet was never issued, and isn't put back into a page or
 // looked up.
-const MAX_LINK_TOKEN = 256;
-const ISSUED_TOKEN = /^[A-Za-z0-9_-]+$/;
+const ISSUED_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
 type ConfirmContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
 
@@ -28,8 +27,7 @@ const NO_STORE = { "Cache-Control": "no-store", "Referrer-Policy": "strict-origi
 
 const refused = (c: ConfirmContext) => c.html(waitlistLinkRefusedPage(), 400, NO_STORE);
 
-const isIssuable = (token: string) =>
-  token !== "" && token.length <= MAX_LINK_TOKEN && ISSUED_TOKEN.test(token);
+const isIssuable = (token: string) => ISSUED_TOKEN.test(token);
 
 /**
  * `GET /waitlist/confirm`: the emailed link. It shows a button and reads nothing from
