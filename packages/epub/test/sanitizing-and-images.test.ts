@@ -521,4 +521,45 @@ describe("chapter links", () => {
     expect(work.chapters[0]!.html).not.toContain("<a");
     expect(work.chapters[0]!.html).toContain("go-three");
   });
+
+  it("hostile hrefs give only a reader URL, an external link with rel, or text", async () => {
+    const hrefs = [
+      `javascript:alert(1)`,
+      `javascript:Three%20Parts_split_001.xhtml#c3`,
+      `jav&#x61;script:Three%20Parts_split_001.xhtml#c3`,
+      `data:text/html,Three%20Parts_split_001.xhtml#c3`,
+      `//evil.example/Three%20Parts_split_001.xhtml#c3`,
+      `/Three%20Parts_split_001.xhtml#c3`,
+      `%2e%2e/Three%20Parts_split_001.xhtml#c3`,
+      `Three%20Parts_split_001.xhtml#c3&quot; onclick=&quot;alert(2)`,
+      `Three%20Parts&#1;_split_001.xhtml#c3`,
+      `Three%ZZParts_split_001.xhtml#c3`,
+      `&#x54;hree%20Parts_split_001.xhtml#c3`,
+      `https://evil.example/Three%20Parts_split_001.xhtml#c3`,
+    ];
+    const work = await processEpub(
+      threeChapters({
+        c1: hrefs
+          .map((h, i) => `<a href="${h}" onclick="alert(3)" target="_top">h-${i}</a>`)
+          .join(" "),
+      }),
+    );
+    const c1 = work.chapters[0]!.html;
+    const anchors = [...c1.matchAll(/<a\b[^>]*>/g)].map((m) => m[0]);
+    expect(anchors).toEqual([
+      `<a href="/works/1000001/chapters/3">`,
+      `<a href="https://evil.example/Three%20Parts_split_001.xhtml#c3" rel="nofollow noopener noreferrer ugc">`,
+    ]);
+    expect(c1).not.toMatch(/javascript|data:|onclick|target=|script/i);
+    for (let i = 0; i < hrefs.length; i++) expect(c1).toContain(`h-${i}`);
+  });
+
+  it("gives the same chapter links for the same bytes", async () => {
+    const epub = threeChapters({
+      c1: `<a href="Three%20Parts_split_001.xhtml#c3">go-three</a>`,
+      c3: `<a href="Three%20Parts_split_000.xhtml">go-one</a>`,
+      summary: `<p><a href="Three%20Parts_split_000.xhtml#c2">sum-two</a></p>`,
+    });
+    expect(await processEpub(epub)).toEqual(await processEpub(epub));
+  });
 });
