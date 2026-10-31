@@ -23,6 +23,7 @@ an unofficial stopgap.
 | Author identity | No work claims and no author verification while AO3 is down. Removal and opt-out are requests anyone can make, without proving who they are |
 | Search scope | Metadata only: title, author, tags, summary |
 | Chapter rendering | Inline in app pages behind a strict CSP, with no iframe |
+| Wait list | Before launch, `/` is a coming-soon page with a double opt-in wait list. Each confirmed address gets one launch email, sent from the same mail subdomain as sign-in, spread over hours on its own queue. The list is deleted after the launch send |
 
 ## System overview
 
@@ -39,7 +40,7 @@ an unofficial stopgap.
    │               users, auth)    rate counters      • sanitize chapter XHTML
    │                    ▲                             • write chapters to R2, rows to PG
    │                    └─────────────────────────────┘
-   │  web Worker ── Queue: email ──▶ mailer Worker ──▶ Resend (Postmark or SES failover)
+   │  web Worker ── Queues: email, email-bulk ──▶ mailer Worker ──▶ Resend (Postmark or SES failover)
    │  upload: presigned PUT from the browser (needs JS, like every Turnstile form)
    ├────────────────────────────────────────────────▶ R2: uploads/  (raw epubs)
    │
@@ -124,7 +125,14 @@ requests     (id, kind, work_id NULL, pseud_norm NULL, contact_email, statement,
               status, ip_hash, created_at)        -- kind: remove_work | opt_out
 optouts      (id, pseud_norm, ao3_user NULL, request_id, active, created_at)  -- checked at ingest
 requester_blocks (id, contact_email NULL, ip_hash NULL, created_by, created_at)
+waitlist     (email PRIMARY KEY,               -- trimmed and lowercased; deleted after launch
+              confirm_token_hash NULL, confirm_sent_at,
+              confirmed_at NULL, notified_at NULL,
+              unsubscribe_token_hash NULL, created_at)  -- no IP, user agent or referrer
 ```
+
+`user.role` is `user`, `moderator` or `admin`. An admin has every moderator
+power, plus the wait list's launch send and purge (Wait list).
 
 A held upload doesn't make its work held: a first upload always goes live (with
 the notice if the parser gave review reasons), and a later upload that is held
@@ -398,7 +406,8 @@ can be snapshotted.
   form-action 'self'; frame-ancestors 'none'`. Injected markup can't guess the
   nonce, so any script that gets past the sanitizer won't run. Session cookies
   are `HttpOnly`, so scripts can't read them anyway.
-- **Pages with a Turnstile check** (sign-in, upload, `/remove`) add exactly one
+- **Pages with a Turnstile check** (sign-in, upload, `/remove`, and the
+  coming-soon page at `/` while `PRELAUNCH` is on) add exactly one
   allowance, `frame-src https://challenges.cloudflare.com`, for the challenge
   iframe. Turnstile's `api.js` loads through a nonced `<script>`, which
   `'strict-dynamic'` already covers. Reader and work pages never get it.
@@ -526,7 +535,12 @@ can be snapshotted.
     per-second API limit (by default about 2 requests a second; ask for more
     before launch).
   - Mail goes from a dedicated subdomain with SPF, DKIM and DMARC, warmed up
-    before launch.
+    before launch. The wait list's confirmation emails do that warm-up, and
+    the launch email goes from the same subdomain (Wait list).
+  - **Two queues.** `email` carries sign-in and wait list confirmation emails.
+    `email-bulk` carries only the launch email, and its consumer sends at a
+    configured rate that leaves room under Resend's per-second limit, so a
+    launch send never delays a sign-in link.
   - Postmark or SES is wired in as failover from day one.
   - Cloudflare Email Sending isn't used for launch: it's in beta, and new
     accounts start on a "conservative daily quota" that a signup surge would
@@ -623,16 +637,52 @@ epub, under the normal versioning rules.
   an uploader. A *Works to check* item's page has approve (clears the notice,
   or publishes the held version), make a version current, hide and remove;
   each work's admin page lists every version with "Make current". Anyone
-  without the moderator role, signed out included, gets 404 for every
+  without the moderator or admin role, signed out included, gets 404 for every
   `/admin` URL, so the admin area isn't advertised.
+
+## Wait list
+
+The site goes up before the archive opens. While the web Worker's `PRELAUNCH`
+setting is on, `/` is a coming-soon page with a wait list form, and every
+other app page redirects there, except `/terms`, `/privacy`, the `/waitlist`
+pages, sign-in and `/admin`. Turning `PRELAUNCH` off opens the archive: `/`
+becomes the home page and `POST /waitlist` answers 404.
+
+- **Joining.** `POST /waitlist` is a plain form with Turnstile, with the same
+  `Origin` / `Sec-Fetch-Site` check as `POST /login` (403) and rate limits
+  per IP and per email (429). It stores the address and queues one
+  confirmation email on `email`. The reply is the same "Check your email to
+  confirm" page whether or not the address was already there, so the form
+  can't be used to find out who is on the list. An unconfirmed address gets
+  at most one new confirmation email an hour.
+- **Double opt-in.** `GET /waitlist/confirm` only shows a "Confirm" button,
+  because mail scanners open links; `POST /waitlist/confirm` sets
+  `confirmed_at`. Tokens are stored hashed and last 7 days. Double opt-in
+  keeps other people's and mistyped addresses off the list, so the launch
+  email's bounce and complaint rates stay low. That matters because it shares
+  the sign-in mail's sending reputation.
+- **The launch send.** An admin starts it from the admin area. The web Worker
+  pages through confirmed rows with `notified_at` empty, setting
+  `notified_at` and putting each batch on `email-bulk` (clearing it again if
+  the enqueue fails), so no address is queued twice. The mailer sends at the
+  configured rate, so the emails, and the visits they bring, arrive over
+  hours. Each launch email has `List-Unsubscribe` with one-click
+  `List-Unsubscribe-Post`. A POST to its link deletes the row.
+- **Deleting the list.** Once every confirmed address has been sent its email,
+  an admin purges the table. The page promises one email and nothing else, so
+  nothing is kept for later.
+- **Privacy.** Only the address and the token and send times are stored: no IP
+  address, user agent or referrer. Like every email the mailer sends, no log
+  line holds an address or a link. The privacy notice describes the wait list.
 
 ## Surge controls
 
-- Turnstile on signup, login, upload and `/remove` requests. Turnstile needs
+- Turnstile on signup, login, upload, the wait list and `/remove` requests. Turnstile needs
   JavaScript, so those forms do too; reading, browsing and search work without
   it.
-- The Workers rate-limiting binding covers abuse throttling on login, upload
-  requests and search, keyed per IP and per user. It's approximate and counts
+- The Workers rate-limiting binding covers abuse throttling on login, the
+  wait list, upload requests and search, keyed per IP and per user (per
+  email for login and the wait list). It's approximate and counts
   per Cloudflare location, over 10- or 60-second windows. That's fine for
   slowing abuse, but not for hard limits.
 - **Status codes.** A rate limit or quota that is hit returns **429** with
