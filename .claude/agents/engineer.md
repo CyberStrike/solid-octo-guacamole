@@ -31,7 +31,9 @@ Follow `/escalate`, preloaded in your context. For its step 2, launch a `consult
 
 ## Your ledger row
 
-The brief names your `agents` row on the ledger (its URL and doc id). Keep its `step` and `note` current yourself, so the operator can see where you are: write them when you start building, open the draft PR, start each review round, wait on Copilot, start rework, and report. Use the stage names in `/orchestrate` §6. Load the ArtifactData tool, read the row, and `update` only `step` and `note`, pinned with `if_version`. On a version conflict, re-read and retry once. Never write any other field, row or collection: the orchestrator owns `status`, `pr`, the times and the item. If a ledger write is refused, carry on without it and say so in your report.
+The brief gives the ledger URL and your row's doc id in the `agents` collection (`<ITEM>-builder`). Keep that row's `step` and `note` current yourself, so the operator can see where you are. Write them when you start building, start a consult, run `/gate pr`, open the draft PR, start each review round, wait on Copilot, start rework, stop, and report. Use the stage names in `/orchestrate` §6.
+
+ArtifactData is a deferred tool: load it first with ToolSearch (`select:ArtifactData`). `get` the row from `agents` to read its `version`, then `update` only `step` and `note`, with `if_version` set to it. Each write result carries the new version, so reuse that for the next one. On a version conflict, re-read and retry once. Never write any other field, row or collection: the orchestrator owns `status`, `pr`, the times and the item (`docs/process.md`, *The ledger*). If you can't load the tool or a ledger write is refused, carry on without it and say so in your report.
 
 ## Finish
 

@@ -76,6 +76,7 @@ The document `meta/state` holds `main` (short sha) and `updatedAt`, which the pa
 Rules:
 
 - **When to update:** at every launch, report, merge, filed issue, question closure and operator ruling.
+- **Who writes an agent's row:** the orchestrator, at launch and at report, for every field but two. A builder engineer writes only its own row's `step` and `note`, pinned with `if_version` (`.claude/agents/engineer.md`, *Your ledger row*). Explorers and consultants write nothing. `step` is the stage the page shows on a running or idle agent's card (stage names in `/orchestrate` §6).
 - **Real times only:** every time on it comes from `date -u`, a commit, or GitHub's `mergedAt`. Never an estimate.
 - **Before a status summary,** query `agents` for `running` and `idle` rows and reconcile them with what is actually running.
 - **After every merge and every hand-back,** check the ledger against GitHub with `scripts/ledger-check.mjs`, from a checkout of this repository:
