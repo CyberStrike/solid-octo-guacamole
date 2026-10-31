@@ -9,8 +9,8 @@ import { emailsTo, fetchW, PASSING_TOKEN, postLogin } from "./helpers";
 const db = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 });
 afterAll(() => db.destroy());
 
-/** Signs `email` in through the Worker as a moderator, and returns its session cookie. */
-async function signInModerator(email: string): Promise<string> {
+/** Signs `email` in through the Worker with `role`, and returns its session cookie. A4 (#24) brings the shared one. */
+async function signIn(email: string, role: string | null): Promise<string> {
   expect((await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN })).status).toBe(200);
   const [sent] = await emailsTo(email);
   const token = new URL(sent!.url).searchParams.get("token")!;
@@ -18,7 +18,7 @@ async function signInModerator(email: string): Promise<string> {
   expect(res.status).toBe(303);
   await db
     .updateTable("user")
-    .set({ role: "moderator", terms_accepted_at: new Date() })
+    .set({ role, terms_accepted_at: new Date() })
     .where("email", "=", email)
     .execute();
   return res.headers.getSetCookie()[0]!.split(";")[0]!;
@@ -26,7 +26,7 @@ async function signInModerator(email: string): Promise<string> {
 
 describe("18 moderation before launch", () => {
   it("A moderator sees the queues before launch", async () => {
-    const cookie = await signInModerator("mod1-prelaunch-moderator@example.test");
+    const cookie = await signIn("mod1-prelaunch-moderator@example.test", "moderator");
     const res = await fetchW("/admin/reports", { headers: { cookie } });
     expect(res.status).toBe(200);
   });

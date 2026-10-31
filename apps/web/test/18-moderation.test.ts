@@ -2,6 +2,7 @@ import { createDb } from "@archive/db";
 import { seedWork } from "@archive/db/seed";
 import { env } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { SESSION_COOKIE } from "../src/auth";
 import { emailsTo, fetchW, PASSING_TOKEN, postLogin } from "./helpers";
 
 // One database serves every test file in the run, and each queue lists every open
@@ -286,7 +287,7 @@ describe("18 moderation", () => {
 
   it("Signed-out visitor gets 404", async () => {
     const notFound = await notFoundBody();
-    for (const cookie of [undefined, "__Secure-better-auth.session_token=forged.value"]) {
+    for (const cookie of [undefined, `${SESSION_COOKIE}=forged.value`]) {
       for (const [path, method] of ADMIN_REQUESTS) {
         await expectRefused(await get(path, cookie, { method }), notFound, `${method} ${path}`);
       }
