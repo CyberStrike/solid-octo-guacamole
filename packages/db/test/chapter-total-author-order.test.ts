@@ -24,7 +24,11 @@ async function createDeployedDb(): Promise<TestDb> {
       name text primary key,
       applied_at timestamptz not null default current_timestamp
     )`.execute(deployed.db);
-    for (const m of migrations.filter((x) => x.name !== MIGRATION)) {
+    const before = migrations.slice(
+      0,
+      migrations.findIndex((x) => x.name === MIGRATION),
+    );
+    for (const m of before) {
       await sql.raw(m.sql).execute(deployed.db);
       await sql`insert into schema_migrations (name) values (${m.name})`.execute(deployed.db);
     }
@@ -51,7 +55,9 @@ describe("packages/db chapter total and byline order", () => {
     const deployed = await createDeployedDb();
     try {
       await sql`insert into works (id, ao3_work_id, title, chapters_count, complete)
-        values ('w1', 7001, 't', 1, true)`.execute(deployed.db);
+        values ('w1', 7001, 't', 1, true), ('w2', 7002, 't', 1, true)`.execute(deployed.db);
+      await sql`insert into work_authors (work_id, pseud, ao3_user) values
+        ('w2', 'Solo', null)`.execute(deployed.db);
       await sql`insert into work_authors (work_id, pseud, ao3_user) values
         ('w1', 'Zed', 'zed'), ('w1', 'Sam', 'bob'), ('w1', 'Sam', null), ('w1', 'Amy', 'amy')`.execute(
         deployed.db,
@@ -60,8 +66,19 @@ describe("packages/db chapter total and byline order", () => {
       const rows = await deployed.db
         .selectFrom("work_authors")
         .select(["pseud", "ao3_user", "position"])
+        .where("work_id", "=", "w1")
         .orderBy("position")
         .execute();
+      const solo = await deployed.db
+        .selectFrom("work_authors")
+        .select("position")
+        .where("work_id", "=", "w2")
+        .execute();
+      const totals = await deployed.db.selectFrom("works").select("chapters_total").execute();
+      expect({ solo, totals }).toEqual({
+        solo: [{ position: 0 }],
+        totals: [{ chapters_total: null }, { chapters_total: null }],
+      });
       expect(rows).toEqual([
         { pseud: "Amy", ao3_user: "amy", position: 0 },
         { pseud: "Sam", ao3_user: null, position: 1 },

@@ -13,8 +13,10 @@ alter table "work_versions" add constraint "work_versions_chapter_total_check"
 
 alter table "work_authors" add column "position" integer;
 
--- Existing rows keep the order readers saw: by pseud, then user, by code
--- point ("C"), a NULL user first. Positions start at 0, as tags' do.
+-- Existing rows keep the order readers saw: by pseud, then user, a NULL user
+-- first. "C" collation orders by code point, which differs from the code-unit
+-- order the old query used only between astral and U+E000-U+FFFF characters.
+-- Positions start at 0, as tags' do.
 update "work_authors" set "position" = ordered."position"
 from (
   select
