@@ -24,10 +24,10 @@ export const escapeHtml = (text: string) =>
 /**
  * A whole HTML document: skip link, temporary banner, header, one chrome h1 made
  * from the title, the body inside main, then the footer. The title is escaped.
- * The body and head are trusted markup from the caller (this file,
- * waitlist-pages.ts or reader.ts), never escaped; every caller escapes any value it
- * puts in them, except the reader's chapter fragment, which is trusted only because
- * the sanitizer wrote it. So is `heading`, which replaces the default h1 for a page
+ * The body and head are trusted markup from the caller (this file or a page
+ * module), never escaped; every caller escapes any value it puts in them, except the
+ * chapter fragments of reader.ts and full.ts, which are trusted only because the
+ * sanitizer wrote them. So is `heading`, which replaces the default h1 for a page
  * whose one h1 sits in other chrome, such as the reader's top bar.
  */
 export const layout = (
@@ -35,7 +35,21 @@ export const layout = (
   body: string,
   head = "",
   heading = `<h1>${escapeHtml(title)}</h1>`,
-) => `<!doctype html>
+) => {
+  const { before, after } = layoutAround(title, head, heading);
+  return `${before}${body}${after}`;
+};
+
+/**
+ * The layout's markup before the body and after it, for a page that streams its body
+ * (the entire work). Same arguments and trust as `layout`, which is built on it.
+ */
+export const layoutAround = (
+  title: string,
+  head = "",
+  heading = `<h1>${escapeHtml(title)}</h1>`,
+) => ({
+  before: `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)} · rarepair</title><link rel="stylesheet" href="${STYLESHEET_PATH}">${head}</head>
 <body>
@@ -44,11 +58,13 @@ export const layout = (
 <header><a class="site-name" href="/">rarepair</a></header>
 <main id="main">
 ${heading}
-${body}
+`,
+  after: `
 </main>
 <footer><a href="/remove">Remove my work</a> · <a href="/about">About</a> · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a></footer>
 </body>
-</html>`;
+</html>`,
+});
 
 /** A page with a Turnstile check: the challenge script carries the page nonce. */
 export const turnstilePage = (title: string, nonce: string) =>

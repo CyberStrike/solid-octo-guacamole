@@ -114,7 +114,14 @@ async function run(
   files.clear(); // everything still needed is now parsed or held by `candidates`
   const used = new Map<string, ImageCandidate>();
   const imageBase = options.imageBase ?? "";
-  const ctx: SanitizeContext = {
+  // Before anything is serialized, so links in the summary and notes resolve too.
+  const split = splitChapters(docs, pkg.navPoints);
+  // The reader takes only digits with no leading zero, within Postgres's int4:
+  // for any other ID a chapter link would be dead, so links stay text.
+  const readerId = /^[1-9]\d{0,9}$/.test(ao3WorkId) && Number(ao3WorkId) <= 2_147_483_647;
+  // `current` is the chapter being serialized, so a link to it stays plain
+  // text; null outside chapters.
+  const ctxFor = (current: number | null): SanitizeContext => ({
     resolveImage(src, fromFile) {
       const target = resolveHref(dirOf(fromFile), src);
       const candidate = target ? candidates.get(target.path) : undefined;
@@ -122,9 +129,22 @@ async function run(
       if (!used.has(candidate.ref.key)) used.set(candidate.ref.key, candidate);
       return imageBase + candidate.ref.key;
     },
+    resolveChapterLink(href, fromFile) {
+      if (!readerId) return null;
+      // Browsers drop tabs and newlines from a URL before reading it.
+      const cleaned = href.replace(/[\t\n\r]/g, "");
+      if (namesDirectory(cleaned)) return null;
+      const target = resolveHref(dirOf(fromFile), cleaned);
+      // `#` and an empty href name no target: only a file or an anchor does.
+      if (!target || (target.path === "" && target.anchor === null)) return null;
+      const n = split.chapterFor(target.path || fromFile, target.anchor);
+      if (n === null || n === current) return null;
+      return `/works/${ao3WorkId}/chapters/${n}`;
+    },
     // "See the end of the work/chapter for more notes" links point inside the epub.
     skip: (el) => hasClass(el, "endnote-link"),
-  };
+  });
+  const ctx = ctxFor(null);
   const html = (el: ElementNode | null): string | null => {
     const out = el ? serializeChildren(el.children, ctx).trim() : "";
     return out === "" ? null : out;
@@ -136,14 +156,14 @@ async function run(
   }
   const notesHtml = html(preface.notes);
 
-  const split = splitChapters(docs, pkg.navPoints);
   if (split.method === "files")
     reviewReasons.push("chapters_one_per_file: no usable table of contents or chapter headings");
   reviewReasons.push(...split.reviewReasons);
   const chapters: Chapter[] = [];
   for (const c of split.chapters) {
-    const body = serializeChildren(c.nodes, ctx).trim();
-    chapters.push({ n: chapters.length + 1, title: c.title, html: body, words: countWords(body) });
+    const n = chapters.length + 1;
+    const body = serializeChildren(c.nodes, ctxFor(n)).trim();
+    chapters.push({ n, title: c.title, html: body, words: countWords(body) });
   }
   const endNotesHtml = html(preface.endNotes);
 
@@ -187,4 +207,21 @@ async function run(
     reviewReasons,
   };
   return { work, images };
+}
+
+/**
+ * Whether a relative href's path ends in `/`, `.` or `..`, so it names a
+ * directory, which a browser would not open as a chapter file.
+ */
+function namesDirectory(href: string): boolean {
+  const path = href.split(/[?#]/, 1)[0]!;
+  if (path === "") return false;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    return true; // resolveHref refuses it too
+  }
+  const last = decoded.slice(decoded.lastIndexOf("/") + 1);
+  return last === "" || last === "." || last === "..";
 }
