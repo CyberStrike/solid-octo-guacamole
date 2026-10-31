@@ -31,7 +31,7 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Wait list), § Wait list, 
 
 ### Other app pages are closed before launch
 - GIVEN `PRELAUNCH` is on
-- WHEN a visitor opens any app page other than `/`, the `/waitlist` pages, `/terms`, `/privacy`, `/login` (with `/login/confirm`) or `/admin`
+- WHEN a visitor opens any app page other than `/`, the `/waitlist` pages, `/terms`, `/privacy`, sign-in (`/login`, `/login/confirm`), `/welcome/terms`, sign-out or `/admin`
 - THEN they are redirected to `/` with a 302
 - AND `content.rarepair.fans` is unaffected
 
@@ -48,7 +48,14 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Wait list), § Wait list, 
 - WHEN it is submitted again with a passing Turnstile token
 - THEN the response is the same "Check your email to confirm" page as for a new address, with the same status code
 - AND a confirmed address gets no email
-- AND an unconfirmed address gets a fresh confirmation email only if its last one was sent more than an hour ago; the new token replaces the old one
+- AND an unconfirmed address gets a fresh confirmation email only if its last one was sent more than an hour ago and it has had fewer than 3 in all; the new token replaces the old one
+- AND once an unconfirmed address has had 3 confirmation emails, it gets no more, whatever is submitted
+
+### Two joins for the same address at once
+- GIVEN an address that is not on the wait list
+- WHEN two `POST /waitlist` requests for it, each with a passing Turnstile token, arrive at the same time
+- THEN exactly one `waitlist` row exists afterwards and exactly one confirmation email is queued
+- AND both responses are the same "Check your email to confirm" page, with the same status code
 
 ### Join request without Turnstile is refused
 - GIVEN a visitor
@@ -58,7 +65,7 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Wait list), § Wait list, 
 
 ### Join request without a valid address is refused
 - GIVEN a visitor with a passing Turnstile token
-- WHEN they submit `POST /waitlist` with no address, or one longer than 254 characters, or one without an `@`
+- WHEN they submit `POST /waitlist` with no address, or anything the mailer's message contract would refuse: longer than 254 characters, no `@`, a display name, a list, or whitespace or any of `<>()",;:\[]`
 - THEN no row is written and no email is queued
 - AND the response is 400 and shows the form again with an error
 
@@ -108,10 +115,22 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Wait list), § Wait list, 
 - GIVEN confirmed and unconfirmed addresses on the wait list, and a signed-in account with the `admin` role
 - WHEN that account starts the launch send from the admin area, with `PRELAUNCH` on or off
 - THEN each confirmed address with `notified_at` empty gets `notified_at` set and a launch email put on the `email-bulk` queue, in batches
-- AND a batch whose enqueue fails has `notified_at` cleared again, so the next run picks it up
+- AND a batch whose enqueue fails has `notified_at` cleared again, so it is picked up again
 - AND unconfirmed addresses get no email
 - AND starting the launch send again, at the same time or later, puts no address on the queue a second time
 - AND a moderator without the `admin` role, or anyone signed out, gets 404
+
+### The launch send finishes by itself, however long the list
+- GIVEN 100,000 confirmed addresses and a started launch send
+- WHEN it runs
+- THEN each invocation queues at most a fixed number of batches, within the Workers per-invocation subrequest and CPU limits, and a scheduled step carries on until no confirmed address has `notified_at` empty
+- AND the admin area shows how many confirmed addresses are still waiting to be queued
+
+### A launch email that can't be sent is tried again
+- GIVEN a launch email that both providers refuse until the queue dead-letters it
+- WHEN the web Worker takes it off the `email-bulk` dead-letter queue
+- THEN that address's `notified_at` is cleared, so the launch send queues it again
+- AND the message is not kept on the dead-letter queue, and nothing prints its address to logs
 
 ### The launch send is spread out
 - GIVEN tens of thousands of confirmed addresses
@@ -129,13 +148,15 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Wait list), § Wait list, 
 - WHEN it is built
 - THEN it carries `List-Unsubscribe` with an `https://rarepair.fans/waitlist/unsubscribe` link holding a token, and `List-Unsubscribe-Post: List-Unsubscribe=One-Click`
 - AND a `POST` to that link deletes the address's row and answers 200, with no sign-in and no page to click through
+- AND that `POST` is exempt from the `Origin` / `Sec-Fetch-Site` check, since mail providers send it from their own servers
+- AND opening the link in a browser (`GET`) shows an "Unsubscribe" button in a POST form, and changes nothing until it is pressed
 - AND the link keeps working with `PRELAUNCH` off, and a `POST` with a token whose row is already gone (unsubscribed or purged) also answers 200
 
 ### The wait list is deleted after the launch send
 - GIVEN the launch send has finished
 - WHEN an account with the `admin` role runs the wait list purge from the admin area
 - THEN every `waitlist` row is deleted, confirmed or not
-- AND the purge refuses to run while any confirmed address still has `notified_at` empty, unless it is explicitly forced
+- AND the purge refuses to run while any confirmed address still has `notified_at` empty, or the launch send queued its last batch less than a day ago (so a dead-lettered email can still come back), unless it is explicitly forced
 
 ### After launch the archive takes over
 - GIVEN `PRELAUNCH` is off
