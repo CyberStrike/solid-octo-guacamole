@@ -160,6 +160,36 @@ article.chapter {
     transition: none;
   }
 }
+
+/* Work cards (FRONTEND-DISCOVERY, Work card): sections by whitespace and a hairline. */
+.work-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.work-card {
+  padding: calc(var(--space) * 4) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.work-card h2 {
+  margin: 0;
+  font-size: var(--text-3);
+}
+
+.work-card p {
+  margin: var(--space) 0;
+}
+
+/* Rating and warnings: the author's size at weight 600, never clamped or hidden. */
+.card-rating {
+  overflow-wrap: anywhere;
+}
+
+.card-rating strong {
+  font-weight: 600;
+}
 `;
 
 // FNV-1a, enough to give each version of the stylesheet its own URL.

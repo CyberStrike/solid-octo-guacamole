@@ -129,4 +129,32 @@ describe("14-browse-and-home", () => {
     expect(cardOf(html, 30020)).not.toMatch(/style=/);
     expect(rulesFor(await stylesheetOf(html), "card-rating")).not.toMatch(/color|background/);
   });
+
+  // The 360 px layout itself needs a browser: here, the HTML and the stylesheet.
+  it("Warnings line is never truncated", async () => {
+    const warnings = [
+      "Creator Chose Not To Use Archive Warnings",
+      "Graphic Depictions Of Violence",
+      "Major Character Death",
+    ];
+    await seedWork(db, {
+      ao3WorkId: 30030,
+      rating: "Explicit",
+      tags: [
+        ...warnings.map((name) => ({ type: "warning" as const, name })),
+        { type: "fandom", name: "Long Warnings Fandom" },
+      ],
+    });
+
+    const html = await htmlOf("/tags/fandom/long%20warnings%20fandom");
+
+    expect(textOf(lineOf(cardOf(html, 30030), "card-rating") ?? "")).toBe(
+      `Explicit · ${warnings.join(", ")}`,
+    );
+    const rules = rulesFor(await stylesheetOf(html), "card-rating");
+    expect(rules).toMatch(/overflow-wrap:\s*anywhere/);
+    expect(rules).not.toMatch(
+      /line-clamp|overflow:\s*hidden|text-overflow|white-space:\s*nowrap|max-height|\bheight/,
+    );
+  });
 });
