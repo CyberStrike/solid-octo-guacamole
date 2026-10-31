@@ -165,9 +165,12 @@ export const confirmPage = (token: string, next: string) =>
 </form>`,
   );
 
-/** Something failed on our side, not in the request. */
-export const serverErrorPage = () =>
+/**
+ * Signing in failed on our side, not the link's. The link may already be spent
+ * (Better Auth uses it up before it makes the session), so it asks for a new one.
+ */
+export const signInFailedPage = () =>
   layout(
     "Something went wrong",
-    `<p>That didn't work, and it isn't anything you did. Please try again in a minute.</p>`,
+    `<p>Signing in didn't work, and it isn't anything you did. <a href="/login">Request a new sign-in link</a> and try again.</p>`,
   );

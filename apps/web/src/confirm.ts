@@ -3,7 +3,7 @@ import type { Context } from "hono";
 import { makeAuth, SESSION_COOKIE } from "./auth";
 import type { Bindings } from "./env";
 import { INVALID_TOKEN, readForm } from "./login";
-import { confirmPage, forbiddenPage, serverErrorPage } from "./pages";
+import { confirmPage, forbiddenPage, signInFailedPage } from "./pages";
 import type { SecurityVariables } from "./security";
 import { isSameOrigin, safeNext } from "./signin";
 
@@ -18,9 +18,11 @@ export function showConfirm(c: ConfirmContext) {
   const token = c.req.query("token") ?? "";
   if (token === "") return c.redirect(REFUSED, 302);
   return c.html(confirmPage(token, safeNext(c.req.query("next") ?? null)), 200, {
-    // The token is in the URL: keep it out of caches and out of any Referer.
+    // The token is in the URL: keep it out of caches and out of any other site's
+    // Referer. Not no-referrer: under it the browser sends the page's own POST with
+    // `Origin: null` (Fetch, "append a request Origin header"), which isSameOrigin refuses.
     "Cache-Control": "no-store",
-    "Referrer-Policy": "no-referrer",
+    "Referrer-Policy": "same-origin",
   });
 }
 
@@ -48,7 +50,7 @@ export async function confirmSignIn(c: ConfirmContext) {
       headers: c.req.raw.headers,
       asResponse: true,
     });
-    return answerVerified(verified) ?? c.html(serverErrorPage(), 500);
+    return answerVerified(verified) ?? c.html(signInFailedPage(), 500);
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }

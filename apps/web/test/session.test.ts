@@ -18,12 +18,18 @@ afterAll(() => db.destroy());
 const probe = new Hono<{ Bindings: Bindings; Variables: SessionVariables }>();
 probe.use(sessionMiddleware);
 probe.get("/", (c) => c.json({ email: c.var.session?.user.email ?? null }));
+// A route that sets the session cookie itself, as a sign-out will.
+const CLEARED = "__Secure-better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; Secure";
+probe.get("/clear", (c) => {
+  c.header("Set-Cookie", CLEARED);
+  return c.json({ email: null });
+});
 
 /** Asks the probe who is signed in, with `cookie` if given. */
-async function whoIs(cookie?: string) {
+async function whoIs(cookie?: string, path = "/") {
   const ctx = createExecutionContext();
   const headers: Record<string, string> = cookie === undefined ? {} : { cookie };
-  const res = await probe.fetch(new Request(`${BASE}/`, { headers }), env, ctx);
+  const res = await probe.fetch(new Request(`${BASE}${path}`, { headers }), env, ctx);
   await waitOnExecutionContext(ctx);
   // SAFETY: the probe answers with this JSON.
   const { email } = (await res.json()) as { email: string | null };
@@ -41,6 +47,23 @@ async function signIn(email: string): Promise<string> {
   return res.headers.getSetCookie()[0]!.split(";")[0]!;
 }
 
+/**
+ * Makes `email`'s session two days old. Better Auth extends a session once a day
+ * (its default updateAge) of its seven, so the next lookup refreshes it.
+ */
+async function makeDueForRefresh(email: string) {
+  const user = await db
+    .selectFrom("user")
+    .select("id")
+    .where("email", "=", email)
+    .executeTakeFirstOrThrow();
+  await db
+    .updateTable("session")
+    .set({ expires_at: new Date(Date.now() + 5 * 24 * 60 * 60_000) })
+    .where("user_id", "=", user.id)
+    .execute();
+}
+
 describe("session middleware", () => {
   it("A signed-in cookie gives the session", async () => {
     const email = "middleware-signed-in@example.test";
@@ -54,6 +77,13 @@ describe("session middleware", () => {
   it("No cookie, or a forged one, gives no session", async () => {
     expect((await whoIs()).email).toBeNull();
     expect((await whoIs("__Secure-better-auth.session_token=forged.value")).email).toBeNull();
+  });
+
+  it("A route's own session cookie wins over a refresh", async () => {
+    const email = "middleware-own-cookie@example.test";
+    const cookie = await signIn(email);
+    await makeDueForRefresh(email);
+    expect((await whoIs(cookie, "/clear")).setCookies).toEqual([CLEARED]);
   });
 
   it("A session due for refresh is extended, and its cookie set again", async () => {

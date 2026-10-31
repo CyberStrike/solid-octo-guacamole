@@ -86,7 +86,7 @@ export async function oneClientAtATime(
       while (fromServer.length >= 5) {
         const end = 1 + fromServer.readInt32BE(1);
         if (fromServer.length < end) break;
-        ready = fromServer[0] === READY && fromServer[5] === IDLE;
+        if (fromServer[0] === READY && fromServer[5] === IDLE) ready = true;
         fromServer = fromServer.subarray(end);
       }
       if (ready) release(client);
