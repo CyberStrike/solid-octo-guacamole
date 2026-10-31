@@ -29,8 +29,14 @@ const TAG_LABELS: Record<LinkedType, string> = {
   freeform: "Additional tag",
 };
 
+// The label goes inside the link, so it is part of the link's name when a screen
+// reader lists the links or tabs through them.
 const tagLink = (tag: Tag & { type: LinkedType }) =>
-  `<span class="visually-hidden">${TAG_LABELS[tag.type]}: </span><a href="${tagHref(tag.type, tag.name_norm)}">${escapeHtml(tag.name)}</a>`;
+  `<a href="${tagHref(tag.type, tag.name_norm)}"><span class="visually-hidden">${TAG_LABELS[tag.type]}: </span>${escapeHtml(tag.name)}</a>`;
+
+/** One element of the page, or nothing when it would be empty. */
+const block = (tag: "p" | "section", className: string, content: string) =>
+  content === "" ? "" : `<${tag} class="${className}">${content}</${tag}>\n`;
 
 const isLinked = (tag: Tag): tag is Tag & { type: LinkedType } =>
   Object.hasOwn(TAG_LABELS, tag.type);
@@ -59,9 +65,11 @@ export function workPage(live: LiveWork): string {
     authors.length === 0 ? "Anonymous" : authors.map((a) => escapeHtml(a.pseud)).join(", ");
   // The parser wasn't sure of the chapters, and no moderator has checked them yet.
   const needsCheck = version.review_reasons.length > 0 && version.checked_at === null;
-  // The counts are the current version's, like the chapter list below them.
+  // The words and chapter counts are the current version's, like the chapter list
+  // below them. Ingest stores no version without chapters.
+  const words = chapters.reduce((sum, ch) => sum + ch.words, 0);
   const stats = [
-    work.words === null ? null : `${work.words.toLocaleString("en")} words`,
+    `${words.toLocaleString("en")} words`,
     `Chapters ${version.chapter_count}/${version.chapter_total ?? "?"}`,
     work.complete ? "Complete" : "In progress",
     work.updated_at === null ? null : `Updated ${work.updated_at.toISOString().slice(0, 10)}`,
@@ -70,10 +78,7 @@ export function workPage(live: LiveWork): string {
     work.title,
     `<p class="authors">by ${byline}</p>
 <p class="rating-warnings">${ratingLine}</p>
-<p class="fandoms">${fandoms.map(tagLink).join(", ")}</p>
-<section class="summary">${work.summary_html ?? ""}</section>
-<p class="tags">${listed.map(tagLink).join(", ")}</p>
-<p class="stats">${stats.join(" · ")}</p>
+${block("p", "fandoms", fandoms.map(tagLink).join(", "))}${block("section", "summary", work.summary_html ?? "")}${block("p", "tags", listed.map(tagLink).join(", "))}<p class="stats">${stats.join(" · ")}</p>
 ${needsCheck ? `<p class="review-notice">Chapters may be imperfect; a moderator will check.</p>\n` : ""}<ol class="chapters">${chapters.map((ch) => `<li><a href="${base}/chapters/${ch.n}">${escapeHtml(ch.title)}</a></li>`).join("")}</ol>
 <p class="full"><a href="${base}/full">Read the entire work on one page</a></p>
 <p class="download"><a href="${originalHref(version.r2_prefix)}">Download original epub</a></p>

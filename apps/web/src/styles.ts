@@ -176,7 +176,19 @@ article.chapter {
   font-size: var(--text-1);
 }
 
-/* any page: text for screen readers only, such as a tag's type */
+.stats {
+  font-size: var(--text-1);
+  color: var(--muted);
+}
+
+/* any page */
+
+/* A word longer than the line, such as a tag or a URL, breaks rather than scrolling sideways. */
+main {
+  overflow-wrap: anywhere;
+}
+
+/* Text for screen readers only, such as a tag's type. */
 
 .visually-hidden {
   position: absolute;

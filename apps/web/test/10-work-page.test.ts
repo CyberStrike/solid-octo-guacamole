@@ -5,8 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fetchW, nonceOf, STRICT, withoutNonce } from "./helpers";
 
 // One database serves every test file in the run, so this file keeps to AO3 work
-// IDs 12345 to 12399 and to tag names starting "r1-", and a tag listing elsewhere
-// never sees its works. Text is synthetic.
+// IDs 12345 to 12399, and every tag it seeds, rating and warning tags included,
+// is named with an "r1-" prefix: a tag listing elsewhere never sees its works.
+// The work's own rating column is the plain rating. Text is synthetic.
 const W = 12345;
 const A = 12346;
 /** Live, with review reasons no moderator has cleared. */
@@ -21,14 +22,16 @@ const HOSTILE = 12350;
 const REPOINTED = 12351;
 /** Stored with no author at all, as an epub without a byline can be. */
 const NO_BYLINE = 12352;
+/** No rating at all, and no warnings. */
+const NO_RATING = 12353;
 
 // The site chrome test's check: names only as provenance, never in the page.
 const BRANDING = /AO3|OTW|Archive of Our Own|Organization for Transformative Works/i;
 
 // Work W's tags, in the author's order, grouped by type as an AO3 export lists them.
 const W_TAGS = [
-  { type: "rating", name: "Mature" },
-  { type: "warning", name: "Graphic Depictions Of Violence" },
+  { type: "rating", name: "r1-Mature" },
+  { type: "warning", name: "r1-Graphic Depictions Of Violence" },
   { type: "category", name: "r1-Category" },
   { type: "fandom", name: "r1-Fandom One" },
   { type: "fandom", name: "r1-Fandom Two" },
@@ -42,7 +45,7 @@ const W_TAGS = [
 
 // The other works' tags: none of seedWork's shared defaults.
 const FEW_TAGS = [
-  { type: "rating", name: "General Audiences" },
+  { type: "rating", name: "r1-General Audiences" },
   { type: "fandom", name: "r1-Fandom One" },
 ] as const;
 
@@ -91,21 +94,27 @@ beforeAll(async () => {
     title: 'r1 <script>alert(1)</script> "quoted"',
     authors: [{ pseud: 'r1 <b onclick="x">pseud</b>', ao3_user: null }],
     tags: [
-      { type: "rating", name: "General Audiences" },
+      { type: "rating", name: "r1-General Audiences" },
       { type: "fandom", name: 'r1-Fandom"><script>alert(2)</script>' },
       { type: "freeform", name: "r1-<img src=x onerror=alert(3)>" },
     ],
     chapters: [{ title: "r1 <script>alert(4)</script>" }],
   });
-  // Two chapters of a planned four. The work row is then left saying 9/12, as it
-  // would after a moderator makes an earlier version current: the counts are the version's.
+  // Two chapters of 1,000 words of a planned four. The work row is then left saying
+  // 9/12 and 99,999 words, as it would after a moderator makes an earlier version
+  // current: the counts are the version's.
   await seedWork(db, { ao3WorkId: REPOINTED, chapters: 2, chapterTotal: 4, tags: [...FEW_TAGS] });
   await db
     .updateTable("works")
-    .set({ chapters_count: 9, chapters_total: 12 })
+    .set({ chapters_count: 9, chapters_total: 12, words: 99_999 })
     .where("ao3_work_id", "=", REPOINTED)
     .execute();
   await seedWork(db, { ao3WorkId: NO_BYLINE, authors: [], tags: [...FEW_TAGS] });
+  await seedWork(db, {
+    ao3WorkId: NO_RATING,
+    rating: null,
+    tags: [{ type: "fandom", name: "r1-Fandom One" }],
+  });
   await db
     .updateTable("works")
     .set({ summary_html: LONG_SUMMARY })
@@ -125,12 +134,16 @@ const page = async (path: string) => {
 /** The block holding the link to the original work and its note. */
 const originalBlock = (html: string) => html.match(/<p class="original">[\s\S]*?<\/p>/)?.[0] ?? "";
 
-const TAG = /<span class="visually-hidden">([^<]*): <\/span><a href="([^"]*)">([^<]*)<\/a>/g;
+// A tag link, its hidden type label inside it, so the label is part of the link's name.
+const TAG = /<a href="([^"]*)"><span class="visually-hidden">([^<]*): <\/span>([^<]*)<\/a>/g;
+
+/** Each tag link in `markup` as [hidden label, href, name]. */
+const tagsIn = (markup: string) => [...markup.matchAll(TAG)].map((m) => [m[2], m[1], m[3]]);
 
 /** The tag list: its markup, and each tag as [hidden label, href, name]. */
 const tagList = (html: string) => {
   const list = html.match(/<p class="tags">([\s\S]*?)<\/p>/)?.[1] ?? "";
-  return { html: list, items: [...list.matchAll(TAG)].map((m) => [m[1], m[2], m[3]]) };
+  return { html: list, items: tagsIn(list) };
 };
 
 /** The stylesheet a page links to, as the Worker serves it. */
@@ -149,7 +162,7 @@ describe("10-work-page", () => {
     expect(html).toContain("<h1>r1 Work W</h1>");
     expect(html).toContain("r1-pseud");
     expect(html).toContain("Mature");
-    expect(html).toContain("Graphic Depictions Of Violence");
+    expect(html).toContain("r1-Graphic Depictions Of Violence");
     expect(html).toContain("r1-Fandom One");
     expect(html).toContain("r1-Fandom Two");
     // The full summary, as stored: sanitized at ingest, never clamped or cut.
@@ -176,12 +189,14 @@ describe("10-work-page", () => {
     const { html } = await page(`/works/${W}`);
     // One line of plain text, in full, in an ordinary element.
     const line = html.match(/<p class="rating-warnings">([^<]*)<\/p>/);
-    expect(line?.[1]).toBe("Mature · Graphic Depictions Of Violence");
+    expect(line?.[1]).toBe("Mature · r1-Graphic Depictions Of Violence");
     expect(html).not.toMatch(/<details\b/);
     expect(html).not.toMatch(/\b(hidden|aria-hidden|title)=/);
     // Weight 600, like the author line's size (FRONTEND-DISCOVERY, Hierarchy), and
     // nothing in the stylesheet clamps, cuts or hides it, at any width.
     const css = await stylesheetOf(html);
+    // A word longer than the line breaks rather than pushing the page sideways.
+    expect(css).toMatch(/main\s*\{[^}]*overflow-wrap:\s*anywhere/);
     const rules = css.match(/[^{}]*\.rating-warnings[^{}]*\{[^}]*\}/g) ?? [];
     expect(rules.join("\n")).toMatch(/font-weight:\s*600/);
     for (const rule of rules) {
@@ -204,6 +219,9 @@ describe("10-work-page", () => {
     ].map((marker) => html.indexOf(marker));
     expect(order.every((at) => at > 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // Size steps down the order too: the stats are set in the smallest size, as the tags are.
+    const css = await stylesheetOf(html);
+    expect(css).toMatch(/\.stats\s*\{[^}]*font-size:\s*var\(--text-1\)/);
   });
 
   it("Original AO3 link is live with a note", async () => {
@@ -241,7 +259,7 @@ describe("10-work-page", () => {
     const { html } = await page(`/works/${W}`);
     const list = tagList(html);
     // Comma-separated, every tag a link with a real href, in the stored order,
-    // each after its hidden type label. Rating, warnings and fandoms have their own lines.
+    // each with its hidden type label. Rating, warnings and fandoms have their own lines.
     // The href is /tags/<type>/<name_norm> (the tag rule folds "-" to a space).
     expect(list.items).toEqual([
       ["Category", "/tags/category/r1%20category", "r1-Category"],
@@ -258,7 +276,7 @@ describe("10-work-page", () => {
       list.items
         .map(
           ([label, href, name]) =>
-            `<span class="visually-hidden">${label}: </span><a href="${href}">${name}</a>`,
+            `<a href="${href}"><span class="visually-hidden">${label}: </span>${name}</a>`,
         )
         .join(", "),
     );
@@ -312,7 +330,17 @@ describe("10-work-page, no such work", () => {
   it("Unknown work shows the not-found page", async () => {
     // Never seeded; not an ID at all; and other spellings of W's ID, which name no
     // work: only the plain decimal form is an AO3 work ID.
-    for (const id of ["999999999", "abc", "0", "0x3039", "1.2345e4", "012345", "12345.0"]) {
+    for (const id of [
+      "999999999",
+      "2147483648",
+      "9999999999",
+      "abc",
+      "0",
+      "0x3039",
+      "1.2345e4",
+      "012345",
+      "12345.0",
+    ]) {
       const res = await fetchW(`/works/${id}`);
       const html = await res.text();
       expect(res.status, id).toBe(404);
@@ -334,9 +362,22 @@ describe("10-work-page, other works", () => {
     expect(html.match(/<p class="stats">([^<]*)<\/p>/)?.[1]).toContain("Chapters 1/?");
   });
 
+  it("A work with no rating reads Not Rated, with no warnings after it", async () => {
+    const { html } = await page(`/works/${NO_RATING}`);
+    expect(html.match(/<p class="rating-warnings">([^<]*)<\/p>/)?.[1]).toBe("Not Rated");
+  });
+
+  it("A work with no tags of the list's types shows no empty tag list", async () => {
+    const { html } = await page(`/works/${COAUTHORED}`);
+    expect(html).not.toContain('class="tags"');
+    expect(html).toContain('class="fandoms"');
+  });
+
   it("The chapter counts are the current version's, as its chapter list is", async () => {
     const { html } = await page(`/works/${REPOINTED}`);
-    expect(html.match(/<p class="stats">([^<]*)<\/p>/)?.[1]).toContain("Chapters 2/4");
+    const stats = html.match(/<p class="stats">([^<]*)<\/p>/)?.[1];
+    expect(stats).toContain("2,000 words");
+    expect(stats).toContain("Chapters 2/4");
     expect(html.match(/\/works\/12351\/chapters\/\d+/g)).toHaveLength(2);
   });
 
@@ -391,7 +432,7 @@ describe("21-accessibility-and-no-js", () => {
     ]);
     // The fandoms, on their own line, are tag links too, and carry their label.
     const fandoms = html.match(/<p class="fandoms">([\s\S]*?)<\/p>/)?.[1] ?? "";
-    expect([...fandoms.matchAll(TAG)].map((m) => [m[1], m[3]])).toEqual([
+    expect(tagsIn(fandoms).map(([label, , name]) => [label, name])).toEqual([
       ["Fandom", "r1-Fandom One"],
       ["Fandom", "r1-Fandom Two"],
     ]);
