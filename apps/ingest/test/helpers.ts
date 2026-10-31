@@ -185,7 +185,10 @@ export const workExists = (ao3WorkId: number) =>
 /** A lowercase token, to keep a test's pseud its own on the shared database. */
 export const token = () => crypto.randomUUID().slice(0, 8);
 
-/** An AO3 work ID no other test uses: an int4, well above `ao3Epub`'s default. */
+/**
+ * A random int4 AO3 work ID, well above `ao3Epub`'s default. Random like `seedWork`'s, whose
+ * range it shares: a clash with a seeded work is possible but negligibly unlikely.
+ */
 export const freshAo3WorkId = () => 100_000_000 + Math.floor(Math.random() * 2_000_000_000);
 
 /**
