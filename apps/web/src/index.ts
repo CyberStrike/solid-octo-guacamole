@@ -1,4 +1,13 @@
 import { Hono } from "hono";
+import {
+  adminGate,
+  showAdminHome,
+  showReports,
+  showRequests,
+  showTakedowns,
+  showWorksToCheck,
+  type AdminVariables,
+} from "./admin";
 import { assetRoute } from "./assets";
 import { confirmSignIn, showConfirm } from "./confirm";
 import type { Bindings } from "./env";
@@ -12,12 +21,16 @@ import {
   wwwToBareDomain,
   type SecurityVariables,
 } from "./security";
+import { sessionMiddleware, type SessionVariables } from "./session";
 import { STYLESHEET, STYLESHEET_PATH } from "./styles";
 import { joinWaitlist } from "./waitlist";
 import { comingSoonPage } from "./waitlist-pages";
 import { showWork } from "./work-page";
 
-const app = new Hono<{ Bindings: Bindings; Variables: SecurityVariables }>();
+const app = new Hono<{
+  Bindings: Bindings;
+  Variables: SecurityVariables & SessionVariables & AdminVariables;
+}>();
 
 // Order matters: HSTS covers everything, the www redirect included, and www
 // never reaches the CSP, the routes or anything that could set a cookie. Before
@@ -26,6 +39,16 @@ app.use(strictTransportSecurity);
 app.use(wwwToBareDomain);
 app.use(closedBeforeLaunch);
 app.use(contentSecurityPolicy);
+
+// The moderation area. "/admin/*" matches /admin itself too, and every path below
+// it, routed or not, so a later /admin route is gated without asking. Until A4
+// mounts the session for every page, it is mounted here for /admin only.
+app.use("/admin/*", sessionMiddleware, adminGate);
+app.get("/admin", showAdminHome);
+app.get("/admin/reports", showReports);
+app.get("/admin/takedowns", showTakedowns);
+app.get("/admin/requests", showRequests);
+app.get("/admin/works", showWorksToCheck);
 
 // The wait list pages' fonts and stylesheet. S1 serves its own stylesheet elsewhere under /assets/.
 app.get("/assets/waitlist/*", assetRoute);
