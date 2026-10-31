@@ -157,7 +157,7 @@ This repo has no run recipe yet, so a live check is reported **not run: no run s
 2. `/simplify`, report only.
 3. `/code-review` rounds, as many as the tier names, each with its own error class. The specification-completeness class checks every field at its edge values (empty, zero, maximum and one past it), every absolute claim ("every", "always", "never") for truth, each limit multiplied out to its worst case, repeated and concurrent operations, and agreement with the *Decisions so far* table.
 
-Before any rung, read what is already on the PR: `gh api --paginate repos/CyberStrike/solid-octo-guacamole/pulls/<n>/reviews`, `.../pulls/<n>/comments` and `.../issues/<n>/comments`. Confirm each round's fixes against a numbered list of every earlier finding, each marked resolved, moot or open. File findings outside the PR's scope as issues. After the last fixes, rerun the §3–§5 checks those fixes touch.
+Before any rung, read what is already on the PR: `gh api --paginate repos/rare-pair/app/pulls/<n>/reviews`, `.../pulls/<n>/comments` and `.../issues/<n>/comments`. Confirm each round's fixes against a numbered list of every earlier finding, each marked resolved, moot or open. File findings outside the PR's scope as issues. After the last fixes, rerun the §3–§5 checks those fixes touch.
 
 ## 7. The report
 
