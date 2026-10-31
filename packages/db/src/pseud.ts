@@ -12,13 +12,11 @@ const WHITESPACE = /[\p{White_Space}\u{FEFF}]+/gu;
 /**
  * A pseud's `pseud_norm`: NFKC, lowercased, NFKC again (a lowercase letter can
  * have a precomposed form its capital lacks, such as `J` with a caron), inner
- * runs of whitespace collapsed to one space, then trimmed. NFKC comes before
- * the collapse, so a no-break or ideographic space becomes a plain one first.
- * Punctuation is never folded
- * into whitespace, so `a_b` and `a b` are different pseuds, though NFKC still
- * rewrites compatibility forms (`…` becomes `...`). `toLowerCase` is not full
- * Unicode case folding (`ß` stays `ß`, not `ss`). A byline's pseud is stored
- * as written, in `work_authors.pseud`.
+ * runs of Unicode whitespace collapsed to one space, then trimmed. Punctuation
+ * is never folded into whitespace, so `a_b` and `a b` are different pseuds,
+ * though NFKC still rewrites compatibility forms (`…` becomes `...`).
+ * `toLowerCase` is not full Unicode case folding (`ß` stays `ß`, not `ss`). A
+ * byline's pseud is stored as written, in `work_authors.pseud`.
  */
 export function normalizePseud(pseud: string): string {
   return pseud.normalize("NFKC").toLowerCase().normalize("NFKC").replace(WHITESPACE, " ").trim();

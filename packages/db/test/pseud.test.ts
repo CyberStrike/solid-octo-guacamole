@@ -78,9 +78,12 @@ describe("normalizePseud", () => {
       J_CARON,
       `Stra${ch(0xdf)}e`,
       " \t ",
+      // Dotted capital I and a combining grave below: lowercasing puts the marks out of order.
+      `${ch(0x130)}${ch(0x316)}`,
     ]) {
       const normalized = normalizePseud(input);
       expect(normalizePseud(normalized), JSON.stringify(input)).toBe(normalized);
+      expect(normalized.normalize("NFKC"), JSON.stringify(input)).toBe(normalized);
     }
   });
 });
