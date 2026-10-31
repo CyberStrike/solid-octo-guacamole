@@ -18,7 +18,8 @@ describe("Resend batch sender", () => {
   it("posts the emails as one JSON array with the API key", async () => {
     let seen: { url: string; init?: RequestInit } | undefined;
     const fetcher: typeof fetch = async (input, init) => {
-      seen = { url: input instanceof Request ? input.url : input.toString(), init };
+      // SAFETY: the sender passes its URL as a string; anything else fails the URL check below.
+      seen = { url: input as string, init };
       return Response.json({ data: [{ id: "resend-1" }] });
     };
 

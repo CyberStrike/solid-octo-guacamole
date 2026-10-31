@@ -184,7 +184,8 @@ export function unzipEpub(bytes: Uint8Array): Map<string, Uint8Array> {
     try {
       file.start();
     } catch (e) {
-      // SAFETY: fflate throws Error objects; anything else would only read as "undefined" here.
+      // SAFETY: fflate throws Error objects. Another value's message reads as "undefined" here,
+      // and a thrown null or undefined escapes as a TypeError.
       fail(new EpubError("not_epub", `Cannot read entry ${name}: ${(e as Error).message}`));
     }
   });
@@ -199,7 +200,8 @@ export function unzipEpub(bytes: Uint8Array): Map<string, Uint8Array> {
     }
   } catch (e) {
     if (!failure)
-      // SAFETY: fflate throws Error objects; anything else would only read as "undefined" here.
+      // SAFETY: fflate throws Error objects. Another value's message reads as "undefined" here,
+      // and a thrown null or undefined escapes as a TypeError.
       throw new EpubError("not_epub", `Unreadable zip: ${(e as Error).message}`, { cause: e });
   }
   if (failure) throw failure;

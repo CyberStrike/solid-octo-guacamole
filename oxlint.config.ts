@@ -13,7 +13,8 @@ export default defineConfig({
   // typeAware runs through oxlint-tsgolint, one program per workspace tsconfig.
   options: deslopConfigs.recommended.options,
   rules: deslopConfigs.recommended.rules,
-  // The same paths as .oxfmtrc.jsonc's ignorePatterns: keep the two lists in step.
+  // The code paths .oxfmtrc.jsonc also ignores: keep the two in step. oxfmt's list adds the
+  // non-code files it would otherwise format.
   ignorePatterns: [
     // Reference code with its own lockfile, not a workspace.
     "spikes/**",
