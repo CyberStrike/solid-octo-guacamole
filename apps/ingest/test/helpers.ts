@@ -1,8 +1,11 @@
 import { createDb, insertUpload, type Database } from "@archive/db";
+import { seedWork, type SeedWorkOptions } from "@archive/db/seed";
 import { processEpub } from "@archive/epub";
 import { createExecutionContext, createMessageBatch, getQueueResult } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { sql, type Kysely } from "kysely";
+import { expect } from "vitest";
+import { ao3Epub } from "../../../packages/epub/test/helpers";
 import worker, { ingestWorker, type Steps } from "../src/worker";
 
 // Shared by the workerd tests. One database serves every test file (test/global-setup.ts),
@@ -124,4 +127,110 @@ export function watchedWorker(steps: Partial<Steps> = {}) {
     },
   });
   return { handler, parsed };
+}
+
+/**
+ * An opt-out with `pseudNorm` as given, and the `opt_out` request it comes from. Returns the
+ * opt-out's id. The text is synthetic.
+ */
+export function addOptOut(pseudNorm: string): Promise<string> {
+  return withDb(async (db) => {
+    const request = await db
+      .insertInto("requests")
+      .values({
+        kind: "opt_out",
+        pseud_norm: pseudNorm,
+        contact_email: "requester@example.test",
+        statement: "A synthetic statement.",
+        ip_hash: "test-ip-hash",
+      })
+      .returning("id")
+      .executeTakeFirstOrThrow();
+    const optOut = await db
+      .insertInto("optouts")
+      .values({ pseud_norm: pseudNorm, request_id: request.id, active: true })
+      .returning("id")
+      .executeTakeFirstOrThrow();
+    return optOut.id;
+  });
+}
+
+/** Reverses the opt-out, as a moderator does for a mistaken one. */
+export const deactivateOptOut = (id: string) =>
+  withDb((db) => db.updateTable("optouts").set({ active: false }).where("id", "=", id).execute());
+
+/** A DMCA notice on the work, in the notice's `status`: `TAKEDOWN_REMOVED` once acted on. */
+export const addTakedown = (workId: string, status: string) =>
+  withDb((db) =>
+    db
+      .insertInto("takedowns")
+      .values({ work_id: workId, requester: "A rights holder", basis: "A stated basis", status })
+      .execute(),
+  );
+
+/** A work seeded as ingest leaves it (`@archive/db/seed`). */
+export const seededWork = (options: SeedWorkOptions) => withDb((db) => seedWork(db, options));
+
+/** Whether any work has the AO3 work ID. */
+export const workExists = (ao3WorkId: number) =>
+  withDb(async (db) => {
+    const row = await db
+      .selectFrom("works")
+      .select("id")
+      .where("ao3_work_id", "=", ao3WorkId)
+      .executeTakeFirst();
+    return row !== undefined;
+  });
+
+/** A lowercase token, to keep a test's pseud its own on the shared database. */
+export const token = () => crypto.randomUUID().slice(0, 8);
+
+/**
+ * A random int4 AO3 work ID, well above `ao3Epub`'s default. It overlaps the range `seedWork`
+ * draws from, so a clash with a seeded work is possible but negligibly unlikely.
+ */
+export const freshAo3WorkId = () => 100_000_000 + Math.floor(Math.random() * 2_000_000_000);
+
+/**
+ * Uploads a synthetic epub of AO3 work `workId` and ingests it, with the byline `pseuds` over
+ * the epub's own (the synthetic epubs all carry one byline), or the epub's own when none are
+ * given. Returns the upload's id and row, the queue's result, and `saved`: the id of each
+ * upload the job saved.
+ */
+export async function ingestEpub(workId: number, ...pseuds: string[]) {
+  const id = await pendingUpload(ao3Epub({ workId }));
+  const saved: string[] = [];
+  const process: Steps["process"] = async (bytes) => {
+    const work = await processEpub(bytes);
+    return pseuds.length === 0
+      ? work
+      : { ...work, authors: pseuds.map((pseud) => ({ pseud, user: null })) };
+  };
+  const { handler } = watchedWorker({
+    process,
+    save: async (upload) => void saved.push(upload.id),
+  });
+  const result = await deliver([{ upload_id: id }], { handler });
+  return { id, row: await uploadRow(id), saved, result };
+}
+
+type Ingested = Awaited<ReturnType<typeof ingestEpub>>;
+
+/** Expects the upload rejected as `opted_out`: final and acked, with no work, never saved. */
+export function expectOptedOut({ row, saved, result }: Ingested) {
+  expect(row.status).toBe("opted_out");
+  expect(row.error_stage).toBe("process");
+  expect(row.error).toBe("opted_out");
+  expect(row.work_id).toBeNull();
+  expect(row.lease_until).toBeNull();
+  // Before anything is written: the save step never ran.
+  expect(saved).toEqual([]);
+  expect(result.explicitAcks).toEqual(["msg-0"]);
+  expect(result.retryMessages).toEqual([]);
+}
+
+/** Expects the upload not rejected as `opted_out`: the job went on to save it. */
+export function expectNotOptedOut({ id, row, saved }: Ingested) {
+  expect(row.status).not.toBe("opted_out");
+  expect(saved).toEqual([id]);
 }

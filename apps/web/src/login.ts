@@ -4,6 +4,7 @@ import type { Context } from "hono";
 import { makeAuth } from "./auth";
 import type { Bindings } from "./env";
 import { checkEmailPage, forbiddenPage, signInPage } from "./pages";
+import { emailKey, ipKey, isLimited, LOGIN_WINDOW_SECONDS, tooManyRequests } from "./rate-limit";
 import type { SecurityVariables } from "./security";
 import { isSameOrigin, safeNext } from "./signin";
 import { verifyTurnstile } from "./turnstile";
@@ -13,19 +14,27 @@ export const MAX_EMAIL = 254;
 
 type LoginContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
 
+/** Better Auth's code for a sign-in link that was used, has expired or was never issued. */
+export const INVALID_TOKEN = "INVALID_TOKEN";
+
+// What `GET /login?error=INVALID_TOKEN` says. Any other value says nothing, and none is shown back.
+const LINK_REFUSED = "That sign-in link was used or has expired. Request a new one.";
+
 /** `GET /login`: the sign-in form, carrying the page to come back to. */
 export const showSignIn = (c: LoginContext) =>
   c.html(
     signInPage(c.get("nonce"), {
       siteKey: c.env.TURNSTILE_SITE_KEY,
       next: safeNext(c.req.query("next") ?? null),
+      error: c.req.query("error") === INVALID_TOKEN ? LINK_REFUSED : undefined,
     }),
   );
 
 // The sign-in form at its largest, every character percent-encoded at its widest:
 // a 254-character address and a 512-character next (up to 9 bytes each, as
-// UTF-8) and a 2048-character token (3 each) come to about 13 KB. The wait list
-// form, the same without `next`, is smaller.
+// UTF-8) and a 2048-character Turnstile token (3 each) come to about 13 KB. The
+// wait list form, the same without `next`, is smaller, and so is the confirm form
+// (a sign-in token of at most 256 characters and `next`: about 7 KB).
 const MAX_BODY = 16 * 1024;
 
 /**
@@ -70,6 +79,11 @@ export async function readForm(request: Request): Promise<URLSearchParams | null
  */
 export async function requestSignIn(c: LoginContext) {
   if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
+  const clientIp = c.req.header("cf-connecting-ip") ?? null;
+  // Before the body is read or Turnstile is asked, so a flood costs neither.
+  if (await isLimited(c.env.LOGIN_IP_LIMIT, await ipKey("login", clientIp))) {
+    return tooManyRequests(LOGIN_WINDOW_SECONDS);
+  }
 
   const form = await readForm(c.req.raw);
   if (form === null) {
@@ -98,7 +112,7 @@ export async function requestSignIn(c: LoginContext) {
   const turnstile = await verifyTurnstile(form.get("cf-turnstile-response"), {
     secret: c.env.TURNSTILE_SECRET_KEY,
     hostname: new URL(c.req.url).hostname,
-    remoteIp: c.req.header("cf-connecting-ip") ?? null,
+    remoteIp: clientIp,
   });
   if (turnstile === "failed") {
     return formAgain(400, "The anti-spam check did not pass. Please try again.");
@@ -111,7 +125,14 @@ export async function requestSignIn(c: LoginContext) {
   }
 
   // The mailer sends to no address longer than this, so no token is made for one.
-  if (email.length > MAX_EMAIL) return formAgain(400, "Enter a valid email address.");
+  // Nor for none, which would otherwise share one limit with every other empty form.
+  if (email.length > MAX_EMAIL || email.trim() === "") {
+    return formAgain(400, "Enter a valid email address.");
+  }
+  // After Turnstile, so only a solved check can spend an address's limit.
+  if (await isLimited(c.env.LOGIN_EMAIL_LIMIT, await emailKey("login", email))) {
+    return tooManyRequests(LOGIN_WINDOW_SECONDS);
+  }
 
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
   try {

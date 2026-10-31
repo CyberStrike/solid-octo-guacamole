@@ -22,7 +22,7 @@ const withoutNonce = (csp: string | null) => csp?.replace(/'nonce-[^']*'/, "'non
 describe("11-reader-and-csp", () => {
   it("Every app page sends the strict CSP", async () => {
     // No reader page exists yet, so the not-found page stands in for "any page".
-    for (const path of ["/", "/no-such-page", "/login/confirm"]) {
+    for (const path of ["/", "/no-such-page", "/login/confirm?token=x"]) {
       const res = await fetchW(path);
       expect(res.headers.get("content-type")).toMatch(/^text\/html/);
       expect(withoutNonce(res.headers.get("content-security-policy"))).toBe(STRICT);
@@ -50,7 +50,7 @@ describe("11-reader-and-csp", () => {
     // The allowance is keyed on the exact path, whatever the method.
     const post = await fetchW("/login", { method: "POST" });
     expect(withoutNonce(post.headers.get("content-security-policy"))).toBe(TURNSTILE);
-    for (const path of ["/", "/login/confirm", "/loginx", "/upload/new"]) {
+    for (const path of ["/", "/login/confirm?token=x", "/loginx", "/upload/new"]) {
       const res = await fetchW(path);
       expect(withoutNonce(res.headers.get("content-security-policy"))).toBe(STRICT);
     }

@@ -1,5 +1,6 @@
-// The checks our `POST /login` makes itself, because `auth.api.*` calls skip
-// Better Auth's own CSRF and redirect checks (ARCHITECTURE, Auth).
+// The checks our `POST /login` and `POST /login/confirm` make themselves, because
+// `auth.api.*` calls skip Better Auth's own CSRF and redirect checks (ARCHITECTURE,
+// Auth). `POST /waitlist` uses the origin check too.
 
 /** The one origin sign-in forms are served from, and the base of every sign-in link. */
 export const SITE = "https://rarepair.fans";
