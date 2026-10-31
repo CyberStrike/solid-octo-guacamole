@@ -14,12 +14,12 @@ import {
 import { reviewNotice } from "./review-notice";
 
 /** A fragment's bytes, or null when the key is missing. Anything with R2's `get`. */
-export interface FragmentBucket {
+export interface FragmentSource {
   get(key: string): Promise<{ body: ReadableStream<Uint8Array> } | null>;
 }
 
 /** One chapter fragment's body from R2, unread. R7's cache goes in here. */
-export const openFragment = async (bucket: FragmentBucket, key: string) =>
+export const openFragment = async (bucket: FragmentSource, key: string) =>
   (await bucket.get(key))?.body ?? null;
 
 /**
@@ -39,6 +39,8 @@ export type Part =
  */
 export function streamParts(parts: Part[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
+  // Our own copy, so each part is let go once it has been used.
+  const queue: (Part | undefined)[] = [...parts];
   let next = 0;
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
   return new ReadableStream<Uint8Array>({
@@ -51,12 +53,13 @@ export function streamParts(parts: Part[]): ReadableStream<Uint8Array> {
             if (!done) return controller.enqueue(value);
             reader = null;
           }
-          const part = parts[next++];
-          if (part === undefined) return controller.close();
-          if (!(part instanceof ReadableStream || part instanceof Function)) {
-            return controller.enqueue(encoder.encode(part));
-          }
-          const body = part instanceof ReadableStream ? part : await part();
+          if (next === queue.length) return controller.close();
+          const part = queue[next];
+          queue[next++] = undefined;
+          let body: ReadableStream<Uint8Array> | null;
+          if (part instanceof ReadableStream) body = part;
+          else if (part instanceof Function) body = await part();
+          else return controller.enqueue(encoder.encode(part ?? ""));
           if (!body) throw new Error("A fragment is missing");
           reader = body.getReader();
         }
@@ -69,7 +72,8 @@ export function streamParts(parts: Part[]): ReadableStream<Uint8Array> {
     async cancel(reason) {
       // The open body, and any opened ahead that the reader never reached.
       await reader?.cancel(reason);
-      for (const part of parts.slice(next)) {
+      for (let i = next; i < queue.length; i++) {
+        const part = queue[i];
         if (part instanceof ReadableStream) await part.cancel(reason);
       }
     },
@@ -101,29 +105,25 @@ export async function showFull(c: ReaderContext) {
     return unavailable(c);
   }
   // The first chapter is read before the 200, so R2 being down is a clean 503.
-  let first: ReadableStream<Uint8Array> | null = null;
-  if (chapters[0]) {
-    try {
-      first = await openFragment(c.env.BUCKET, chapters[0].r2_key);
-    } catch {
-      return unavailable(c);
-    }
-    if (!first) return unavailable(c);
-  }
+  const [head, ...rest] = chapters;
+  const first = head && (await openFragment(c.env.BUCKET, head.r2_key).catch(() => null));
+  if (head && !first) return unavailable(c);
 
   const workTitle = live.work.title.trim() || "Untitled work";
   const { before, after } = layoutAround(`${workTitle}, entire work`, "", bar(workTitle));
   // The fragments are trusted markup only because the sanitizer wrote them; they go in
-  // unescaped. The chapter headings' ids stay stable: links may point at them.
+  // unescaped. The chapter headings' ids stay stable: links may point at them. The
+  // markup between two fragments goes out as one part.
+  const heading = (ch: { n: number; title: string }) =>
+    `<h2 class="chapter-title" id="chapter-${ch.n}">${escapeHtml(chapterTitle(ch))}</h2>\n<article class="chapter">`;
   const parts: Part[] = [`${before}${reviewNotice(version)}`];
-  chapters.forEach((ch, i) => {
-    parts.push(
-      `<h2 class="chapter-title" id="chapter-${ch.n}">${escapeHtml(chapterTitle(ch))}</h2>\n<article class="chapter">`,
-      i === 0 && first ? first : () => openFragment(c.env.BUCKET, ch.r2_key),
-      `</article>\n`,
-    );
-  });
-  parts.push(`<p class="back"><a href="/works/${id}">Back to the work page</a></p>${after}`);
+  if (head && first) parts.push(heading(head), first);
+  for (const ch of rest) {
+    parts.push(`</article>\n${heading(ch)}`, () => openFragment(c.env.BUCKET, ch.r2_key));
+  }
+  parts.push(
+    `${head ? "</article>\n" : ""}<p class="back"><a href="/works/${id}">Back to the work page</a></p>${after}`,
+  );
   return c.body(streamParts(parts), 200, { "Content-Type": "text/html; charset=UTF-8" });
 }
 

@@ -98,6 +98,16 @@ const htmlOf = async (path: string) => {
 const articlesOf = (html: string) =>
   [...html.matchAll(/<article class="chapter">([\s\S]*?)<\/article>/g)].map(([, a = ""]) => a);
 
+/** A response body's chunks as they arrive, into `into`, which keeps them if it fails. */
+const readChunks = async (res: Response, into: Uint8Array[] = []) => {
+  const reader = res.body!.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return into;
+    into.push(value);
+  }
+};
+
 describe("11-reader-and-csp", () => {
   it("Entire work on one page", async () => {
     const res = await fetchW(fullUrl(W));
@@ -135,9 +145,7 @@ describe("11-reader-and-csp", () => {
     expect(html).not.toContain("A seeded summary");
     expect(chrome.slice(chrome.lastIndexOf("</article>"))).toContain(`<a href="/works/${W}">`);
   });
-});
 
-describe("11-reader-and-csp", () => {
   it("Reader pages show the may-be-imperfect notice", async () => {
     // Two of F's chapters and its entire work: once each, as chrome, never inside a chapter.
     for (const path of [chapterUrl(F, 1), chapterUrl(F, 3), fullUrl(F)]) {
@@ -206,19 +214,11 @@ describe("entire work", () => {
     // truncated page that looks whole.
     const res = await fetchW(fullUrl(MISSING_LATER));
     expect(res.status).toBe(200);
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let seen = "";
-    const drain = async () => {
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) return;
-        seen += decoder.decode(value, { stream: true });
-      }
-    };
-    await expect(drain()).rejects.toBeInstanceOf(Error);
-    expect(seen).toContain("R4-LATER-2-TEXT");
-    expect(seen).not.toContain("</main>");
+    const seen: Uint8Array[] = [];
+    await expect(readChunks(res, seen)).rejects.toBeInstanceOf(Error);
+    const html = await new Blob(seen).text();
+    expect(html).toContain("R4-LATER-2-TEXT");
+    expect(html).not.toContain("</main>");
   });
 
   it("A work of 60 chapters comes out whole and in order", async () => {
@@ -227,14 +227,7 @@ describe("entire work", () => {
   });
 
   it("A large fragment streams in chunks and keeps its bytes", async () => {
-    const res = await fetchW(fullUrl(BIG));
-    const reader = res.body!.getReader();
-    const chunks: Uint8Array[] = [];
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-    }
+    const chunks = await readChunks(await fetchW(fullUrl(BIG)));
     expect(chunks.length).toBeGreaterThan(2);
     const html = await new Blob(chunks).text();
     expect(articlesOf(html)).toEqual([BIG_HTML]);

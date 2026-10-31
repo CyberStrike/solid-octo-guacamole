@@ -7,7 +7,7 @@ import type { LiveWork } from "@archive/db";
 type Checked = Pick<LiveWork["version"], "review_reasons" | "checked_at">;
 
 /** Whether a version's chapters still wait on a moderator's check. */
-export const needsCheck = (version: Checked) =>
+const needsCheck = (version: Checked) =>
   version.review_reasons.length > 0 && version.checked_at === null;
 
 /** The notice as a paragraph, or nothing when the version needs no check. */
