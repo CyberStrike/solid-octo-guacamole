@@ -41,6 +41,56 @@ describe("01-auth-magic-link", () => {
     expectTermsRedirect(await get(WORK_PAGE, cookie), WORK_PAGE);
   });
 
+  it("Before accepting, every other page and method goes to the terms page", async () => {
+    const cookie = await signIn("terms-every-page@example.test");
+
+    for (const path of [
+      "/",
+      "/upload",
+      "/remove",
+      "/about",
+      "/admin",
+      "/nope",
+      "/works/13000?x=1",
+    ]) {
+      const res = await get(path, cookie);
+      expectTermsRedirect(res, path);
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      expect(res.headers.get("strict-transport-security")).toMatch(/max-age=/);
+    }
+    expectTermsRedirect(await get(WORK_PAGE, cookie, "HEAD"), WORK_PAGE);
+    // A form post is no page to come back to.
+    for (const method of ["POST", "PUT", "DELETE"]) {
+      const res = await get("/waitlist", cookie, method);
+      expect(res.status).toBe(303);
+      expect(res.headers.get("location")).toBe("/welcome/terms");
+      expect(res.headers.get("cache-control")).toBe("no-store");
+    }
+  });
+
+  it("Before accepting, the terms, privacy and sign-in pages and static files still open", async () => {
+    const cookie = await signIn("terms-exempt@example.test");
+
+    for (const path of ["/terms", "/privacy", "/login", "/login/confirm?token=x"]) {
+      const res = await get(path, cookie);
+      expect(res.status, path).toBe(200);
+    }
+    // The stylesheet every page links to, the terms page's own included.
+    const page = await (await get("/terms", cookie)).text();
+    const stylesheet = page.match(/<link rel="stylesheet" href="([^"]+)"/)![1]!;
+    const css = await get(stylesheet, cookie);
+    expect(css.status).toBe(200);
+    expect(css.headers.get("content-type")).toMatch(/^text\/css/);
+  });
+
+  it("A signed-out visitor, or a forged cookie, is never sent to the terms page", async () => {
+    for (const path of ["/about", "/terms", WORK_PAGE]) {
+      expect((await fetchW(path)).status, path).toBe(200);
+      const forged = await get(path, "__Secure-better-auth.session_token=forged.value");
+      expect(forged.status, path).toBe(200);
+    }
+  });
+
   it("Returning user skips the terms page", async () => {
     const email = "terms-returning@example.test";
     await signIn(email);
