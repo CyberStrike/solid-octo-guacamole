@@ -29,7 +29,15 @@ const cardOf = (html: string, ao3WorkId: number) =>
 const lineOf = (card: string, className: string) =>
   card.match(new RegExp(`<(p|div) class="${className}">([\\s\\S]*?)</\\1>`))?.[2] ?? null;
 
-const textOf = (html: string) => html.replace(/<[^>]*>/g, "");
+/** The text a reader sees: tags dropped, the five escapes undone. */
+const textOf = (html: string) =>
+  html
+    .replace(/<[^>]*>/g, "")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&#39;", "'")
+    .replaceAll("&amp;", "&");
 
 const stylesheetOf = async (html: string) => {
   const href = html.match(/<link rel="stylesheet" href="([^"]+)"/)?.[1];
@@ -184,5 +192,47 @@ describe("14-browse-and-home", () => {
     const rules = rulesFor(await stylesheetOf(html), "card-summary");
     expect(rules).toMatch(/(^|[^-])line-clamp:\s*3/);
     expect(rules).toMatch(/-webkit-line-clamp:\s*3/);
+  });
+
+  it("Card tags order", async () => {
+    const freeforms = Array.from({ length: 21 }, (_, i) => ({
+      type: "freeform" as const,
+      name: `Tags Order Freeform ${i + 1}`,
+    }));
+    await seedWork(db, {
+      ao3WorkId: 30050,
+      tags: [
+        { type: "fandom", name: "Tags Order Fandom" },
+        { type: "category", name: "M/M" },
+        ...freeforms.slice(0, 10),
+        { type: "character", name: "Tags Order Ann" },
+        { type: "relationship", name: "Tags Order Ann/Bea" },
+        ...freeforms.slice(10),
+        { type: "character", name: "Tags Order Bea" },
+        { type: "relationship", name: "Tags Order Ann & Bea" },
+      ],
+    });
+    // More than three of a kind: three show, then how many more.
+    await seedWork(db, {
+      ao3WorkId: 30051,
+      tags: [
+        { type: "fandom", name: "Tags Order Fandom" },
+        ...[1, 2, 3, 4, 5].map((n) => ({ type: "relationship" as const, name: `Tags R${n}/X` })),
+        ...[1, 2, 3, 4].map((n) => ({ type: "character" as const, name: `Tags C${n}` })),
+        { type: "freeform", name: "Tags Order Lone Freeform" },
+      ],
+    });
+
+    const html = await htmlOf("/tags/fandom/tags%20order%20fandom");
+
+    const line = lineOf(cardOf(html, 30050), "card-tags") ?? "";
+    expect(textOf(line)).toBe(
+      "Tags Order Ann/Bea, Tags Order Ann & Bea · Tags Order Ann, Tags Order Bea · 21 other tags",
+    );
+    expect(line).toContain('<a href="/tags/relationship/tags%20order%20ann%2Fbea">');
+    expect(line).toContain('<a href="/tags/character/tags%20order%20ann">');
+    expect(textOf(lineOf(cardOf(html, 30051), "card-tags") ?? "")).toBe(
+      "Tags R1/X, Tags R2/X, Tags R3/X, +2 more · Tags C1, Tags C2, Tags C3, +1 more · 1 other tag",
+    );
   });
 });
