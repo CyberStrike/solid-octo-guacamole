@@ -163,17 +163,15 @@ function serializeNode(node: Node, ctx: SanitizeContext): string {
   let attrs = allowedAttrs(tag, node);
   if (tag === "a") {
     const raw = node.attrs["href"];
-    const href = raw === undefined ? null : safeHref(raw);
+    if (raw === undefined) return inner();
+    const href = safeHref(raw);
     if (href !== null) {
       attrs = ` href="${escapeAttr(href)}" rel="${EXTERNAL_REL}"${attrs}`;
     } else {
       // A link to another chapter becomes a same-site reader link; any other
       // internal link (#fragments, other files) or unsafe scheme becomes plain text.
-      const chapter =
-        raw === undefined
-          ? null
-          : (ctx.resolveChapterLink?.(decodeEntities(raw).trim(), node.file) ?? null);
-      if (chapter === null) return inner();
+      const chapter = ctx.resolveChapterLink?.(decodeEntities(raw).trim(), node.file);
+      if (!chapter) return inner();
       attrs = ` href="${escapeAttr(chapter)}"${attrs}`;
     }
   }

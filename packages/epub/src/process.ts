@@ -120,8 +120,7 @@ async function run(
   // for any other ID a chapter link would be dead, so links stay text.
   const readerId = /^[1-9]\d{0,9}$/.test(ao3WorkId) && Number(ao3WorkId) <= 2_147_483_647;
   // The chapter being serialized, so a link to it stays plain text; null outside chapters.
-  // SAFETY: widens the initial null, so TS doesn't read it as null inside the resolver.
-  let current = null as number | null;
+  let current: number | null = null;
   const ctx: SanitizeContext = {
     resolveImage(src, fromFile) {
       const target = resolveHref(dirOf(fromFile), src);

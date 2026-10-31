@@ -5,6 +5,7 @@ import {
   hasClass,
   idOf,
   isBlankText,
+  isScriptOrStyle,
   walk,
   type ElementNode,
   type Node,
@@ -51,16 +52,21 @@ interface Start {
 
 const HEADING = /^h[1-6]$/;
 
-/** Index of the first of `nodes` (siblings, in document order) whose subtree reaches `lo`. */
-function firstReaching(nodes: readonly Node[], lo: number): number {
+/** How many leading `items` satisfy `pred`, which holds for a prefix of them and fails after. */
+function countWhile<T>(items: readonly T[], pred: (item: T) => boolean): number {
   let a = 0;
-  let b = nodes.length;
+  let b = items.length;
   while (a < b) {
     const m = (a + b) >> 1;
-    if (nodes[m]!.end < lo) a = m + 1;
+    if (pred(items[m]!)) a = m + 1;
     else b = m;
   }
   return a;
+}
+
+/** Index of the first of `nodes` (siblings, in document order) whose subtree reaches `lo`. */
+function firstReaching(nodes: readonly Node[], lo: number): number {
+  return countWhile(nodes, (n) => n.end < lo);
 }
 
 /** Calls `f` for each of `nodes` that overlaps [lo, hi), without visiting the others. */
@@ -123,13 +129,26 @@ function idIndex(root: ElementNode): Map<string, ElementNode> {
   return out;
 }
 
+/** Spine files by path, and their elements by id, indexed on first use. */
+function spineIndex(docs: SpineDoc[]) {
+  const byPath = new Map(docs.map((d) => [d.path, d]));
+  const ids = new Map<SpineDoc, Map<string, ElementNode>>();
+  return {
+    doc: (path: string): SpineDoc | undefined => byPath.get(path),
+    element(doc: SpineDoc, id: string): ElementNode | null {
+      if (!ids.has(doc)) ids.set(doc, idIndex(doc.root));
+      return ids.get(doc)!.get(id) ?? null;
+    },
+  };
+}
+
+type SpineIndex = ReturnType<typeof spineIndex>;
+
 function startsFromToc(
-  docs: SpineDoc[],
+  index: SpineIndex,
   perDoc: Map<SpineDoc, ElementNode[]>,
   navPoints: NavPoint[],
 ): Start[] | null {
-  const byPath = new Map(docs.map((d) => [d.path, d]));
-  const ids = new Map<SpineDoc, Map<string, ElementNode>>();
   const regionSet = new Set([...perDoc.values()].flat());
   const regionOf = (el: ElementNode): ElementNode | null => {
     for (let p: ElementNode | null = el; p; p = p.parent) if (regionSet.has(p)) return p;
@@ -138,12 +157,11 @@ function startsFromToc(
 
   const starts: Start[] = [];
   for (const np of navPoints) {
-    const doc = byPath.get(np.path);
+    const doc = index.doc(np.path);
     if (!doc) continue;
     let target: ElementNode | null = null;
     if (np.anchor) {
-      if (!ids.has(doc)) ids.set(doc, idIndex(doc.root));
-      target = ids.get(doc)!.get(np.anchor) ?? null;
+      target = index.element(doc, np.anchor);
       // A broken TOC: the heading fallback is safer than merging chapters.
       if (!target) return null;
     }
@@ -212,7 +230,7 @@ function firstContent(scopes: readonly Node[]): number | null {
       if (!isBlankText(n)) return n.pos;
     } else if (n.tag === "img") {
       return n.pos;
-    } else {
+    } else if (!isScriptOrStyle(n)) {
       const inner = firstContent(n.children);
       if (inner !== null) return inner;
     }
@@ -220,27 +238,41 @@ function firstContent(scopes: readonly Node[]): number | null {
   return null;
 }
 
+/** Where a link lands: the spine file, and a position inside that file's chapter scopes. */
+interface Target {
+  doc: SpineDoc;
+  pos: number;
+}
+
 /**
- * Where a link into spine file `path` lands: the element with id `anchor`, or
- * the file's first content in `scopesOf(doc)` when there is no anchor.
+ * Resolves a link into spine file `path`: to the element with id `anchor`, or
+ * without an anchor to the file's first content. Null when the file is not in
+ * the spine or the target is outside `scopes` (the preface, afterword or end
+ * notes, which no chapter shows).
  */
-function targets(
-  docs: SpineDoc[],
-  scopesOf: (doc: SpineDoc) => ElementNode[],
-): (path: string, anchor: string | null) => number | null {
-  const byPath = new Map(docs.map((d) => [d.path, d]));
-  const ids = new Map<SpineDoc, Map<string, ElementNode>>();
+function linkTargets(
+  index: SpineIndex,
+  scopes: Map<SpineDoc, ElementNode[]>,
+): (path: string, anchor: string | null) => Target | null {
+  // Per file, so many links to one file cost one scan.
+  const first = new Map<SpineDoc, number | null>();
   return (path, anchor) => {
-    const doc = byPath.get(path);
+    const doc = index.doc(path);
     if (!doc) return null;
-    if (anchor === null) return firstContent(scopesOf(doc));
-    if (!ids.has(doc)) ids.set(doc, idIndex(doc.root));
-    return ids.get(doc)!.get(anchor)?.pos ?? null;
+    const own = scopes.get(doc)!;
+    if (anchor === null) {
+      if (!first.has(doc)) first.set(doc, firstContent(own));
+      const pos = first.get(doc) ?? null;
+      return pos === null ? null : { doc, pos };
+    }
+    const el = index.element(doc, anchor);
+    if (!el || !own.some((s) => s.pos <= el.pos && el.pos <= s.end)) return null;
+    return { doc, pos: el.pos };
   };
 }
 
 function split(
-  docs: SpineDoc[],
+  index: SpineIndex,
   perDoc: Map<SpineDoc, ElementNode[]>,
   regions: ElementNode[],
   starts: Start[],
@@ -252,27 +284,17 @@ function split(
       "content_before_first_chapter: text in #chapters before the first chapter start",
     );
   }
-  const target = targets(docs, (doc) => perDoc.get(doc)!);
-  // Chapter i holds the #chapters content from starts[i - 1] up to starts[i].
-  const chapterAt = (pos: number): number | null => {
-    const region = regions[firstReaching(regions, pos)];
-    if (!region || region.pos > pos) return null; // outside #chapters: preface, afterword, end notes
-    let a = 0;
-    let b = starts.length;
-    while (a < b) {
-      const m = (a + b) >> 1;
-      if (starts[m]!.pos <= pos) a = m + 1;
-      else b = m;
-    }
-    return a === 0 ? null : a; // before the first start: in no chapter
-  };
+  const target = linkTargets(index, perDoc);
   return {
     chapters: build(regions, starts),
     method,
     reviewReasons,
     chapterFor(path, anchor) {
-      const pos = target(path, anchor);
-      return pos === null ? null : chapterAt(pos);
+      const t = target(path, anchor);
+      if (t === null) return null;
+      // Chapter n holds the #chapters content from starts[n - 1] up to starts[n].
+      const n = countWhile(starts, (s) => s.pos <= t.pos);
+      return n === 0 ? null : n; // before the first start: in no chapter
     },
   };
 }
@@ -280,6 +302,7 @@ function split(
 export function splitChapters(docs: SpineDoc[], navPoints: NavPoint[]): ChapterSplit {
   const perDoc = new Map(docs.map((d) => [d, regionsById([d.root], "chapters")]));
   const regions = docs.flatMap((d) => perDoc.get(d)!);
+  const index = spineIndex(docs);
   const reviewReasons: string[] = [];
 
   if (regions.length > 0) {
@@ -294,30 +317,30 @@ export function splitChapters(docs: SpineDoc[], navPoints: NavPoint[]): ChapterS
       if (hasText([body])) reviewReasons.push(`content_outside_chapters: ${doc.path}`);
     }
 
-    const toc = startsFromToc(docs, perDoc, navPoints);
-    if (toc) return split(docs, perDoc, regions, toc, "toc", reviewReasons);
+    const toc = startsFromToc(index, perDoc, navPoints);
+    if (toc) return split(index, perDoc, regions, toc, "toc", reviewReasons);
     const headings = startsFromHeadings(regions);
-    if (headings) return split(docs, perDoc, regions, headings, "headings", reviewReasons);
+    if (headings) return split(index, perDoc, regions, headings, "headings", reviewReasons);
   }
 
   // Last resort: one chapter per spine file that has content.
-  const scopesOf = (doc: SpineDoc) =>
-    regions.length > 0 ? perDoc.get(doc)! : [find(doc.root, (el) => el.tag === "body") ?? doc.root];
+  const scopes = new Map(
+    docs.map((d) => [
+      d,
+      regions.length > 0 ? perDoc.get(d)! : [find(d.root, (el) => el.tag === "body") ?? d.root],
+    ]),
+  );
   // Checked on the tree itself, not on copies: memory is the tight limit here.
-  const files = docs.filter((d) => hasText(scopesOf(d).flatMap((s) => s.children)));
-  const numbers = new Map(files.map((d, i) => [d.path, i + 1]));
-  const target = targets(docs, scopesOf);
-  const byPath = new Map(docs.map((d) => [d.path, d]));
+  const files = docs.filter((d) => hasText(scopes.get(d)!));
+  const numbers = new Map(files.map((d, i) => [d, i + 1]));
+  const target = linkTargets(index, scopes);
   return {
-    chapters: perFile(files.map(scopesOf)),
+    chapters: perFile(files.map((d) => scopes.get(d)!)),
     method: "files",
     reviewReasons,
     chapterFor(path, anchor) {
-      const pos = target(path, anchor);
-      const n = numbers.get(path);
-      if (pos === null || n === undefined) return null;
-      // Only what the chapter shows: not the file's preface or afterword.
-      return scopesOf(byPath.get(path)!).some((s) => s.pos <= pos && pos <= s.end) ? n : null;
+      const t = target(path, anchor);
+      return t === null ? null : (numbers.get(t.doc) ?? null);
     },
   };
 }
