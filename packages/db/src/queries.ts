@@ -155,13 +155,7 @@ export async function getLiveWork(
 }
 
 /** A work as a listing's card shows it. */
-export interface ListedWork {
-  work: WorkSummary;
-  /** In byline order. */
-  authors: { pseud: string; ao3_user: string | null }[];
-  /** In the author's order. */
-  tags: Selectable<TagTable>[];
-}
+export type ListedWork = Pick<LiveWork, "work" | "authors" | "tags">;
 
 /**
  * The `live` works carrying a tag of this type that matches `name` under the

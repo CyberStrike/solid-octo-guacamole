@@ -5,6 +5,7 @@
 import {
   createDb,
   getTagName,
+  isTagType,
   listLiveWorksByTag,
   type ListedWork,
   type TagType,
@@ -14,22 +15,13 @@ import type { Bindings } from "./env";
 import { escapeHtml, layout } from "./pages";
 import { tagHref } from "./tag-links";
 
-const TAG_TYPES: readonly TagType[] = [
-  "fandom",
-  "relationship",
-  "character",
-  "freeform",
-  "warning",
-  "category",
-  "rating",
-];
-
-const isTagType = (type: string): type is TagType => TAG_TYPES.some((t) => t === type);
+const WORDS = new Intl.NumberFormat("en-US");
 
 export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
   const type = c.req.param("type");
   const name = c.req.param("name");
   if (type === undefined || name === undefined || !isTagType(type)) return c.notFound();
+  // One connection: the request's two queries run one after the other.
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   try {
     // The heading first: a tag nobody has used is not found.
@@ -69,8 +61,8 @@ const cardTags = (
   others: number,
 ) =>
   [
-    relationships.length ? someOf(relationships) : "",
-    characters.length ? someOf(characters) : "",
+    someOf(relationships),
+    someOf(characters),
     others ? `${others} other ${others === 1 ? "tag" : "tags"}` : "",
   ]
     .filter(Boolean)
@@ -88,7 +80,7 @@ const summary = (html: string | null, href: string) =>
 /** Words, chapters as posted/total ("?" when the total is unknown), completion, last updated. */
 const stats = (work: ListedWork["work"]) =>
   [
-    work.words === null ? "" : `${work.words.toLocaleString("en-US")} words`,
+    work.words === null ? "" : `${WORDS.format(work.words)} words`,
     `${work.chapters_count}/${work.chapters_total ?? "?"} chapters`,
     work.complete ? "Complete" : "In progress",
     work.updated_at === null ? "" : `Updated ${work.updated_at.toISOString().slice(0, 10)}`,
@@ -102,7 +94,7 @@ function workCard({ work, authors, tags }: ListedWork): string {
   const ofType = (type: TagType) => tags.filter((t) => t.type === type);
   // Spelled out in bold, never a colour or a symbol, and never clamped.
   const warnings = ofType("warning").map((t) => t.name);
-  const rating = [work.rating ?? "Not Rated", ...(warnings.length ? [warnings.join(", ")] : [])];
+  const rating = [work.rating ?? "Not Rated", warnings.join(", ")].filter(Boolean);
   return `<li class="work-card">
 <h2 class="card-title"><a href="${href}">${escapeHtml(work.title)}</a></h2>
 <p class="card-byline">by ${escapeHtml(authors.map((a) => a.pseud).join(", "))}</p>

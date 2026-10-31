@@ -17,13 +17,16 @@ const htmlOf = async (path: string) => {
   return res.text();
 };
 
-/** The card that links to this work, or "" when the page has none. */
-const cardOf = (html: string, ao3WorkId: number) =>
+/** Each card's inner HTML, in page order. */
+const cardsOf = (html: string) =>
   html
     .split(/<li class="work-card">/)
     .slice(1)
-    .map((card) => card.slice(0, card.indexOf("</li>")))
-    .find((card) => card.includes(`href="/works/${ao3WorkId}"`)) ?? "";
+    .map((card) => card.slice(0, card.indexOf("</li>")));
+
+/** The card that links to this work, or "" when the page has none. */
+const cardOf = (html: string, ao3WorkId: number) =>
+  cardsOf(html).find((card) => card.includes(`href="/works/${ao3WorkId}"`)) ?? "";
 
 /** The inner HTML of the card's element with this class, or null. */
 const lineOf = (card: string, className: string) =>
@@ -357,7 +360,7 @@ const allCards = async () => {
       htmlOf(`/tags/fandom/${n}`),
     ),
   );
-  return pages.flatMap((html) => html.split(/<li class="work-card">/).slice(1));
+  return pages.flatMap(cardsOf);
 };
 
 describe("20-site-chrome-and-legal", () => {
