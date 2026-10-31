@@ -82,7 +82,8 @@ export async function createTestDb(options: TestDbOptions = {}): Promise<TestDb>
     await server.start();
     // PGlite ignores the password; Miniflare's Hyperdrive refuses a URL without one.
     const connectionString = `postgresql://postgres:postgres@${server.getServerConn()}/postgres`;
-    // PGlite is one session: the socket queues every client's queries on it.
+    // PGlite is one session. OneCycleAtATime keeps each client's queries, and each
+    // transaction, whole on it, so `db` and other clients can run at once.
     db = createDb({ connectionString, max: 1 });
     if (options.migrate !== false) await migrate(db);
     return { db, connectionString, close };
