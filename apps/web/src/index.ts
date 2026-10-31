@@ -10,6 +10,8 @@ import { requestSignIn, showSignIn } from "./login";
 import { jumpToChapter, showChapter } from "./reader";
 import { sameOriginOnly, showReportForm, submitReport } from "./report";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
+import { pageState } from "./page-state";
+import { SETTINGS_SCRIPT, SETTINGS_SCRIPT_PATH } from "./reader-settings";
 import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
 import {
   contentSecurityPolicy,
@@ -18,6 +20,7 @@ import {
   type SecurityVariables,
 } from "./security";
 import { requireSignIn, sessionMiddleware, type SessionVariables } from "./session";
+import { saveSettings, SETTINGS_PATH, showSettings } from "./settings";
 import { STYLESHEET, STYLESHEET_PATH } from "./styles";
 import { acceptTerms, showTerms, termsGate, WELCOME_TERMS } from "./terms";
 import { requestUpload, sameOriginUpload, showUpload } from "./upload";
@@ -44,6 +47,9 @@ app.post("/works/:id/report", sameOriginOnly);
 // again. Static files skip it, and the lookup's database connection with it. Then
 // an account that hasn't accepted the terms is sent to accept them.
 app.use(except("/assets/*", sessionMiddleware, termsGate));
+// The reader's settings, on every page. Inside the CSP, which keys on what it returns,
+// and after the terms gate, never in front of it.
+app.use(pageState);
 
 // The moderation area: every /admin URL goes through its gate (admin.ts).
 app.route("/admin", admin);
@@ -75,6 +81,10 @@ app.get("/works/:id/chapters/:n", showChapter);
 app.get("/works/:id/chapters", jumpToChapter);
 app.get("/works/:id/full", showFull);
 
+// Reader settings, signed in or not. Closed before launch, like the reader.
+app.get(SETTINGS_PATH, showSettings);
+app.post(SETTINGS_PATH, saveSettings);
+
 app.get("/about", (c) => c.html(aboutPage()));
 app.get("/terms", (c) => c.html(termsPage()));
 app.get("/privacy", (c) => c.html(privacyPage()));
@@ -89,6 +99,15 @@ app.get("/tags/:type/:name", showTagListing);
 app.get(STYLESHEET_PATH, (c) =>
   c.body(STYLESHEET, 200, {
     "Content-Type": "text/css; charset=utf-8",
+    "Cache-Control": "public, max-age=31536000, immutable",
+    "X-Content-Type-Options": "nosniff",
+  }),
+);
+
+// The reader settings script, likewise hashed. Loaded with the page's nonce.
+app.get(SETTINGS_SCRIPT_PATH, (c) =>
+  c.body(SETTINGS_SCRIPT, 200, {
+    "Content-Type": "text/javascript; charset=utf-8",
     "Cache-Control": "public, max-age=31536000, immutable",
     "X-Content-Type-Options": "nosniff",
   }),

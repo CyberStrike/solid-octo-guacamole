@@ -8,10 +8,12 @@ import {
   chapterTitle,
   isFragmentKey,
   positiveInt,
+  readerBar,
   unavailable,
   type ReaderContext,
 } from "./reader";
 import { reviewNotice } from "./review-notice";
+import { settingsScriptTag } from "./settings";
 
 /** A fragment's bytes, or null when the key is missing. Anything with R2's `get`. */
 export interface FragmentSource {
@@ -147,7 +149,13 @@ export async function showFull(c: ReaderContext) {
   }
 
   const workTitle = live.work.title.trim() || "Untitled work";
-  const { before, after } = layoutAround(`${workTitle}, entire work`, "", bar(workTitle));
+  // The settings script comes straight after the bar, not deferred, so the live
+  // controls work before a long work has finished streaming.
+  const { before, after } = layoutAround(
+    `${workTitle}, entire work`,
+    "",
+    `${readerBar(workTitle, `/works/${id}/full`)}\n${settingsScriptTag(c.get("nonce"), "async")}`,
+  );
   // The fragments are trusted markup only because the sanitizer wrote them; they go in
   // unescaped. The chapter headings' ids stay stable: links may point at them. The
   // markup between two fragments goes out as one part.
@@ -164,7 +172,3 @@ export async function showFull(c: ReaderContext) {
   );
   return c.body(streamParts(parts), 200, headers);
 }
-
-/** The slim top bar, as on a chapter page: the work title, the page's one h1, and settings. */
-const bar = (workTitle: string) =>
-  `<div class="reader-bar"><h1>${escapeHtml(workTitle)}</h1><a href="/settings/reader">Reader settings</a></div>`;
