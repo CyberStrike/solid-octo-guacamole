@@ -13,12 +13,12 @@ interface Call {
 }
 
 /** A stand-in for Cloudflare's siteverify: records each call and answers with `reply`. */
-function siteverify(reply: () => Response | Promise<Response>) {
+function siteverify(reply: (init: RequestInit) => Response | Promise<Response>) {
   const calls: Call[] = [];
   const fetch = async (url: string, init: RequestInit) => {
     // SAFETY: the verifier always posts a URLSearchParams body.
     calls.push({ url, method: init.method, body: init.body as URLSearchParams });
-    return reply();
+    return reply(init);
   };
   return { calls, fetch };
 }
@@ -94,6 +94,20 @@ describe("verifyTurnstile", () => {
     const cf = siteverify(answer({ success: true, hostname: "rarepair.fans" }));
     expect(await verifyTurnstile("x".repeat(2049), check(cf.fetch))).toBe("failed");
     expect(cf.calls).toEqual([]);
+    // 2048 is still a token Cloudflare is asked about.
+    expect(await verifyTurnstile("x".repeat(2048), check(cf.fetch))).toBe("passed");
+  });
+
+  it("is unavailable when siteverify doesn't answer in time", async () => {
+    // Never answers, but gives up when the verifier's signal aborts.
+    const stalled = siteverify(
+      (init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+    const result = await verifyTurnstile(TOKEN, { ...check(stalled.fetch), timeoutMs: 20 });
+    expect(result).toBe("unavailable");
   });
 
   it("is unavailable when siteverify can't be reached or answers with an error", async () => {

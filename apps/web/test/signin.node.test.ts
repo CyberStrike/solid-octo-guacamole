@@ -29,7 +29,10 @@ describe("safeNext", () => {
 
   it("gives the home page for a next too long to fit in a sign-in link", () => {
     expect(safeNext(`/works/1?q=${"a".repeat(1000)}`)).toBe("/");
-    expect(safeNext(`/works/1?q=${"a".repeat(400)}`)).toBe(`/works/1?q=${"a".repeat(400)}`);
+    // 512 characters is kept; 513 is not.
+    const longest = `/works/1?q=${"a".repeat(512 - "/works/1?q=".length)}`;
+    expect(safeNext(longest)).toBe(longest);
+    expect(safeNext(`${longest}a`)).toBe("/");
     // Measured as it ends up encoded.
     expect(safeNext(`/works/1?q=${"é".repeat(200)}`)).toBe("/");
   });

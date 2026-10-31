@@ -62,6 +62,9 @@ async function emailsTo(to: string, { atLeast = 1 } = {}) {
   }
 }
 
+// 254 characters: a 64-character local part and labels of at most 63.
+const LONGEST_EMAIL = `${"a".repeat(64)}@${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(56)}.test`;
+
 let sentinels = 0;
 
 /**
@@ -73,8 +76,9 @@ async function queuedFor(to: string): Promise<boolean> {
   const res = await postLogin({ email: sentinel, "cf-turnstile-response": PASSING_TOKEN });
   expect(res.status).toBe(200);
   expect(await emailsTo(sentinel)).toHaveLength(1);
-  // Any body naming `to`, even one the mailer would refuse.
-  return (await deliveredEmails()).some((body) => JSON.stringify(body).includes(to));
+  // Any body addressed to `to`, even one the mailer would refuse.
+  const field = `"to":${JSON.stringify(to)}`;
+  return (await deliveredEmails()).some((body) => JSON.stringify(body).includes(field));
 }
 
 /** Shows that a refused request left nothing behind: no token and no email. */
@@ -244,9 +248,16 @@ describe("01-auth-magic-link", () => {
     await expectNothingCreated("turnstile-down@example.test", before);
   });
 
+  it("Requesting a link for the longest address the mailer sends to works", async () => {
+    expect(LONGEST_EMAIL).toHaveLength(254);
+    const res = await postLogin({ email: LONGEST_EMAIL, "cf-turnstile-response": PASSING_TOKEN });
+    expect(res.status).toBe(200);
+    expect(await emailsTo(LONGEST_EMAIL)).toHaveLength(1);
+  });
+
   it("Requesting a link for an invalid address shows the form again", async () => {
-    // The second is well formed but longer than the mailer sends to (254 characters).
-    for (const email of ["not-an-address", `${"a".repeat(60)}@${"b".repeat(200)}.example`]) {
+    // Also none at all, and a well-formed one a character longer than the mailer sends to.
+    for (const email of ["not-an-address", "", `a${LONGEST_EMAIL}`]) {
       const before = await verificationIds();
       const res = await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN });
       expect(res.status).toBe(400);

@@ -21,6 +21,8 @@ export interface TurnstileCheck {
   remoteIp?: string | null;
   /** The Worker's `fetch` when left out; a test passes its own. */
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
+  /** How long to wait for Cloudflare before calling it unavailable. 5 seconds when left out. */
+  timeoutMs?: number;
 }
 
 /** Checks the `cf-turnstile-response` value of a submitted form, null when it has none. */
@@ -34,11 +36,15 @@ export async function verifyTurnstile(
 
   let reply: { success?: unknown; hostname?: unknown } | null;
   try {
-    const res = await (check.fetch ?? fetch)(SITEVERIFY, { method: "POST", body });
+    const res = await (check.fetch ?? fetch)(SITEVERIFY, {
+      method: "POST",
+      body,
+      signal: AbortSignal.timeout(check.timeoutMs ?? 5000),
+    });
     if (!res.ok) return "unavailable";
     reply = await res.json();
   } catch {
-    // Unreachable, or an answer that isn't JSON.
+    // Unreachable, too slow, or an answer that isn't JSON.
     return "unavailable";
   }
   // JSON, but not the reply object Cloudflare sends.
