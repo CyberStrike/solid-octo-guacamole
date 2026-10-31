@@ -218,9 +218,15 @@ export interface ListingOptions {
   tag?: { type: TagType; name: string };
   /** Only complete works, or only works in progress. */
   complete?: boolean;
+  /** Default 1. One below 1, or not a whole number, is the first. */
   page?: number;
+  /** Default 20, also for one below 1 or not a whole number. */
   pageSize?: number;
 }
+
+const PAGE_SIZE = 20;
+
+const isCount = (n: number) => Number.isSafeInteger(n) && n >= 1;
 
 type WorksWhere = ExpressionBuilder<Database, "works">;
 
@@ -254,7 +260,7 @@ export async function listLiveWorksByTag(
   db: Kysely<Database>,
   type: TagType,
   name: string,
-  { sort = "updated", rating, tag, complete, page = 1, pageSize = 20 }: ListingOptions = {},
+  { sort = "updated", rating, tag, complete, page = 1, pageSize = PAGE_SIZE }: ListingOptions = {},
 ): Promise<TagListing> {
   const keys = tagNameKeys(type, name);
   const tagKeys = tag === undefined ? [] : tagNameKeys(tag.type, tag.name);
@@ -275,8 +281,9 @@ export async function listLiveWorksByTag(
     .where(listed)
     .executeTakeFirstOrThrow();
   const total = Number(count);
-  // A page below the first, or not a whole number, is the first.
-  const offset = page >= 1 ? (Math.floor(page) - 1) * pageSize : 0;
+  const size = isCount(pageSize) ? pageSize : PAGE_SIZE;
+  // A page past every safe integer is past the end, not the first.
+  const offset = page > Number.MAX_SAFE_INTEGER ? total : isCount(page) ? (page - 1) * size : 0;
   if (offset >= total) return { works: [], total };
   const byKey =
     sort === "words" ? sql`works.words` : sql`coalesce(works.updated_at, works.published_at)`;
@@ -287,9 +294,10 @@ export async function listLiveWorksByTag(
     .select(SUMMARY)
     .where(listed)
     .orderBy(byKey, (ob) => ob.desc().nullsLast())
-    // AO3 work ID last, so a page never repeats or skips a work.
+    // AO3 work ID last: a total order, so pages read from one state of the works
+    // neither repeat nor skip one. (A work that changes between page loads can.)
     .orderBy("works.ao3_work_id")
-    .limit(pageSize)
+    .limit(size)
     .offset(offset);
   const rows = await db
     .selectFrom(pageRows.as("works"))

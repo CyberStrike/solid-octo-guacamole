@@ -525,6 +525,29 @@ const seedPaged = once(async () => {
 describe("14-browse-and-home listing pages", () => {
   beforeAll(seedPaged);
 
+  it("Twenty works fit on one page, and the twenty-first starts a second", async () => {
+    for (const ao3WorkId of range(31401, 31421)) {
+      await seedWork(db, {
+        ao3WorkId,
+        rating: ao3WorkId === 31421 ? "Mature" : "Explicit",
+        tags: [{ type: "fandom", name: "Edge Listing Fandom" }],
+      });
+    }
+    const edge = "/tags/fandom/edge%20listing%20fandom";
+
+    // 21 works: a second page of one, and no third.
+    expect(cardsOf(await htmlOf(edge))).toHaveLength(20);
+    expect(idsOf(await htmlOf(`${edge}?page=2`))).toEqual([31421]);
+    expect((await fetchW(`${edge}?page=3`)).status).toBe(404);
+    // 20 works: one page, no pager, and no page 2.
+    const twenty = await htmlOf(`${edge}?rating=Explicit`);
+    expect(cardsOf(twenty)).toHaveLength(20);
+    expect(twenty).not.toContain('class="pager"');
+    expect((await fetchW(`${edge}?rating=Explicit&page=2`)).status).toBe(404);
+    // A parameter given twice is read as its first value.
+    expect(idsOf(await htmlOf(`${edge}?page=2&page=1`))).toEqual([31421]);
+  });
+
   it("A long listing's pager links the first page, the last and two either side", async () => {
     // 141 works: eight pages.
     for (const ao3WorkId of range(31201, 31341)) {
@@ -541,11 +564,11 @@ describe("14-browse-and-home listing pages", () => {
 
     expect(await numbersOf(1)).toEqual(["1", "2", "3", "…", "8", "Next"]);
     expect(await numbersOf(6)).toEqual(["Previous", "1", "…", "4", "5", "6", "7", "8", "Next"]);
-    // A gap of one page shows the page, not a gap.
+    // Only the first, the last and two either side: a gap of one page is still a gap.
     expect(await numbersOf(5)).toEqual([
       "Previous",
       "1",
-      "2",
+      "…",
       "3",
       "4",
       "5",

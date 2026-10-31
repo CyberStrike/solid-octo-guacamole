@@ -196,20 +196,18 @@ function listingHref(type: TagType, name: string, params: Pair[]): string {
 /**
  * Previous, the page numbers and next, all real links; the current page is
  * marked and not a link. Page numbers are the first, the last and those within
- * PAGES_AROUND of the current one, with a gap shown between runs. A gap of one
- * page shows that page instead, since its link takes no more room.
+ * PAGES_AROUND of the current one, with a gap shown between runs.
  */
 function pager(href: (n: number) => string, page: number, last: number): string {
   if (last === 1) return "";
-  const around = (n: number) => n === 1 || n === last || Math.abs(n - page) <= PAGES_AROUND;
   const numbers = [
     ...new Set([
       1,
       last,
-      ...Array.from({ length: 2 * PAGES_AROUND + 3 }, (_, i) => page - PAGES_AROUND - 1 + i),
+      ...Array.from({ length: 2 * PAGES_AROUND + 1 }, (_, i) => page - PAGES_AROUND + i),
     ]),
   ]
-    .filter((n) => n >= 1 && n <= last && (around(n) || (around(n - 1) && around(n + 1))))
+    .filter((n) => n >= 1 && n <= last)
     .sort((a, b) => a - b);
   const items = numbers.flatMap((n, i) => [
     ...(i > 0 && n - (numbers[i - 1] ?? n) > 1 ? ['<li aria-hidden="true">…</li>'] : []),

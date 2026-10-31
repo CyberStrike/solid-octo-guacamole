@@ -62,13 +62,18 @@ describe("14 browse and home", () => {
     );
     expect(await page(4)).toEqual({ works: [], total: 45 });
     // Below the first page, or not a whole number, is the first page, not a database error.
-    for (const n of [0, -3, 1.5, Number.NaN]) {
+    for (const n of [0, -3, 1.5, 2.5, Number.NaN]) {
       expect(
         (await page(n)).works.map((w) => w.work.ao3_work_id),
         String(n),
       ).toEqual(seeded.slice(0, 20));
     }
     expect(await page(Number.MAX_SAFE_INTEGER)).toEqual({ works: [], total: 45 });
+    // A page size that isn't a whole number above 0 is the default, 20.
+    for (const pageSize of [0, -5, 2.5, Number.NaN]) {
+      const listing = await listLiveWorksByTag(t.db, "fandom", "Paged Db Fandom", { pageSize });
+      expect(listing.works, String(pageSize)).toHaveLength(20);
+    }
   });
 
   it("Sort by updated date", async () => {
