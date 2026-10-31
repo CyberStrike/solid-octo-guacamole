@@ -5,6 +5,7 @@
 // Draft copy, written from specs/scenarios/mvp/22-waitlist.md for the operator to proof.
 
 import { escapeHtml, layout, TURNSTILE_API } from "./pages";
+import { TURNSTILE_ACTIONS } from "./turnstile";
 
 // Served from public/ by assetRoute. The names carry each file's content hash.
 const WAITLIST_STYLESHEET_PATH = "/assets/waitlist/waitlist.81645bab20ed0f3f.css";
@@ -43,7 +44,7 @@ export const comingSoonPage = (
 ${form.error === undefined ? "" : `<p role="alert">${escapeHtml(form.error)}</p>\n`}<form class="waitlist" method="post" action="/waitlist">
 <label for="email">Email address</label>
 <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required${form.email ? ` value="${escapeHtml(form.email)}"` : ""}>
-<div class="cf-turnstile" data-sitekey="${escapeHtml(siteKey)}" data-callback="waitlistReady" data-expired-callback="waitlistExpired"></div>
+<div class="cf-turnstile" data-sitekey="${escapeHtml(siteKey)}" data-action="${TURNSTILE_ACTIONS.waitlist}" data-callback="waitlistReady" data-expired-callback="waitlistExpired"></div>
 <button id="join" type="submit" disabled>Join the wait list</button>
 </form>
 <noscript><p>Joining the wait list needs JavaScript, for its anti-spam check.</p></noscript>
