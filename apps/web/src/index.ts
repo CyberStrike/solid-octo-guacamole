@@ -13,6 +13,7 @@ import {
 import { STYLESHEET, STYLESHEET_PATH } from "./styles";
 import { joinWaitlist } from "./waitlist";
 import { comingSoonPage } from "./waitlist-pages";
+import { showWork } from "./work-page";
 
 const app = new Hono<{ Bindings: Bindings; Variables: SecurityVariables }>();
 
@@ -44,6 +45,8 @@ app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce")
 app.get("/about", (c) => c.html(aboutPage()));
 app.get("/terms", (c) => c.html(termsPage()));
 app.get("/privacy", (c) => c.html(privacyPage()));
+
+app.get("/works/:id", showWork);
 
 // The URL carries a hash of the content, so the response never changes under it.
 app.get(STYLESHEET_PATH, (c) =>

@@ -11,6 +11,10 @@ export type Bindings = {
   HYPERDRIVE: Hyperdrive;
   /** The queue apps/mailer sends from. */
   EMAIL: Queue<EmailMessage>;
+  /** `POST /login` requests per client IP (src/rate-limit.ts). */
+  LOGIN_IP_LIMIT: RateLimit;
+  /** `POST /login` requests per email address (src/rate-limit.ts). */
+  LOGIN_EMAIL_LIMIT: RateLimit;
   TURNSTILE_SECRET_KEY: string;
   /** Signs Better Auth's session cookies. */
   BETTER_AUTH_SECRET: string;
