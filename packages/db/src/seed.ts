@@ -205,7 +205,7 @@ async function addTags(
   // of the same tag reuses it, with `name_norm` brought up to the rule.
   const byKey = unique
     .map((tag, position) => ({ ...tag, position }))
-    .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+    .sort((a, b) => ordinal(a.type, b.type) || ordinal(a.name, b.name));
   for (const tag of byKey) {
     const row = await trx
       .insertInto("tags")
@@ -290,6 +290,16 @@ async function addVersion(
     chapterKeys: fragments.map((f) => f.key),
     fragments,
   };
+}
+
+/**
+ * Compares by UTF-16 code units, so distinct strings never tie: `localeCompare`
+ * can call "é" and "e" with a combining accent equal, and a tie would let two
+ * seeds lock the same tags in different orders.
+ */
+function ordinal(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
 }
 
 function randomAo3WorkId(): number {
