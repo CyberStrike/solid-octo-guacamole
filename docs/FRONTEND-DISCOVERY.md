@@ -17,7 +17,7 @@ fandoms and pseuds in it are invented placeholders.
 | --- | --- |
 | Visual direction | Modern and minimal. The identity is plain HTML with a strong typographic hierarchy: type, spacing and rules do the work, not boxes, shadows or imagery |
 | Warnings | **Hard constraint:** rating and archive warnings show on every work card and work page. They are never collapsed, never behind a hover, and never hidden to save space. Minimalism applies to everything else |
-| JavaScript | Reading, browsing, search and reader settings work fully with JavaScript off; small scripts only enhance them (settings without a reload, saving reading position). Forms with a Turnstile check (sign-in, upload, `/remove`) need JavaScript, because Turnstile can't produce a token without it; with JS off they say so in a `<noscript>` message |
+| JavaScript | Reading, browsing, search and reader settings work fully with JavaScript off; small scripts only enhance them (settings without a reload, saving reading position). Forms with a Turnstile check (sign-in, upload, `/remove`, and the wait list before launch) need JavaScript, because Turnstile can't produce a token without it; with JS off they say so in a `<noscript>` message |
 | Pagination | Server-side pages with real URLs. No infinite scroll |
 | Branding | No AO3 or OTW name, symbols or styling in the UI. Ratings and warnings are text badges, not symbol icons (ARCHITECTURE, opening) |
 | Author identity | No claims, no author accounts, no "my works". Removal and opt-out are a public request form that needs no sign-in (ARCHITECTURE, *Author requests & takedowns*) |
@@ -179,8 +179,8 @@ with the architecture as written. These are the resolutions. ARCHITECTURE.md is
 updated to match.
 
 1. **Forms with Turnstile need JS.** Turnstile can't produce a token without
-   JavaScript, and sign-in, upload and `/remove` all require one. So those
-   three forms need JS and show a `<noscript>` message without it, while
+   JavaScript, and sign-in, upload, `/remove` and the wait list before launch
+   all require one. So those forms need JS and show a `<noscript>` message without it, while
    reading, browsing and search stay fully usable with JS off. Uploads are
    direct presigned PUTs to R2 with progress (R2 doesn't accept form POSTs);
    the earlier no-JS multipart path through the Worker was dropped. Turnstile

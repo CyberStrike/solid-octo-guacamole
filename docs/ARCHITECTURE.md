@@ -23,7 +23,7 @@ an unofficial stopgap.
 | Author identity | No work claims and no author verification while AO3 is down. Removal and opt-out are requests anyone can make, without proving who they are |
 | Search scope | Metadata only: title, author, tags, summary |
 | Chapter rendering | Inline in app pages behind a strict CSP, with no iframe |
-| Wait list | Before launch, `/` is a coming-soon page with a double opt-in wait list. Each confirmed address gets one launch email, sent from the same mail subdomain as sign-in, spread over hours on its own queue. The list is deleted after the launch send |
+| Wait list | Before launch, `/` is a coming-soon page with a double opt-in wait list. Each confirmed address is sent one launch email, from the same mail subdomain as sign-in, spread over hours on its own queue. The list is deleted after the launch send |
 
 ## System overview
 
@@ -645,7 +645,8 @@ epub, under the normal versioning rules.
 The site goes up before the archive opens. While the web Worker's `PRELAUNCH`
 setting is on, `/` is a coming-soon page with a wait list form, and every
 other app page redirects there, except `/terms`, `/privacy`, the `/waitlist`
-pages, sign-in and `/admin`. Turning `PRELAUNCH` off opens the archive: `/`
+pages, sign-in, `/welcome/terms`, sign-out and `/admin`, so an admin can sign
+in for the first time and run the launch send. Turning `PRELAUNCH` off opens the archive: `/`
 becomes the home page and `POST /waitlist` answers 404.
 
 - **Joining.** `POST /waitlist` is a plain form with Turnstile, with the same
@@ -654,7 +655,9 @@ becomes the home page and `POST /waitlist` answers 404.
   confirmation email on `email`. The reply is the same "Check your email to
   confirm" page whether or not the address was already there, so the form
   can't be used to find out who is on the list. An unconfirmed address gets
-  at most one new confirmation email an hour.
+  at most one new confirmation email an hour and 3 in all, so the form can't
+  be used to keep mailing someone else. An address is accepted only if the
+  mailer's message contract would accept it.
 - **Double opt-in.** `GET /waitlist/confirm` only shows a "Confirm" button,
   because mail scanners open links; `POST /waitlist/confirm` sets
   `confirmed_at`. Tokens are stored hashed and last 7 days. Double opt-in
@@ -664,12 +667,20 @@ becomes the home page and `POST /waitlist` answers 404.
 - **The launch send.** An admin starts it from the admin area. The web Worker
   pages through confirmed rows with `notified_at` empty, setting
   `notified_at` and putting each batch on `email-bulk` (clearing it again if
-  the enqueue fails), so no address is queued twice. The mailer sends at the
-  configured rate, so the emails, and the visits they bring, arrive over
-  hours. Each launch email has `List-Unsubscribe` with one-click
-  `List-Unsubscribe-Post`. A POST to its link deletes the row.
-- **Deleting the list.** Once every confirmed address has been sent its email,
-  an admin purges the table. The page promises one email and nothing else, so
+  the enqueue fails), so no address is queued twice. Each invocation queues a
+  bounded number of batches, and a Cron Trigger carries a started send on
+  until nothing is left, so a long list never outgrows one request's limits.
+  The mailer sends at the configured rate, so the emails, and the visits
+  they bring, arrive over hours. A launch email that both providers refuse
+  is dead-lettered to `email-bulk-dlq`, which the web Worker consumes: it
+  clears that address's `notified_at`, so the send queues it again. Each
+  launch email has `List-Unsubscribe` with one-click
+  `List-Unsubscribe-Post`. A POST to its link deletes the row, with no
+  `Origin` check because mail providers send it; opening the link in a
+  browser shows an "Unsubscribe" button.
+- **Deleting the list.** Once every confirmed address has been queued, and a
+  day has passed since the last batch so any dead-lettered email has come
+  back, an admin purges the table. The page promises one email and nothing else, so
   nothing is kept for later.
 - **Privacy.** Only the address and the token and send times are stored: no IP
   address, user agent or referrer. Like every email the mailer sends, no log

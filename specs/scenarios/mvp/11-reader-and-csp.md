@@ -35,7 +35,7 @@ Relates to: docs/ARCHITECTURE.md § Decisions so far (Chapter rendering, Name an
 - AND the request is not otherwise handled, so no page, cookie or form action is served on `www.rarepair.fans`
 
 ### Turnstile pages allow only the Turnstile challenge frame
-- GIVEN `/login`, `/upload` and `/remove`
+- GIVEN `/login`, `/upload` and `/remove` (and `/` while `PRELAUNCH` is on, which specs/scenarios/mvp/22-waitlist.md covers)
 - WHEN each response is returned
 - THEN its CSP header is the strict policy plus exactly `frame-src https://challenges.cloudflare.com`, and nothing else is added
 - AND Turnstile's `api.js` loads through a `<script>` carrying the page nonce, covered by `'strict-dynamic'`
