@@ -133,6 +133,7 @@ optouts      (id, pseud_norm, ao3_user NULL, request_id, active, created_at)  --
 requester_blocks (id, contact_email NULL, ip_hash NULL, created_by, created_at)
 waitlist     (email PRIMARY KEY,               -- trimmed and lowercased; deleted after launch
               confirm_token_hash NULL, confirm_sent_at,
+              confirm_count,                    -- confirmation emails sent, 3 at most
               confirmed_at NULL, notified_at NULL,
               unsubscribe_token_hash NULL, created_at)  -- no IP, user agent or referrer
 ```
