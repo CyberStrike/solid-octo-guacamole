@@ -433,4 +433,30 @@ describe("chapter links", () => {
     expect(c2).toContain("bare-hash empty-href");
     expect(c2.match(/<a /g)).toHaveLength(1);
   });
+
+  it("with one chapter per file, links count only the files that have text", async () => {
+    const region = (inner: string) => `<div id="chapters" class="userstuff1">${inner}</div>`;
+    const work = await processEpub(
+      ao3Epub({
+        files: [
+          {
+            name: "f0.xhtml",
+            body: region(
+              `<p>marker-f0 <a href="f3.xhtml#far">to-f3</a> <a href="f2.xhtml">to-f2</a></p>`,
+            ),
+          },
+          { name: "f1.xhtml", body: region(`<div class="calibre8"> </div>`) },
+          { name: "f2.xhtml", body: region(`<p>marker-f2</p>`) },
+          { name: "f3.xhtml", body: region(`<p id="far">marker-f3</p>`) },
+        ],
+        navPoints: [],
+      }),
+    );
+    expect(work.reviewReasons).toContain(
+      "chapters_one_per_file: no usable table of contents or chapter headings",
+    );
+    expect(work.chapters).toHaveLength(3);
+    expect(work.chapters[0]!.html).toContain(`<a href="/works/1000001/chapters/3">to-f3</a>`);
+    expect(work.chapters[0]!.html).toContain(`<a href="/works/1000001/chapters/2">to-f2</a>`);
+  });
 });

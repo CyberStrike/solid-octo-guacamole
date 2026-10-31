@@ -196,21 +196,12 @@ function* build(scopes: ElementNode[], starts: Start[]): Generator<RawChapter> {
   }
 }
 
-function* perFile(
-  docs: SpineDoc[],
-  perDoc: Map<SpineDoc, ElementNode[]>,
-  hasRegions: boolean,
-): Generator<RawChapter> {
-  let n = 0;
-  for (const doc of docs) {
-    const scopes = hasRegions
-      ? perDoc.get(doc)!
-      : [find(doc.root, (el) => el.tag === "body") ?? doc.root];
+/** One chapter per entry: the scopes of each spine file that has content. */
+function* perFile(files: ElementNode[][]): Generator<RawChapter> {
+  for (const [i, scopes] of files.entries()) {
     const nodes = rangeContent(scopes, 0, Number.POSITIVE_INFINITY);
-    if (!hasText(nodes)) continue;
     const heading = takeLeadingHeading(nodes);
-    n++;
-    yield { title: heading ?? `Chapter ${n}`, nodes };
+    yield { title: heading ?? `Chapter ${i + 1}`, nodes };
   }
 }
 
@@ -310,10 +301,23 @@ export function splitChapters(docs: SpineDoc[], navPoints: NavPoint[]): ChapterS
   }
 
   // Last resort: one chapter per spine file that has content.
+  const scopesOf = (doc: SpineDoc) =>
+    regions.length > 0 ? perDoc.get(doc)! : [find(doc.root, (el) => el.tag === "body") ?? doc.root];
+  // Checked on the tree itself, not on copies: memory is the tight limit here.
+  const files = docs.filter((d) => hasText(scopesOf(d).flatMap((s) => s.children)));
+  const numbers = new Map(files.map((d, i) => [d.path, i + 1]));
+  const target = targets(docs, scopesOf);
+  const byPath = new Map(docs.map((d) => [d.path, d]));
   return {
-    chapters: perFile(docs, perDoc, regions.length > 0),
+    chapters: perFile(files.map(scopesOf)),
     method: "files",
     reviewReasons,
-    chapterFor: () => null,
+    chapterFor(path, anchor) {
+      const pos = target(path, anchor);
+      const n = numbers.get(path);
+      if (pos === null || n === undefined) return null;
+      // Only what the chapter shows: not the file's preface or afterword.
+      return scopesOf(byPath.get(path)!).some((s) => s.pos <= pos && pos <= s.end) ? n : null;
+    },
   };
 }
