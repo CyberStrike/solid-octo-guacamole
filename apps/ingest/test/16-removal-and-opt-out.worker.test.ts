@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ao3Epub } from "../../../packages/epub/test/helpers";
 import {
   addOptOut,
   deactivateOptOut,
@@ -6,6 +7,7 @@ import {
   expectOptedOut,
   freshAo3WorkId,
   ingestEpub,
+  ingestUpload,
   token,
   workExists,
 } from "./helpers";
@@ -27,14 +29,14 @@ const expectAccepted = async (...pseuds: string[]) =>
 
 describe("16-removal-and-opt-out", () => {
   it("Opt-out blocks future uploads", async () => {
-    // The synthetic epub's own byline, `someone`, parsed for real: no override. Reversed at
-    // the end, since every other file's uploads carry it too.
-    const optOut = await addOptOut("someone");
-    try {
-      await expectRejected();
-    } finally {
-      await deactivateOptOut(optOut);
-    }
+    // The epub's own byline, parsed for real: no override. A pseud of its own, since other
+    // files' uploads run at the same time and carry the default byline.
+    const pseud = `someone${token()}`;
+    await addOptOut(pseud);
+    const workId = freshAo3WorkId();
+
+    expectOptedOut(await ingestUpload(ao3Epub({ workId, pseud })));
+    expect(await workExists(workId)).toBe(false);
   });
 
   it("Opt-out matches the normalized pseud", async () => {

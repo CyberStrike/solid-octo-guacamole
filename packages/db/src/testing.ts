@@ -27,11 +27,12 @@ export interface TestDbOptions {
   maxConnections?: number;
 }
 
-// Frontend messages after which the backend answers ReadyForQuery (Sync, Query,
-// FunctionCall, PasswordMessage, and CopyDone or CopyFail after a COPY) or
-// closes (Terminate). Any other (Parse, Bind, Describe, Execute, Close, Flush,
-// CopyData) is part-way through a cycle. Nothing here uses COPY or SASL, so a
-// COPY inside a pipeline, or a SASL exchange, isn't kept whole.
+// Frontend messages that end a cycle: after them the backend answers
+// ReadyForQuery (Sync, Query, FunctionCall, a cleartext PasswordMessage, and
+// CopyDone or CopyFail) or closes (Terminate). Any other (Parse, Bind, Describe,
+// Execute, Close, Flush, CopyData) is part-way through one. Nothing here uses
+// COPY or SASL, and neither is kept whole: a Query that starts a COPY, and a SASL
+// response ('p' too), are answered with more of the exchange, not ReadyForQuery.
 const ENDS_CYCLE = new Set(["S", "Q", "F", "p", "c", "f", "X"]);
 
 /**
@@ -57,7 +58,7 @@ class OneCycleAtATime extends PGlite {
     // A startup packet has no type byte: it begins with its length's high byte, 0.
     const type = message[0] ?? 0;
     this.midCycle = type !== 0 && !ENDS_CYCLE.has(String.fromCharCode(type));
-    // A throw leaves the cycle open: the rest of it is still queued behind.
+    // A throw here stalls pglite-socket's whole queue anyway (#248), so midCycle stays.
     await super.execProtocolRawStream(message, options);
   }
 }
@@ -82,7 +83,7 @@ export async function createTestDb(options: TestDbOptions = {}): Promise<TestDb>
     await server.start();
     // PGlite ignores the password; Miniflare's Hyperdrive refuses a URL without one.
     const connectionString = `postgresql://postgres:postgres@${server.getServerConn()}/postgres`;
-    // PGlite is one session: the socket queues every client's queries on it.
+    // `db` shares PGlite's one session with other clients: see OneCycleAtATime.
     db = createDb({ connectionString, max: 1 });
     if (options.migrate !== false) await migrate(db);
     return { db, connectionString, close };

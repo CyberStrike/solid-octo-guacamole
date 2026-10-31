@@ -37,9 +37,6 @@ export default defineConfig({
           name: "workers",
           include: ["test/**/*.worker.test.ts"],
           globalSetup: ["./test/global-setup.ts"],
-          // One file at a time. PGlite is one session, and its socket queues what each client
-          // sends by the chunk: two clients' parameterized queries can interleave mid-query.
-          fileParallelism: false,
           // A project doesn't inherit the root's timeouts.
           testTimeout: 60_000,
           hookTimeout: 60_000,
