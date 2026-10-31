@@ -7,7 +7,7 @@ import { presignPut } from "./presign";
 import type { SecurityVariables } from "./security";
 import type { SessionVariables } from "./session";
 import { isSameOrigin } from "./signin";
-import { verifyTurnstile } from "./turnstile";
+import { TURNSTILE_ACTIONS, verifyTurnstile } from "./turnstile";
 import { EPUB_TYPE, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from "./upload-limit";
 
 // ARCHITECTURE, Ingestion pipeline, step 1. The upload page's script calls
@@ -82,6 +82,7 @@ export async function requestUpload(c: UploadContext) {
   const turnstile = await verifyTurnstile(form.get("cf-turnstile-response"), {
     secret: c.env.TURNSTILE_SECRET_KEY,
     hostname: new URL(c.req.url).hostname,
+    action: TURNSTILE_ACTIONS.upload,
     remoteIp: c.req.header("cf-connecting-ip") ?? null,
   });
   if (turnstile === "failed") {

@@ -117,6 +117,13 @@ footer a {
   line-height: 24px;
 }
 
+/* A link to a page that isn't open yet: no href, so no hover or focus state. */
+footer a[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
 .draft {
   color: var(--muted);
   font-size: var(--text-1);
@@ -138,6 +145,12 @@ input[type="search"] {
 button {
   font: inherit;
   padding: calc(var(--space) * 2) calc(var(--space) * 4);
+}
+
+input[type="search"]:disabled,
+button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 footer {

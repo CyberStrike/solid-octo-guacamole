@@ -13,7 +13,7 @@ import { sameOriginOnly, showReportForm, submitReport } from "./report";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
 import { pageState } from "./page-state";
 import { SETTINGS_SCRIPT, SETTINGS_SCRIPT_PATH } from "./reader-settings";
-import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
+import { closedBeforeLaunch, disableClosedLinks, isPrelaunch } from "./prelaunch";
 import {
   contentSecurityPolicy,
   strictTransportSecurity,
@@ -28,6 +28,7 @@ import { requestUpload, sameOriginUpload, showUpload } from "./upload";
 import { joinWaitlist } from "./waitlist";
 import { confirmWaitlist, showWaitlistConfirm } from "./waitlist-confirm";
 import { comingSoonPage } from "./waitlist-pages";
+import { showWaitlistUnsubscribe, unsubscribeWaitlist } from "./waitlist-unsubscribe";
 import { showWork } from "./work-page";
 
 const app = new Hono<{
@@ -52,6 +53,8 @@ app.use(except("/assets/*", sessionMiddleware, termsGate));
 // The reader's settings, on every page. Inside the CSP, which keys on what it returns,
 // and after the terms gate, never in front of it.
 app.use(pageState);
+// Before launch, links to closed pages are shown disabled.
+app.use(disableClosedLinks);
 
 // The moderation area: every /admin URL goes through its gate (admin.ts).
 app.route("/admin", admin);
@@ -74,6 +77,8 @@ app.post(WELCOME_TERMS, acceptTerms);
 app.post("/waitlist", joinWaitlist);
 app.get("/waitlist/confirm", showWaitlistConfirm);
 app.post("/waitlist/confirm", confirmWaitlist);
+app.get("/waitlist/unsubscribe", showWaitlistUnsubscribe);
+app.post("/waitlist/unsubscribe", unsubscribeWaitlist);
 // After launch, a stale link to the form goes home. Before it, nothing is at GET /waitlist.
 app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));
 app.get("/upload", showUpload);

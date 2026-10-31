@@ -8,7 +8,7 @@ import {
   emailsTo,
   fetchW,
   freshIp,
-  PASSING_TOKEN,
+  WAITLIST_TOKEN,
   STRICT,
   withoutNonce,
 } from "./helpers";
@@ -34,7 +34,7 @@ const postJoin = (email: string) =>
   fetchW("/waitlist", {
     method: "POST",
     headers: { ...FORM_HEADERS, "cf-connecting-ip": freshIp() },
-    body: new URLSearchParams({ email, "cf-turnstile-response": PASSING_TOKEN }).toString(),
+    body: new URLSearchParams({ email, "cf-turnstile-response": WAITLIST_TOKEN }).toString(),
   });
 
 /** Joins through the Worker and returns the token from the emailed link. */

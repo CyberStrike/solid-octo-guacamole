@@ -5,6 +5,7 @@
 // Draft copy, written from specs/scenarios/mvp/22-waitlist.md for the operator to proof.
 
 import { escapeHtml, layout, TURNSTILE_API } from "./pages";
+import { TURNSTILE_ACTIONS } from "./turnstile";
 
 // Served from public/ by assetRoute. The names carry each file's content hash.
 const WAITLIST_STYLESHEET_PATH = "/assets/waitlist/waitlist.81645bab20ed0f3f.css";
@@ -43,7 +44,7 @@ export const comingSoonPage = (
 ${form.error === undefined ? "" : `<p role="alert">${escapeHtml(form.error)}</p>\n`}<form class="waitlist" method="post" action="/waitlist">
 <label for="email">Email address</label>
 <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required${form.email ? ` value="${escapeHtml(form.email)}"` : ""}>
-<div class="cf-turnstile" data-sitekey="${escapeHtml(siteKey)}" data-callback="waitlistReady" data-expired-callback="waitlistExpired"></div>
+<div class="cf-turnstile" data-sitekey="${escapeHtml(siteKey)}" data-action="${TURNSTILE_ACTIONS.waitlist}" data-callback="waitlistReady" data-expired-callback="waitlistExpired"></div>
 <button id="join" type="submit" disabled>Join the wait list</button>
 </form>
 <noscript><p>Joining the wait list needs JavaScript, for its anti-spam check.</p></noscript>
@@ -108,4 +109,33 @@ export const waitlistUnavailablePage = () =>
   waitlistPage(
     "Something went wrong",
     `<p>We couldn't send your confirmation email just now, so nothing was changed. Please <a href="/">try again</a> in a minute.</p>`,
+  );
+
+/**
+ * The unsubscribe link's page: only a button. Opening the link deletes nothing, so a mail
+ * scanner's prefetch can't unsubscribe anyone. The form posts to the same URL, token in
+ * the query, as a mail provider's one-click request does. Draft copy, for the operator
+ * to proof.
+ */
+export const waitlistUnsubscribePage = (token: string) =>
+  waitlistPage(
+    "Unsubscribe",
+    `<form class="waitlist" method="post" action="/waitlist/unsubscribe?token=${escapeHtml(token)}">
+<p>Press the button to take your address off the wait list.</p>
+<button type="submit">Unsubscribe</button>
+</form>`,
+  );
+
+/** After an unsubscribe, whether or not a row was there. It never shows the address. Draft copy. */
+export const waitlistUnsubscribedPage = () =>
+  waitlistPage(
+    "You're unsubscribed",
+    `<p>Your address has been removed from the wait list. We won't email you again.</p>`,
+  );
+
+/** An unsubscribe link with no token, or a token of a shape we never issue. Draft copy. */
+export const waitlistUnsubscribeRefusedPage = () =>
+  waitlistPage(
+    "That link doesn't work",
+    `<p>That unsubscribe link is incomplete or damaged. Use the link in the email as it was sent.</p>`,
   );

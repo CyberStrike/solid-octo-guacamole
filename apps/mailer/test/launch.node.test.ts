@@ -51,6 +51,31 @@ describe("rendering the launch email", () => {
   });
 });
 
+describe("The launch email has a one-click unsubscribe", () => {
+  it("The built email carries List-Unsubscribe and List-Unsubscribe-Post", () => {
+    const email = render({ kind: "waitlist-launch", to: TO, url: UNSUBSCRIBE }, FROM);
+
+    expect(email.headers).toEqual({
+      "List-Unsubscribe": `<${UNSUBSCRIBE}>`,
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+  });
+
+  it("Sign-in and confirmation emails carry no headers", () => {
+    const signIn = render(
+      { kind: "sign-in", to: TO, url: "https://rarepair.fans/login/confirm?token=a" },
+      FROM,
+    );
+    const confirm = render(
+      { kind: "waitlist-confirm", to: TO, url: "https://rarepair.fans/waitlist/confirm?token=a" },
+      FROM,
+    );
+
+    expect("headers" in signIn).toBe(false);
+    expect("headers" in confirm).toBe(false);
+  });
+});
+
 describe("what each queue accepts", () => {
   const signIn = { kind: "sign-in", to: TO, url: "https://rarepair.fans/login/confirm?token=a" };
   const confirm = {

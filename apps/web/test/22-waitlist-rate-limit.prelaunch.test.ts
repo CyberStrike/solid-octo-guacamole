@@ -12,7 +12,8 @@ import {
   emailsTo,
   fetchW,
   freshIp,
-  PASSING_TOKEN,
+  LOGIN_TOKEN,
+  WAITLIST_TOKEN,
   postLogin,
   windowHeadroom,
 } from "./helpers";
@@ -42,7 +43,7 @@ const joinRequest = (fields: Record<string, string>, ip = freshIp()) =>
   });
 
 /** Joins through the Worker with a passing Turnstile token, from `ip`. */
-const join = (email: string, ip = freshIp(), token = PASSING_TOKEN) =>
+const join = (email: string, ip = freshIp(), token = WAITLIST_TOKEN) =>
   fetchW("/waitlist", {
     method: "POST",
     headers: { ...FORM_HEADERS, "cf-connecting-ip": ip },
@@ -58,9 +59,9 @@ const rowOf = (email: string) =>
  */
 async function queuedFor(to: string) {
   const sentinel = `ratelimit-sentinel-${crypto.randomUUID().slice(0, 8)}@example.test`;
-  expect(
-    (await postLogin({ email: sentinel, "cf-turnstile-response": PASSING_TOKEN })).status,
-  ).toBe(200);
+  expect((await postLogin({ email: sentinel, "cf-turnstile-response": LOGIN_TOKEN })).status).toBe(
+    200,
+  );
   await emailsTo(sentinel);
   const field = `"to":${JSON.stringify(to)}`;
   return (await deliveredEmails()).filter((body) => JSON.stringify(body).includes(field)).length;
@@ -147,7 +148,7 @@ describe("22-waitlist rate limits", () => {
     const logged = await consoleDuring(async () => {
       const ctx = createExecutionContext();
       const res = await app.fetch(
-        joinRequest({ email, "cf-turnstile-response": PASSING_TOKEN }, ip),
+        joinRequest({ email, "cf-turnstile-response": WAITLIST_TOKEN }, ip),
         { ...env, WAITLIST_IP_LIMIT: failing, WAITLIST_EMAIL_LIMIT: failing },
         ctx,
       );
@@ -189,7 +190,8 @@ describe("22-waitlist response-time floor", () => {
     return { res, elapsed };
   }
 
-  const joining = (email: string) => joinRequest({ email, "cf-turnstile-response": PASSING_TOKEN });
+  const joining = (email: string) =>
+    joinRequest({ email, "cf-turnstile-response": WAITLIST_TOKEN });
 
   it("Every join answers no sooner than the floor, whatever the outcome", async () => {
     // A new address.
