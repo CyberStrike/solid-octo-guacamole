@@ -3,6 +3,8 @@
 // `pg` nor PGlite (nor `./index`, which pulls in `pg`): the caller passes its
 // own Kysely. It writes no R2 object itself; `putFragments` does, in workerd,
 // with the test's bucket binding. Text is synthetic: no fic text in tests.
+// Default tags are shared rows: on a database several test files share, give
+// each file its own tag names and AO3 work IDs, or a listing sees the others'.
 import type { Kysely, Transaction } from "kysely";
 import type { Database, HiddenCause, TagType } from "./schema";
 import { normalizeTagName } from "./tags";
@@ -92,7 +94,7 @@ export async function seedWork(
     ...(rating === null ? [] : [{ type: "rating" as const, name: rating }]),
     ...DEFAULT_TAGS,
   ];
-  return db.transaction().execute(async (trx) => {
+  return inTransaction(db, async (trx) => {
     const userId = options.userId ?? (await addUser(trx));
     const work = await trx
       .insertInto("works")
@@ -113,10 +115,12 @@ export async function seedWork(
     const authors = options.anonymous
       ? [{ pseud: "Anonymous", ao3_user: null }]
       : (options.authors ?? [{ pseud: "Seed Author", ao3_user: "seed_author" }]);
-    await trx
-      .insertInto("work_authors")
-      .values(authors.map((a) => ({ work_id: work.id, ...a })))
-      .execute();
+    if (authors.length > 0) {
+      await trx
+        .insertInto("work_authors")
+        .values(authors.map((a) => ({ work_id: work.id, ...a })))
+        .execute();
+    }
     await addTags(trx, work.id, tags);
     const seeded = { workId: work.id, ao3WorkId, userId };
     const version = await addVersion(trx, seeded, { ...options, current: true });
@@ -140,9 +144,9 @@ export async function seedVersion(
   work: { workId: string; ao3WorkId: number; userId: string },
   options: SeedVersionOptions & { current?: boolean } = {},
 ): Promise<SeededVersion> {
-  return db
-    .transaction()
-    .execute((trx) => addVersion(trx, work, { ...options, current: options.current ?? true }));
+  return inTransaction(db, (trx) =>
+    addVersion(trx, work, { ...options, current: options.current ?? true }),
+  );
 }
 
 /** Puts each fragment in the bucket. Call it before reading the seeded work. */
@@ -150,10 +154,23 @@ export async function putFragments(bucket: FragmentBucket, fragments: Fragment[]
   await Promise.all(fragments.map((f) => bucket.put(f.key, f.body)));
 }
 
+/** Runs `fn` in the caller's transaction when it passed one, so a test can roll a seed back. */
+async function inTransaction<T>(
+  db: Kysely<Database>,
+  fn: (trx: Transaction<Database>) => Promise<T>,
+): Promise<T> {
+  if (!db.isTransaction) return db.transaction().execute(fn);
+  // SAFETY: Kysely sets isTransaction only on a Transaction instance.
+  const trx = db as Transaction<Database>;
+  return fn(trx);
+}
+
 type Planned = Required<SeedChapter>;
 
 function planChapters(chapters: number | SeedChapter[] = 1): Planned[] {
   const list = Array.isArray(chapters) ? chapters : Array.from({ length: chapters }, () => ({}));
+  // Ingest never writes a version without chapters.
+  if (list.length === 0) throw new RangeError("seed: a version needs at least one chapter");
   return list.map((c: SeedChapter, i) => ({
     title: c.title ?? `Chapter ${i + 1}`,
     html: c.html ?? `<p>Seeded text of chapter ${i + 1}.</p>`,
@@ -175,19 +192,34 @@ async function addTags(
   workId: string,
   tags: { type: TagType; name: string }[],
 ): Promise<void> {
-  for (const [position, tag] of tags.entries()) {
-    // One row per type and name: a second seed of the same tag reuses it.
+  // A tag given twice keeps its first place.
+  const seen = new Set<string>();
+  const unique = tags.filter((tag) => {
+    const key = `${tag.type}\n${tag.name}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  // Upserted in (type, name) order, so concurrent seeds lock shared rows in
+  // one order and can't deadlock. One row per type and name: a second seed
+  // of the same tag reuses it, with `name_norm` brought up to the rule.
+  const byKey = unique
+    .map((tag, position) => ({ ...tag, position }))
+    .sort((a, b) => a.type.localeCompare(b.type) || a.name.localeCompare(b.name));
+  for (const tag of byKey) {
     const row = await trx
       .insertInto("tags")
-      .values({ ...tag, name_norm: normalizeTagName(tag.type, tag.name) })
+      .values({ type: tag.type, name: tag.name, name_norm: normalizeTagName(tag.type, tag.name) })
       .onConflict((oc) =>
-        oc.columns(["type", "name"]).doUpdateSet((eb) => ({ name: eb.ref("excluded.name") })),
+        oc
+          .columns(["type", "name"])
+          .doUpdateSet((eb) => ({ name_norm: eb.ref("excluded.name_norm") })),
       )
       .returning("id")
       .executeTakeFirstOrThrow();
     await trx
       .insertInto("work_tags")
-      .values({ work_id: workId, tag_id: row.id, position })
+      .values({ work_id: workId, tag_id: row.id, position: tag.position })
       .execute();
   }
 }

@@ -94,6 +94,31 @@ describe("@archive/db/seed seedWork", () => {
     expect(work?.tags.map((x) => x.type)).toContain("warning");
   });
 
+  it("A seed inside the caller's transaction rolls back with it", async () => {
+    let ao3WorkId = 0;
+    await expect(
+      t.db.transaction().execute(async (trx) => {
+        ({ ao3WorkId } = await seedWork(trx, { chapters: 2 }));
+        await seedVersion(trx, await seedWork(trx), { chapters: 1 });
+        expect((await getLiveWork(trx, ao3WorkId))?.chapters).toHaveLength(2);
+        throw new Error("roll back");
+      }),
+    ).rejects.toThrow("roll back");
+    expect(await getLiveWork(t.db, ao3WorkId)).toBeNull();
+  });
+
+  it("A tag given twice is kept once, where it first appears", async () => {
+    const s = await seedWork(t.db, {
+      tags: [
+        { type: "character", name: "Twice Seeded" },
+        { type: "freeform", name: "Between" },
+        { type: "character", name: "Twice Seeded" },
+      ],
+    });
+    const work = await getLiveWork(t.db, s.ao3WorkId);
+    expect(work?.tags.map((x) => x.name)).toEqual(["Twice Seeded", "Between"]);
+  });
+
   it("A work nobody seeded is not found", async () => {
     expect(await getLiveWork(t.db, 2_147_483_647)).toBeNull();
   });
@@ -147,8 +172,22 @@ describe("@archive/db/seed seedVersion", () => {
 
 describe("@archive/db/seed in workerd", () => {
   it("The seed module imports neither pg nor PGlite", async () => {
-    const source = await readFile(new URL("../src/seed.ts", import.meta.url), "utf8");
-    const imports = [...source.matchAll(/from\s+"([^"]+)"/g)].map((m) => m[1]);
-    expect(imports.filter((x) => !["kysely", "./schema", "./tags"].includes(x ?? ""))).toEqual([]);
+    // Every module seed.ts reaches, following relative imports, and every
+    // package any of them names: only Kysely, whose types are all it uses.
+    const seen = new Set<string>();
+    const packages = new Set<string>();
+    const visit = async (file: string) => {
+      if (seen.has(file)) return;
+      seen.add(file);
+      const source = await readFile(new URL(`../src/${file}.ts`, import.meta.url), "utf8");
+      const specifiers = source.matchAll(/(?:from|import)\s*\(?\s*["']([^"']+)["']/g);
+      for (const [, spec = ""] of specifiers) {
+        if (spec.startsWith("./")) await visit(spec.slice(2));
+        else packages.add(spec);
+      }
+    };
+    await visit("seed");
+    expect([...seen].sort()).toEqual(["schema", "seed", "tags"]);
+    expect([...packages]).toEqual(["kysely"]);
   });
 });
