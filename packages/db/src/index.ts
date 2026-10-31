@@ -1,6 +1,7 @@
 export { createDb, type DbConfig } from "./client";
 export { migrate } from "./migrate";
 export { authSchema } from "./auth-schema";
+export { normalizeTagName } from "./tags";
 export type {
   Database,
   UserTable,
