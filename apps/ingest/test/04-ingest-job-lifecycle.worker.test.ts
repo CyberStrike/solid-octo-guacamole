@@ -182,7 +182,9 @@ describe("04-ingest-job-lifecycle", () => {
     // Sizes and digests, not bytes: a failing diff of a whole epub would print all of it.
     expect(original?.size).toBe(epub.byteLength);
     const digest = async (data: BufferSource) =>
-      new Uint8Array(await crypto.subtle.digest("SHA-256", data)).toHex();
+      Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", data)), (b) =>
+        b.toString(16).padStart(2, "0"),
+      ).join("");
     expect(await digest((await original?.arrayBuffer()) ?? new ArrayBuffer(0))).toBe(
       await digest(epub),
     );
