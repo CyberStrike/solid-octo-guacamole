@@ -3,7 +3,7 @@
 Put real AO3 `.epub` downloads here to run the `packages/epub` fixture tests
 against them. They are fanworks, and this repo is public, so `*.epub` in this
 folder is git-ignored. Never commit them, and don't copy their text into tests
-or snapshots. Name them neutrally (`long-work-01.epub`, `multi-chapter-01.epub`),
+or snapshots. Name them neutrally (`one-shot-02.epub`, `one-shot-01.epub`),
 never after the work.
 
 The tests read this folder in a Node `globalSetup` and pass the files into the
