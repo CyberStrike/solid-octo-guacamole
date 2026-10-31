@@ -39,8 +39,9 @@ describe("packages/db chapter total and byline order", () => {
   it("The migration applies on top of the earlier ones, and a second run applies nothing", async () => {
     const deployed = await createDeployedDb();
     try {
-      expect(await migrate(deployed.db)).toEqual([MIGRATION]);
-      expect(await migrate(deployed.db)).toEqual([]);
+      const first = await migrate(deployed.db);
+      const second = await migrate(deployed.db);
+      expect([first, second]).toEqual([[MIGRATION], []]);
     } finally {
       await deployed.close();
     }
