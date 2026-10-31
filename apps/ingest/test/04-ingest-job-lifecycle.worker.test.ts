@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ao3Epub } from "../../../packages/epub/test/helpers";
 import { deliver, gated, pendingUpload, setLease, uploadRow, watchedWorker } from "./helpers";
 
@@ -102,6 +102,32 @@ describe("04-ingest-job-lifecycle", () => {
     expect(row.status).toBe("parse_failed");
     expect(row.error_stage).toBe("save");
     expect(row.error).toBe("RangeError");
+  });
+
+  it("logs a failure's class name, never its message", async () => {
+    const id = await pendingUpload(ao3Epub());
+    const { handler } = watchedWorker({
+      process: async () => {
+        throw new TypeError("text quoted from the file: marker-in-message");
+      },
+    });
+    const lines: string[] = [];
+    for (const level of ["log", "info", "warn", "error", "debug"] as const) {
+      vi.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+        lines.push(JSON.stringify(args));
+      });
+    }
+
+    try {
+      await deliver([{ upload_id: id }], { attempts: 4, handler });
+    } finally {
+      vi.restoreAllMocks();
+    }
+
+    const text = lines.join("\n");
+    expect(text).toContain(id);
+    expect(text).not.toContain("marker-in-message");
+    expect((await uploadRow(id)).error).toBe("TypeError");
   });
 
   it("releases the lease and retries a failure with attempts left", async () => {

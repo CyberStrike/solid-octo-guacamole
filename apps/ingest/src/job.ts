@@ -28,10 +28,9 @@ export async function runJob(deps: JobDeps, uploadId: string, attempt: number): 
   // Another job holds it, or it is done: this delivery has nothing to do.
   if (lease === null) return "ack";
   let stage: Stage = "read";
+  let outcome: Outcome | null;
   try {
-    const outcome = await run(deps, lease, (next) => (stage = next));
-    if (outcome !== null) await endLease(deps.db, lease, outcome);
-    return "ack";
+    outcome = await run(deps, lease, (next) => (stage = next));
   } catch (error) {
     const final = attempt > MAX_RETRIES;
     await endLease(
@@ -46,6 +45,10 @@ export async function runJob(deps: JobDeps, uploadId: string, attempt: number): 
     );
     return "retry";
   }
+  // Outside the job's try: if this write fails, the message is retried, and the rejection is
+  // found again, never recorded as the job's own failure.
+  if (outcome !== null) await endLease(deps.db, lease, outcome);
+  return "ack";
 }
 
 /**
@@ -64,7 +67,8 @@ async function run(
   }
   // By the object's size, before its body is read: an over-limit file never reaches memory.
   if (object.size > LIMITS.maxInputBytes) {
-    await object.body.cancel();
+    // Only to free the stream: a failure to cancel it doesn't change the verdict.
+    await object.body.cancel().catch(() => undefined);
     return { status: "too_large", failure: { stage: "read", error: "too_large" } };
   }
   const bytes = new Uint8Array(await object.arrayBuffer());

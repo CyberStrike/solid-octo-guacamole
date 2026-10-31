@@ -1,7 +1,8 @@
-// The ingest queue's message contract. `POST /uploads/:id/complete` in the web Worker
-// produces it (ARCHITECTURE, Ingestion pipeline, step 3); the ingest Worker consumes it.
+// The ingest queue's message contract, as it travels on the queue. `POST /uploads/:id/complete`
+// in the web Worker produces it (ARCHITECTURE, Ingestion pipeline, step 3); the ingest Worker
+// consumes it. A producer types its queue with this.
 export interface IngestMessage {
-  uploadId: string;
+  upload_id: string;
 }
 
 // Upload ids are random text (packages/db, 0002): a uuid in practice, bounded here.
@@ -17,5 +18,5 @@ export function parseMessage(body: unknown): IngestMessage | null {
   if (typeof upload_id !== "string" || upload_id.length === 0 || upload_id.length > MAX_ID) {
     return null;
   }
-  return { uploadId: upload_id };
+  return { upload_id };
 }

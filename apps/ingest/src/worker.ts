@@ -1,5 +1,6 @@
-import { createDb } from "@archive/db";
+import { createDb, type Database } from "@archive/db";
 import { processEpub } from "@archive/epub";
+import type { Kysely } from "kysely";
 import { runJob, type JobDeps, type Verdict } from "./job";
 import { parseMessage } from "./message";
 
@@ -22,12 +23,21 @@ const DEFAULT_STEPS: Steps = {
 export function ingestWorker(steps: Partial<Steps> = {}) {
   return {
     async queue(batch, env, ctx) {
-      const db = createDb({ connectionString: env.HYPERDRIVE.connectionString });
+      // Logs carry upload ids, verdicts, counts and error class names only: never an error's
+      // message or other text from an uploaded file.
+      let db: Kysely<Database>;
+      try {
+        // One job at a time needs one connection.
+        db = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 });
+      } catch (error) {
+        console.error({ event: "ingest.setup", error: errorName(error) });
+        batch.retryAll();
+        return;
+      }
       const deps: JobDeps = { db, bucket: env.BUCKET, ...DEFAULT_STEPS, ...steps };
-      // Logs carry upload ids, verdicts and counts only: never text from an uploaded file.
       let invalid = 0;
       try {
-        // One job at a time: an invocation holds one epub in memory, and one connection.
+        // One job at a time: an invocation holds one epub in memory.
         for (const message of batch.messages) {
           const parsed = parseMessage(message.body);
           if (parsed === null) {
@@ -35,15 +45,17 @@ export function ingestWorker(steps: Partial<Steps> = {}) {
             message.ack();
             continue;
           }
-          const { uploadId } = parsed;
+          const uploadId = parsed.upload_id;
+          const line = { event: "ingest.job", uploadId, attempt: message.attempts };
           // Caught per message: a throw out of queue() would retry the whole batch.
           let verdict: Verdict = "retry";
           try {
             verdict = await runJob(deps, uploadId, message.attempts);
-          } catch {
+            console.log({ ...line, verdict });
+          } catch (error) {
             // Postgres down while claiming or recording: the queue tries again later.
+            console.error({ ...line, verdict, error: errorName(error) });
           }
-          console.log({ event: "ingest.job", uploadId, attempt: message.attempts, verdict });
           if (verdict === "ack") message.ack();
           else message.retry();
         }
@@ -54,5 +66,8 @@ export function ingestWorker(steps: Partial<Steps> = {}) {
     },
   } satisfies ExportedHandler<Env>;
 }
+
+// oxlint-disable-next-line deslop/no-unknown-parameters -- a caught value is unknown by contract
+const errorName = (error: unknown) => (error instanceof Error ? error.name : "unknown");
 
 export default ingestWorker();
