@@ -26,7 +26,8 @@ export async function showChapter(c: ReaderContext) {
   const n = positiveInt(c.req.param("n"));
   if (id === null || n === null) return c.notFound();
 
-  const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
+  // One query, so one connection.
+  const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   let live;
   try {
     live = await getLiveWork(db, id);
@@ -49,7 +50,8 @@ export async function showChapter(c: ReaderContext) {
   // The fragment is trusted markup only because the sanitizer wrote it; it goes in unescaped.
   const fragment = await object.text();
 
-  const nav = (end: "top" | "bottom") => chapterNav(id, n, live.chapters, end);
+  const options = chapterOptions(n, live.chapters);
+  const nav = (end: "top" | "bottom") => chapterNav(id, n, live.chapters.length, options, end);
   // The slim top bar is the reader's only chrome of its own: the work title, which is
   // the page's one h1, and the settings link. It scrolls away with the page.
   const bar = `<div class="reader-bar"><h1>${escapeHtml(live.work.title)}</h1><a href="/settings/reader">Reader settings</a></div>`;
@@ -77,31 +79,29 @@ export function jumpToChapter(c: ReaderContext) {
   return c.redirect(chapterUrl(id, n), 303);
 }
 
-/** A chapter's URL, from numbers only. */
-const chapterUrl = (id: number, n: number) => `/works/${id}/chapters/${n}`;
+/** A work's chapters, and one chapter's URL, from numbers only. */
+const chaptersUrl = (id: number) => `/works/${id}/chapters`;
+const chapterUrl = (id: number, n: number) => `${chaptersUrl(id)}/${n}`;
+
+/** The select's options, every chapter with the current one selected. */
+const chapterOptions = (n: number, chapters: { n: number; title: string }[]) =>
+  chapters
+    .map(
+      (ch) =>
+        `<option value="${ch.n}"${ch.n === n ? " selected" : ""}>${ch.n}. ${escapeHtml(ch.title)}</option>`,
+    )
+    .join("");
 
 /**
  * Previous, a select of every chapter, and next. There is no previous link on the
  * first chapter and no next link on the last. The select's form is a plain GET, so
  * it works without JavaScript.
  */
-function chapterNav(
-  id: number,
-  n: number,
-  chapters: { n: number; title: string }[],
-  end: "top" | "bottom",
-) {
-  const last = chapters.length;
-  const options = chapters
-    .map(
-      (ch) =>
-        `<option value="${ch.n}"${ch.n === n ? " selected" : ""}>${ch.n}. ${escapeHtml(ch.title)}</option>`,
-    )
-    .join("");
+function chapterNav(id: number, n: number, last: number, options: string, end: "top" | "bottom") {
   const label = end === "top" ? "Chapters" : "Chapters, end of page";
   return `<nav class="chapter-nav" aria-label="${label}">
 ${n > 1 ? `<a rel="prev" href="${chapterUrl(id, n - 1)}">Previous chapter</a>` : ""}
-<form method="get" action="/works/${id}/chapters">
+<form method="get" action="${chaptersUrl(id)}">
 <label for="chapter-${end}">Chapter</label>
 <select id="chapter-${end}" name="n">${options}</select>
 <button type="submit">Go</button>

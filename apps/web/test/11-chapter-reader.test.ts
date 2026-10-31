@@ -151,8 +151,7 @@ describe("11-reader-and-csp", () => {
       url.search = new URLSearchParams({ [name]: "5" }).toString();
 
       const res = await fetchW(url.pathname + url.search);
-      expect(res.status).toBeGreaterThanOrEqual(301);
-      expect(res.status).toBeLessThanOrEqual(308);
+      expect(res.status).toBe(303);
       expect(res.headers.get("location")).toBe(chapterUrl(W, 5));
       const chapter5 = await htmlOf(res.headers.get("location") ?? "");
       expect(articleOf(chapter5)).toContain("W-FIVE-TEXT");
