@@ -44,7 +44,9 @@ describe("packages/db chapter total and byline order", () => {
     try {
       const first = await migrate(deployed.db);
       const second = await migrate(deployed.db);
-      expect([first, second]).toEqual([[MIGRATION], []]);
+      // This one, then any registered after it.
+      const fromHere = migrations.slice(migrations.findIndex((x) => x.name === MIGRATION));
+      expect([first, second]).toEqual([fromHere.map((x) => x.name), []]);
     } finally {
       await deployed.close();
     }

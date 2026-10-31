@@ -133,6 +133,7 @@ optouts      (id, pseud_norm, ao3_user NULL, request_id, active, created_at)  --
 requester_blocks (id, contact_email NULL, ip_hash NULL, created_by, created_at)
 waitlist     (email PRIMARY KEY,               -- trimmed and lowercased; deleted after launch
               confirm_token_hash NULL, confirm_sent_at,
+              confirm_count,                    -- confirmation emails sent, 3 at most
               confirmed_at NULL, notified_at NULL,
               unsubscribe_token_hash NULL, created_at)  -- no IP, user agent or referrer
 ```
@@ -416,7 +417,8 @@ can be snapshotted.
   nonce, so any script that gets past the sanitizer won't run. Session cookies
   are `HttpOnly`, so scripts can't read them anyway.
 - **Pages with a Turnstile check** (sign-in, upload, `/remove`, and the
-  coming-soon page at `/` while `PRELAUNCH` is on) add exactly one
+  coming-soon page at `/` while `PRELAUNCH` is on, with `/waitlist`, where a
+  refused join shows its form again) add exactly one
   allowance, `frame-src https://challenges.cloudflare.com`, for the challenge
   iframe. Turnstile's `api.js` loads through a nonced `<script>`, which
   `'strict-dynamic'` already covers. Reader and work pages never get it.
@@ -537,8 +539,9 @@ can be snapshotted.
     logs provider message IDs and outcomes only.
   - **Failures:** a message that fails on both providers is retried by the
     queue, then moved to a dead-letter queue, never dropped silently. Queued
-    messages hold an address and a sign-in link (which expires after 15
-    minutes), so the dead-letter queue keeps them for one day at most, and
+    messages hold an address and a link (a sign-in link expires after 15
+    minutes, a wait list confirmation link after 7 days), so the dead-letter
+    queue keeps them for one day at most, and
     nothing prints its contents to logs.
   - The mailer sends with Resend's batch API, to stay under its
     per-second API limit (by default about 2 requests a second; ask for more
@@ -701,7 +704,8 @@ markup: its inline `style` attributes become stylesheet rules, because
   day has passed since the last batch so any dead-lettered email has come
   back, an admin purges the table. The page promises one email and nothing else, so
   nothing is kept for later.
-- **Privacy.** Only the address and the token and send times are stored: no IP
+- **Privacy.** Only the address, the token hashes, the send times and how many
+  confirmation emails were sent are stored: no IP
   address, user agent or referrer. Like every email the mailer sends, no log
   line holds an address or a link. The privacy notice describes the wait list.
 
