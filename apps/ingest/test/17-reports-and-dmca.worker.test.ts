@@ -18,7 +18,8 @@ describe("17-reports-and-dmca", () => {
   });
 
   it("Pending DMCA notice does not block an upload", async () => {
-    // Saved means on to the save step, where the versioning rules apply (I2, #32).
+    // Passed on to the save step, where the versioning rules apply (I4, #33; until then the
+    // save refuses a known work as `work_exists`).
     expectNotOptedOut(await reuploadAfterNotice("live", "pending"));
   });
 
