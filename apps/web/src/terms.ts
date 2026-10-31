@@ -15,8 +15,9 @@ export const WELCOME_TERMS = "/welcome/terms";
 
 /**
  * What an account that hasn't accepted the terms can still reach: the terms page,
- * the terms and privacy pages it links to, sign-in (so it can switch address) and
- * static files. A path ending in `/*` covers itself and everything below it, by
+ * the terms and privacy pages (ARCHITECTURE, Auth), sign-in (so it can switch
+ * address) and static files. The page chrome's other links, such as /about and
+ * /remove, lead back to the terms page until it accepts. A path ending in `/*` covers itself and everything below it, by
  * whole segment, as Hono's `/assets/*` does.
  * Sign-out belongs here once a ticket builds it.
  */
@@ -57,11 +58,13 @@ type TermsContext = Context<{ Bindings: Bindings; Variables: SessionVariables }>
 
 /**
  * Where accepting continues to: `next` reduced to a same-site path, and never the
- * terms page again, which would only send the account on to its own `next`.
+ * terms page again. A `next` that is the terms page, as signing in from it gives,
+ * continues to its own `next` instead, one level deep; anything deeper goes home.
  */
-function continueTo(next: string | null): string {
-  const path = safeNext(next);
-  return new URL(path, SITE).pathname === WELCOME_TERMS ? "/" : path;
+function continueTo(next: string | null, depth = 0): string {
+  const url = new URL(safeNext(next), SITE);
+  if (url.pathname !== WELCOME_TERMS) return url.pathname + url.search;
+  return depth === 0 ? continueTo(url.searchParams.get("next"), 1) : "/";
 }
 
 /**
@@ -77,9 +80,10 @@ export function showTerms(c: TermsContext) {
 
 /**
  * `POST /welcome/terms`: sets `terms_accepted_at`, once, and continues to `next`
- * with a 303. As on the sign-in forms, the origin is checked first, before the
- * session and the body, and `next` is reduced whatever the form says. Signed out,
- * it is sent to sign in, as `requireSignIn` does.
+ * with a 303. As on the sign-in forms, the route checks the origin first, before
+ * the body is read and anything is written (the global session lookup has run by
+ * then), and `next` is reduced whatever the form says. Signed out, it is sent to
+ * sign in, as `requireSignIn` does.
  */
 export async function acceptTerms(c: TermsContext) {
   if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
@@ -88,7 +92,8 @@ export async function acceptTerms(c: TermsContext) {
   // A body too large to be our form is not read; accepting needs nothing from it.
   const next = (await readForm(c.req.raw))?.get("next") ?? null;
   if (user.termsAcceptedAt == null) {
-    const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
+    // One query, so one connection.
+    const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
     try {
       // Only while still empty: accepting again keeps the first time.
       await db

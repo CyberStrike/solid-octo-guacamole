@@ -215,8 +215,10 @@ describe("01-auth-magic-link", () => {
     for (const next of ["https://evil.example/", "//evil.example", "/\\evil.example", ""]) {
       expect(await hiddenNext(next), next).toBe("/");
     }
-    // Coming back to the terms page itself would only show it again.
-    expect(await hiddenNext("/welcome/terms?next=/works/1")).toBe("/");
+    // Never the terms page itself: its own next instead, one level deep.
+    expect(await hiddenNext("/welcome/terms?next=/works/1")).toBe("/works/1");
+    expect(await hiddenNext("/welcome/terms?next=/welcome/terms?next=/works/1")).toBe("/");
+    expect(await hiddenNext("/welcome/terms?next=https://evil.example/")).toBe("/");
     expect(await hiddenNext(`/works/1?q="'<>&`)).toBe("/works/1?q=%22%27%3C%3E&amp;");
   });
 
@@ -252,7 +254,8 @@ describe("01-auth-magic-link", () => {
     expect(await from(WORK_PAGE)).toBe(WORK_PAGE);
     expect(await from("https://evil.example/")).toBe("/");
     expect(await from("/welcome/terms")).toBe("/");
-    expect(await from("/welcome/terms?next=/works/1")).toBe("/");
+    // As signing in from the terms page leaves it: on to the page it carried.
+    expect(await from(`/welcome/terms?next=${encodeURIComponent(WORK_PAGE)}`)).toBe(WORK_PAGE);
   });
 
   it("Before accepting, an upload request gets no row and no URL", async () => {
