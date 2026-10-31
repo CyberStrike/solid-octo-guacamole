@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from "hono";
+import { isPrelaunch, type Bindings } from "./prelaunch";
 
 export type SecurityVariables = { nonce: string };
 
@@ -48,14 +49,18 @@ export const wwwToBareDomain: MiddlewareHandler = async (c, next) => {
 /** A fresh base64 nonce of 16 random bytes. */
 const newNonce = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
 
+/** Whether a path's page has a Turnstile check: / has the wait list form only before launch. */
+const hasTurnstile = (path: string, env: Pick<Bindings, "PRELAUNCH">) =>
+  TURNSTILE_PATHS.has(path) || (path === "/" && isPrelaunch(env));
+
 /**
  * Sets the CSP on every HTML response, with a nonce handlers read as c.get("nonce").
  * The Turnstile pages get the challenge frame too, keyed on path so any method has it.
  */
-export const contentSecurityPolicy: MiddlewareHandler<{ Variables: SecurityVariables }> = async (
-  c,
-  next,
-) => {
+export const contentSecurityPolicy: MiddlewareHandler<{
+  Bindings: Pick<Bindings, "PRELAUNCH">;
+  Variables: SecurityVariables;
+}> = async (c, next) => {
   const nonce = newNonce();
   c.set("nonce", nonce);
   await next();
@@ -63,7 +68,7 @@ export const contentSecurityPolicy: MiddlewareHandler<{ Variables: SecurityVaria
     const policy = strictPolicy(nonce);
     c.header(
       "Content-Security-Policy",
-      TURNSTILE_PATHS.has(c.req.path) ? `${policy}; ${TURNSTILE_FRAME}` : policy,
+      hasTurnstile(c.req.path, c.env) ? `${policy}; ${TURNSTILE_FRAME}` : policy,
     );
   }
 };

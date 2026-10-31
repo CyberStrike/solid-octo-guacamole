@@ -12,8 +12,16 @@ const fetchW = (input: string, init: RequestInit = {}) =>
 
 const TURNSTILE_API = "https://challenges.cloudflare.com/turnstile/v0/api.js";
 
+// The policies from ARCHITECTURE, Reading, with the nonce left as {n}.
+const STRICT =
+  "default-src 'self'; script-src 'nonce-{n}' 'strict-dynamic'; style-src 'self'; img-src 'self' https://content.rarepair.fans; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+const TURNSTILE = `${STRICT}; frame-src https://challenges.cloudflare.com`;
+
 /** The nonce in a CSP header, or null when there is none. */
 const nonceOf = (csp: string | null) => csp?.match(/'nonce-([^']*)'/)?.[1] ?? null;
+
+/** The header with its nonce swapped back to {n}, for whole-string comparison. */
+const withoutNonce = (csp: string | null) => csp?.replace(/'nonce-[^']*'/, "'nonce-{n}'") ?? null;
 
 /** Every opening tag of one element in some HTML. */
 const tags = (html: string, name: string) => html.match(new RegExp(`<${name}\\b[^>]*>`, "g")) ?? [];
@@ -64,5 +72,16 @@ describe("22-waitlist", () => {
     expect(buttons).toHaveLength(1);
     expect(buttons[0]).toMatch(/\bdisabled\b/);
     expect(tags(html, "input").filter((tag) => /type="(submit|image)"/.test(tag))).toEqual([]);
+  });
+
+  it("Coming-soon page allows the Turnstile frame and nothing more", async () => {
+    for (const [path, method] of [
+      ["/", "GET"],
+      ["/", "HEAD"],
+      ["/?ref=1", "GET"],
+    ]) {
+      const res = await fetchW(path, { method });
+      expect(withoutNonce(res.headers.get("content-security-policy"))).toBe(TURNSTILE);
+    }
   });
 });
