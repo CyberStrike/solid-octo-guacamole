@@ -1,8 +1,9 @@
 import { createDb } from "@archive/db";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { makeAuth, SESSION_COOKIE } from "./auth";
 import type { Bindings } from "./env";
+import { safeNext } from "./signin";
 
 /** A signed-in user and their session, as Better Auth reads them from the cookie. */
 export type Session = ReturnType<typeof makeAuth>["$Infer"]["Session"];
@@ -47,3 +48,26 @@ export const sessionMiddleware: MiddlewareHandler<{
     c.executionCtx.waitUntil(db.destroy());
   }
 };
+
+/**
+ * Sends the request to `target` before its page, carrying the page's path and query
+ * as `next`, reduced to a same-site path: a GET or HEAD with a 302, any other method
+ * with a 303, since a form post is answered with a GET. `carryPosted: false` leaves
+ * `next` off the 303.
+ */
+export function redirectCarryingNext(c: Context, target: string, { carryPosted = true } = {}) {
+  const isRead = c.req.method === "GET" || c.req.method === "HEAD";
+  if (!isRead && !carryPosted) return c.redirect(target, 303);
+  const url = new URL(c.req.url);
+  const query = new URLSearchParams({ next: safeNext(url.pathname + url.search) });
+  return c.redirect(`${target}?${query.toString()}`, isRead ? 302 : 303);
+}
+
+/**
+ * For a route that needs an account, after `sessionMiddleware`: signed out, it is
+ * sent to sign in, carrying the page as `next`, a POST included (ARCHITECTURE,
+ * Auth, "Signed-out requests to signed-in pages"). A route that must answer a
+ * script with 401 instead checks `c.var.session` itself.
+ */
+export const requireSignIn: MiddlewareHandler<{ Variables: SessionVariables }> = async (c, next) =>
+  c.var.session != null ? next() : redirectCarryingNext(c, "/login");

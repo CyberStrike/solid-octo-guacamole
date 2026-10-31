@@ -428,6 +428,47 @@ html[data-face="sans"] {
   border-bottom: 1px solid var(--rule);
   text-align: center;
 }
+
+/* Listing sort and filters, and its pages (FRONTEND-DISCOVERY, Pagination): rows that wrap at 360px. */
+
+.listing-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) * 2) calc(var(--space) * 4);
+  align-items: end;
+  margin: calc(var(--space) * 4) 0;
+  padding-bottom: calc(var(--space) * 4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.listing-filters p {
+  margin: 0;
+}
+
+.listing-filters label {
+  display: block;
+  font-size: var(--text-1);
+}
+
+.listing-filters select,
+.listing-filters input {
+  font: inherit;
+  max-width: 100%;
+}
+
+.pager ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) * 2) calc(var(--space) * 4);
+  list-style: none;
+  margin: calc(var(--space) * 4) 0;
+  padding: 0;
+}
+
+/* The current page is bold text, not a link: not colour alone. */
+.pager [aria-current="page"] {
+  font-weight: bold;
+}
 `;
 
 // FNV-1a, enough to give each version of the stylesheet its own URL.

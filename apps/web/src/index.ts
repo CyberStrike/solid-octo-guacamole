@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { except } from "hono/combine";
 import { admin } from "./admin";
 import { assetRoute } from "./assets";
 import { confirmSignIn, showConfirm } from "./confirm";
@@ -18,15 +19,19 @@ import {
   wwwToBareDomain,
   type SecurityVariables,
 } from "./security";
-import { sessionMiddleware } from "./session";
+import { requireSignIn, sessionMiddleware, type SessionVariables } from "./session";
 import { saveSettings, SETTINGS_PATH, showSettings } from "./settings";
 import { STYLESHEET, STYLESHEET_PATH } from "./styles";
+import { acceptTerms, showTerms, termsGate, WELCOME_TERMS } from "./terms";
 import { requestUpload, sameOriginUpload, showUpload } from "./upload";
 import { joinWaitlist } from "./waitlist";
 import { comingSoonPage } from "./waitlist-pages";
 import { showWork } from "./work-page";
 
-const app = new Hono<{ Bindings: Bindings; Variables: SecurityVariables }>();
+const app = new Hono<{
+  Bindings: Bindings;
+  Variables: SecurityVariables & SessionVariables;
+}>();
 
 // Order matters: HSTS covers everything, the www redirect included, and www
 // never reaches the CSP, the routes or anything that could set a cookie. Before
@@ -35,7 +40,15 @@ app.use(strictTransportSecurity);
 app.use(wwwToBareDomain);
 app.use(closedBeforeLaunch);
 app.use(contentSecurityPolicy);
-// The reader's settings, on every page. Inside the CSP, which keys on what it returns.
+// Before the session, so a cross-site upload or report is refused without a lookup.
+app.post("/uploads", sameOriginUpload);
+app.post("/works/:id/report", sameOriginOnly);
+// The session, once, for every page; routes read c.var.session and never mount it
+// again. Static files skip it, and the lookup's database connection with it. Then
+// an account that hasn't accepted the terms is sent to accept them.
+app.use(except("/assets/*", sessionMiddleware, termsGate));
+// The reader's settings, on every page. Inside the CSP, which keys on what it returns,
+// and after the terms gate, never in front of it.
 app.use(pageState);
 
 // The moderation area: every /admin URL goes through its gate (admin.ts).
@@ -54,12 +67,13 @@ app.get("/login", showSignIn);
 app.post("/login", requestSignIn);
 app.get("/login/confirm", showConfirm);
 app.post("/login/confirm", confirmSignIn);
+app.get(WELCOME_TERMS, requireSignIn, showTerms);
+app.post(WELCOME_TERMS, acceptTerms);
 app.post("/waitlist", joinWaitlist);
 // After launch, a stale link to the form goes home. Before it, nothing is at GET /waitlist.
 app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));
-// The session middleware runs on the upload and report routes only, until A4 mounts it on every page.
-app.get("/upload", sessionMiddleware, showUpload);
-app.post("/uploads", sameOriginUpload, sessionMiddleware, requestUpload);
+app.get("/upload", showUpload);
+app.post("/uploads", requestUpload);
 app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce"))));
 
 // The reader. Closed before launch, like every /works/ page.
@@ -77,8 +91,8 @@ app.get("/privacy", (c) => c.html(privacyPage()));
 
 app.get("/works/:id", showWork);
 // Signed in only.
-app.get("/works/:id/report", sessionMiddleware, showReportForm);
-app.post("/works/:id/report", sameOriginOnly, sessionMiddleware, submitReport);
+app.get("/works/:id/report", showReportForm);
+app.post("/works/:id/report", submitReport);
 app.get("/tags/:type/:name", showTagListing);
 
 // The URL carries a hash of the content, so the response never changes under it.

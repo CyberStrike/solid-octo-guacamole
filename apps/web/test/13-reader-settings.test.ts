@@ -271,7 +271,8 @@ describe("13-reader-settings-and-position", () => {
   it("Settings apply live with JS", async () => {
     // The browser half (the attribute flips, the cookie is written) runs the script's
     // source in reader-settings.node.test.ts, and in a browser is a live check. Here:
-    // both pages load the script with the page's nonce, from a cached, hashed URL.
+    // the chapter, the entire work and the settings page load the script with the page's
+    // nonce, from a cached, hashed URL.
     let src = "";
     for (const path of [CHAPTER, FULL, "/settings/reader"]) {
       const res = await fetchW(path, { headers: { cookie: "__Host-reader=size=l" } });
@@ -285,8 +286,10 @@ describe("13-reader-settings-and-position", () => {
       // of it: there the script comes straight after the bar and runs as soon as it loads.
       if (path === FULL) {
         expect(tag?.[3]).toBe("async");
+        // After the whole bar, so its controls exist when the script runs.
         const at = html.indexOf(tag?.[0] ?? "");
-        expect(at).toBeGreaterThan(html.indexOf('<form class="reader-settings"'));
+        const form = html.indexOf('<form class="reader-settings"');
+        expect(at).toBeGreaterThan(html.indexOf("</form>", form));
         expect(at).toBeLessThan(html.indexOf('<article class="chapter">'));
       } else {
         expect(tag?.[3]).toBe("defer");
@@ -301,6 +304,8 @@ describe("13-reader-settings-and-position", () => {
       const reading = path !== "/settings/reader";
       expect(form.selects.size?.selected, path).toBe(reading ? "m" : "l");
       expect(form.hidden, path).toBe(reading);
+      // Saving from a reading page's bar comes back to that page.
+      if (reading) expect(form.fields.next, path).toBe(path);
     }
     const script = await fetchW(src);
     expect(script.status).toBe(200);
