@@ -115,10 +115,57 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
       works.length === 0
         ? "<p>No works match these filters.</p>"
         : `<ol class="work-list" role="list">\n${works.map(workCard).join("\n")}\n</ol>`;
-    return c.html(layout(heading, `${list}\n${pager(href, page, last)}`));
+    return c.html(
+      layout(
+        heading,
+        `${filterForm(listingHref(type, name, []), query)}\n${list}\n${pager(href, page, last)}`,
+      ),
+    );
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }
+}
+
+const TAG_TYPE_LABELS: Record<NarrowingType, string> = {
+  freeform: "Freeform",
+  fandom: "Fandom",
+  relationship: "Relationship",
+  character: "Character",
+};
+
+/** A labelled select, with the option whose value is `chosen` selected. */
+const select = (id: string, name: string, label: string, options: string[][], chosen: string) =>
+  `<p><label for="${id}">${label}</label> <select id="${id}" name="${name}">${options
+    .map(
+      ([value = "", text = ""]) =>
+        `<option value="${escapeHtml(value)}"${value === chosen ? " selected" : ""}>${escapeHtml(text)}</option>`,
+    )
+    .join("")}</select></p>`;
+
+/**
+ * The sort and filters as a GET form to the listing itself, with the current
+ * choices selected, so it works with JavaScript off and the choices land in the URL.
+ */
+function filterForm(action: string, query: ListingQuery): string {
+  const complete = query.complete === undefined ? "" : query.complete ? "yes" : "no";
+  return `<form class="listing-filters" method="get" action="${action}">
+${select("listing-sort", "sort", "Sort by", Object.entries(SORTS), query.sort)}
+${select("listing-rating", "rating", "Rating", [["", "Any"], ...RATINGS.map((r) => [r, r])], query.rating ?? "")}
+${select(
+  "listing-complete",
+  "complete",
+  "Completion",
+  [
+    ["", "Any"],
+    ["yes", "Complete"],
+    ["no", "In progress"],
+  ],
+  complete,
+)}
+<p><label for="listing-tag">With the tag</label> <input id="listing-tag" name="tag" type="text" value="${escapeHtml(query.tag?.name ?? "")}"></p>
+${select("listing-tag-type", "tag_type", "Tag type", Object.entries(TAG_TYPE_LABELS), query.tag?.type ?? NARROWING_TYPES[0])}
+<p><button type="submit">Apply</button></p>
+</form>`;
 }
 
 /** The listing's URL with these parameters, escaped for an attribute. */

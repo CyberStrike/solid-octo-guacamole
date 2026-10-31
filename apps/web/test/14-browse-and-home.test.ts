@@ -667,6 +667,100 @@ describe("14-browse-and-home listing sort and filters", () => {
   });
 });
 
+/** A listing's GET form, read as a browser would: where it goes and each control's value. */
+const formOf = (html: string) => {
+  const form = html.match(
+    /<form class="listing-filters" method="get" action="([^"]*)">([\s\S]*?)<\/form>/,
+  );
+  const body = form?.[2] ?? "";
+  const fields = new Map<string, { value: string; options: string[] }>();
+  const controls =
+    /<select id="[^"]+" name="([^"]+)">([\s\S]*?)<\/select>|<input id="[^"]+" name="([^"]+)" type="text" value="([^"]*)">/g;
+  for (const [, select, inner = "", input, value = ""] of body.matchAll(controls)) {
+    if (input !== undefined) {
+      fields.set(input, { value, options: [] });
+      continue;
+    }
+    const options = [...inner.matchAll(/<option value="([^"]*)"( selected)?>/g)];
+    const chosen = options.find((o) => o[2]) ?? options[0];
+    fields.set(select ?? "", { value: chosen?.[1] ?? "", options: options.map((o) => o[1] ?? "") });
+  }
+  return { action: form?.[1] ?? "", fields, body };
+};
+
+/** The URL a browser submits the form to, with these controls changed. Empty values are sent too. */
+const submit = (html: string, changes: Record<string, string>) => {
+  const { action, fields } = formOf(html);
+  const values = [...fields].map(([name, f]) => [name, textOf(changes[name] ?? f.value)]);
+  return `${textOf(action)}?${new URLSearchParams(values).toString()}`;
+};
+
+describe("14-browse-and-home listing form", () => {
+  it("Sort and filter work without JS", async () => {
+    const page = await htmlOf(SORTED);
+    const { action, fields, body } = formOf(page);
+
+    expect(action).toBe(SORTED);
+    expect([...fields.keys()]).toEqual(["sort", "rating", "complete", "tag", "tag_type"]);
+    expect(fields.get("sort")?.options).toEqual(["updated", "words"]);
+    expect(fields.get("rating")?.options).toEqual([
+      "",
+      "General Audiences",
+      "Teen And Up Audiences",
+      "Mature",
+      "Explicit",
+      "Not Rated",
+    ]);
+    expect(fields.get("complete")?.options).toEqual(["", "yes", "no"]);
+    expect(fields.get("tag_type")?.options).toEqual([
+      "freeform",
+      "fandom",
+      "relationship",
+      "character",
+    ]);
+    // Every control has a label, and the form a visible button.
+    for (const id of body.matchAll(/<(?:select|input) id="([^"]+)"/g)) {
+      expect(body).toContain(`<label for="${id[1]}">`);
+    }
+    expect(body).toMatch(/<button type="submit">[^<]+<\/button>/);
+
+    const url = submit(page, { sort: "words", rating: "Explicit", complete: "yes" });
+    const res = await fetchW(url);
+    const html = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(url).toContain("sort=words");
+    expect(idsOf(html)).toEqual([31105, 31101]);
+    // The page comes back with the choices made, ready to change again.
+    const again = formOf(html).fields;
+    expect([
+      again.get("sort")?.value,
+      again.get("rating")?.value,
+      again.get("complete")?.value,
+    ]).toEqual(["words", "Explicit", "yes"]);
+    expect(html.match(/<h1>[^<]*<\/h1>/g)).toEqual(["<h1>Sorted Listing Fandom</h1>"]);
+    expect(html).not.toMatch(/<script|<style|style=/i);
+
+    // A tag, submitted with its type; then a choice nothing matches, which can be undone.
+    const narrowed = await htmlOf(submit(page, { tag: "Listing Slow Burn", complete: "no" }));
+    expect(idsOf(narrowed)).toEqual([31103]);
+    expect(formOf(narrowed).fields.get("tag")?.value).toBe("Listing Slow Burn");
+    const none = await htmlOf(submit(page, { rating: "General Audiences" }));
+    expect(none).toContain("<p>No works match these filters.</p>");
+    expect(formOf(none).fields.get("rating")?.value).toBe("General Audiences");
+  });
+
+  it("What a reader types into the form stays text", async () => {
+    const typed = `"><script>alert(1)</script>&x=1`;
+    const html = await htmlOf(`${SORTED}?tag=${encodeURIComponent(typed)}`);
+
+    expect(html).not.toMatch(/<script/i);
+    expect(formOf(html).fields.get("tag")?.value).toBe(
+      "&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;&amp;x=1",
+    );
+  });
+});
+
 /** Every card on the listings with ratings and warnings this file seeded. */
 const allCards = async () => {
   const pages = await Promise.all(
