@@ -188,11 +188,44 @@ describe("18 moderation", () => {
       ])
       .execute();
     const html = await (await get("/admin/requests", moderator)).text();
-    expect(html).toContain("mod1-removal-statement");
-    expect(html).toContain("remove_work");
-    expect(html).toContain("mod1-opt-out-statement");
-    expect(html).toContain("mod1-opted-out-pseud");
-    expect(html).toContain("opt_out");
+    // Each kind in its own row: the removal with its work, the opt-out with its pseud.
+    expect(rowWith(html, "mod1-removal-statement")).toEqual([
+      "2001-07-01T00:00:00.000Z",
+      "remove_work",
+      `mod1-work-title (${WORK})`,
+      "mod1-removal@example.test",
+      "mod1-removal-statement",
+    ]);
+    expect(rowWith(html, "mod1-opt-out-statement")).toEqual([
+      "2001-07-02T00:00:00.000Z",
+      "opt_out",
+      "mod1-opted-out-pseud",
+      "mod1-opt-out@example.test",
+      "mod1-opt-out-statement",
+    ]);
+  });
+
+  it("Items created at the same time are listed in id order", async () => {
+    // The second key of "oldest first", so the order holds from one load to the next.
+    const at = "2001-09-01T00:00:00Z";
+    await db
+      .insertInto("requests")
+      .values(
+        ["mod1-tie-b", "mod1-tie-a"].map((id) => ({
+          id,
+          kind: "remove_work" as const,
+          work_id: workId,
+          contact_email: "mod1-tie@example.test",
+          statement: `${id}-statement`,
+          ip_hash: "mod1-ip-hash",
+          created_at: at,
+        })),
+      )
+      .execute();
+    const html = await (await get("/admin/requests", moderator)).text();
+    const a = html.indexOf("mod1-tie-a-statement");
+    expect(a).toBeGreaterThanOrEqual(0);
+    expect(a).toBeLessThan(html.indexOf("mod1-tie-b-statement"));
   });
 
   it("Non-moderator gets 404", async () => {
@@ -281,6 +314,7 @@ describe("18 moderation", () => {
       .execute();
     const html = await (await get("/admin/takedowns", moderator)).text();
     expect(html).toContain("Showing the oldest 200.");
+    expect(html.match(/<tr><td>/g)).toHaveLength(200);
     expect(html).toContain("mod1-takedown-seen@example.test");
     expect(html).not.toContain("mod1-many-200-requester");
   });
@@ -301,6 +335,14 @@ const ADMIN_REQUESTS = [
   ...[...QUEUES, "/admin", "/admin/", "/admin/nope"].map((path) => [path, "GET"] as const),
   ["/admin/reports", "POST"] as const,
 ];
+
+/** The cells of the one table row that has `marker`, as the HTML spells them. */
+function rowWith(html: string, marker: string): string[] {
+  const rows = html.match(/<tr><td>.*?<\/tr>/g) ?? [];
+  const [row, ...others] = rows.filter((r) => r.includes(marker));
+  expect(others, marker).toEqual([]);
+  return [...(row ?? "").matchAll(/<td>(.*?)<\/td>/g)].map((m) => m[1] ?? "");
+}
 
 /** The page any unknown URL gets. */
 async function notFoundBody() {

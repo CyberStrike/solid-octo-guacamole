@@ -31,9 +31,21 @@ describe("18 moderation before launch", () => {
     expect(res.status).toBe(200);
   });
 
-  it("A signed-out visitor gets 404 before launch, not the coming-soon redirect", async () => {
-    const res = await fetchW("/admin/reports");
-    expect(res.status).toBe(404);
-    expect(res.headers.get("location")).toBeNull();
+  it("Anyone else gets the not-found page before launch, not the coming-soon redirect", async () => {
+    // GET /waitlist answers the not-found page before launch.
+    const control = await fetchW("/waitlist");
+    expect(control.status).toBe(404);
+    const notFound = await control.text();
+    const user = await signIn("mod1-prelaunch-user@example.test", "user");
+    for (const cookie of [undefined, user]) {
+      const res = await fetchW(
+        "/admin/reports",
+        cookie === undefined ? {} : { headers: { cookie } },
+      );
+      expect(res.status).toBe(404);
+      expect(res.headers.get("location")).toBeNull();
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      expect(await res.text()).toBe(notFound);
+    }
   });
 });

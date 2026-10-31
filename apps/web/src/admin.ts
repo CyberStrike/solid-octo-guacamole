@@ -3,7 +3,7 @@
 // pages come with later tickets (MOD2 on).
 
 import { createDb, type Database } from "@archive/db";
-import type { Context, MiddlewareHandler } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
 import type { Kysely } from "kysely";
 import {
   adminHomePage,
@@ -17,7 +17,7 @@ import {
 } from "./admin-pages";
 import type { Bindings } from "./env";
 import type { SecurityVariables } from "./security";
-import type { SessionVariables } from "./session";
+import { sessionMiddleware, type SessionVariables } from "./session";
 
 /** The roles with every moderator power (ARCHITECTURE, Data model): an admin has them too. */
 export type ModeratorRole = "moderator" | "admin";
@@ -49,7 +49,8 @@ type AdminContext = Context<AdminEnv>;
 export const adminGate: MiddlewareHandler<AdminEnv> = async (c, next) => {
   const userId = c.var.session?.user.id;
   if (userId === undefined) return refuse(c);
-  // One connection serves the role read and the handler's queries.
+  // One connection serves the role read and the handler's queries. The session
+  // lookup before it has its own, until sessions share one (A4).
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   try {
     const user = await db
@@ -168,3 +169,18 @@ export async function showRequests(c: AdminContext) {
 export function showWorksToCheck(c: AdminContext) {
   return c.html(queuePage("Works to check", WORK_COLUMNS, []));
 }
+
+/**
+ * The area, for `app.route("/admin", admin)`. Its middleware runs for "/admin/*",
+ * which matches /admin itself too and every path below it, routed or not, so a
+ * later /admin route is gated without asking. Until A4 (#24) mounts the session for
+ * every page, it is mounted here for /admin only. The session, role and database
+ * are typed on this app alone: no other page has them.
+ */
+export const admin = new Hono<AdminEnv>();
+admin.use(sessionMiddleware, adminGate);
+admin.get("/", showAdminHome);
+admin.get("/reports", showReports);
+admin.get("/takedowns", showTakedowns);
+admin.get("/requests", showRequests);
+admin.get("/works", showWorksToCheck);
