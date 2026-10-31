@@ -17,6 +17,11 @@ import {
 // IDs 12500 to 12599, names every tag it seeds with an "x4-" prefix, and finds its
 // reports by its own reporters. Text is synthetic.
 const W = 12500;
+/** Hidden after reports, so its pages are not served. */
+const HIDDEN = 12501;
+const REMOVED = 12502;
+/** No work has it. */
+const UNKNOWN = 12599;
 const REPORT = `/works/${W}/report`;
 /** Where a signed-out reader is sent: the sign-in form, carrying the report form's path. */
 const TO_SIGN_IN = `/login?next=${encodeURIComponent(REPORT)}`;
@@ -30,6 +35,13 @@ const db = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 
 
 beforeAll(async () => {
   await seedWork(db, { ao3WorkId: W, title: "x4 Work W", tags: [...X4_TAGS] });
+  await seedWork(db, {
+    ao3WorkId: HIDDEN,
+    status: "hidden",
+    hiddenCause: "reports",
+    tags: [...X4_TAGS],
+  });
+  await seedWork(db, { ao3WorkId: REMOVED, status: "removed", tags: [...X4_TAGS] });
 });
 afterAll(() => db.destroy());
 
@@ -68,12 +80,15 @@ const postReport = (
     id = W,
     headers = {},
   }: { cookie?: string; id?: number | string; headers?: Record<string, string> } = {},
-) =>
-  fetchW(`/works/${id}/report`, {
+) => {
+  const sent = new Headers({ ...FORM_HEADERS, ...headers });
+  if (cookie !== undefined) sent.set("cookie", cookie);
+  return fetchW(`/works/${id}/report`, {
     method: "POST",
-    headers: { ...FORM_HEADERS, ...(cookie === undefined ? {} : { cookie }), ...headers },
+    headers: sent,
     body: new URLSearchParams(fields).toString(),
   });
+};
 
 /** How many reports work `ao3WorkId` has, from anyone. */
 const reportCount = async (ao3WorkId = W) =>
@@ -111,7 +126,7 @@ describe("17-reports-and-dmca", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/^text\/html/);
     const html = await res.text();
-    expect(html).toContain(`<form method="post" action="${REPORT}">`);
+    expect(html).toContain(`<form class="report-form" method="post" action="${REPORT}">`);
     expect(html).toContain("x4 Work W");
   });
 
@@ -231,6 +246,32 @@ describe("17-reports-and-dmca", () => {
   });
 });
 
+/** The href of W's work page's "Report" link. */
+async function reportLink(): Promise<string> {
+  const page = await (await fetchW(`/works/${W}`)).text();
+  const href = page.match(/<a href="([^"]*)">Report<\/a>/)?.[1];
+  expect(href).toBeDefined();
+  return href!;
+}
+
+// The work page's cases for its Report link, kept here so R1's test file is untouched.
+describe("10-work-page", () => {
+  it("Report link opens the report form for signed-in readers", async () => {
+    const cookie = await signIn("x4-link-signed-in@example.test");
+    const res = await fetchW(await reportLink(), { headers: { cookie } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain(
+      `<form class="report-form" method="post" action="${REPORT}">`,
+    );
+  });
+
+  it("Report link sends signed-out readers to sign in first", async () => {
+    const res = await fetchW(await reportLink());
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(TO_SIGN_IN);
+  });
+});
+
 describe("report form checks", () => {
   it("A missing or unknown reason gets the form again, and stores nothing", async () => {
     const email = "x4-no-reason@example.test";
@@ -245,7 +286,7 @@ describe("report form checks", () => {
       expect(res.status, JSON.stringify(fields)).toBe(400);
       const html = await res.text();
       expect(html).toContain('<p role="alert">Choose a reason.</p>');
-      expect(html).toContain(`<form method="post" action="${REPORT}">`);
+      expect(html).toContain(`<form class="report-form" method="post" action="${REPORT}">`);
       // What was typed comes back, escaped; a value that is no reason doesn't.
       expect(html).toContain(">x4 synthetic details</textarea>");
       expect(html).not.toContain("spam<b>");
@@ -276,5 +317,56 @@ describe("report form checks", () => {
     expect(await reportsBy(email)).toEqual([
       { kind: "other", body: "y".repeat(2000), status: "open" },
     ]);
+  });
+
+  it("A body too large to be the form is refused, and nothing of it shown back", async () => {
+    const email = "x4-too-large@example.test";
+    const cookie = await signIn(email);
+    const res = await postReport(
+      { reason: "other", details: `x4-echo-${"z".repeat(20 * 1024)}` },
+      { cookie },
+    );
+    expect(res.status).toBe(413);
+    expect(await res.text()).not.toContain("x4-echo-");
+    expect(await reportsBy(email)).toEqual([]);
+  });
+
+  it("A report posted from another site is refused before anything else", async () => {
+    const email = "x4-cross-site@example.test";
+    const cookie = await signIn(email);
+    for (const headers of [
+      { origin: "https://evil.example", "sec-fetch-site": "cross-site" },
+      { origin: "https://upload.rarepair.fans", "sec-fetch-site": "same-site" },
+    ]) {
+      const res = await postReport({ reason: "other" }, { cookie, headers });
+      expect(res.status).toBe(403);
+      expect(res.headers.get("strict-transport-security")).toMatch(/^max-age=\d+/);
+    }
+    // Signed out too: refused, not sent to sign in.
+    const signedOut = await postReport(
+      { reason: "other" },
+      { headers: { origin: "https://evil.example", "sec-fetch-site": "cross-site" } },
+    );
+    expect(signedOut.status).toBe(403);
+    expect(await reportsBy(email)).toEqual([]);
+  });
+
+  it("Only a live work can be reported, as only a live work has a page", async () => {
+    const email = "x4-not-live@example.test";
+    const cookie = await signIn(email);
+    for (const id of [HIDDEN, REMOVED, UNKNOWN, "0", "012500", "abc", "1.25e4", "2147483648"]) {
+      const form = await fetchW(`/works/${id}/report`, { headers: { cookie } });
+      expect(form.status, `GET ${id}`).toBe(404);
+      expect(await form.text()).toContain("Page not found");
+      const post = await postReport({ reason: "other" }, { cookie, id });
+      expect(post.status, `POST ${id}`).toBe(404);
+    }
+    const stored = await db
+      .selectFrom("reports")
+      .innerJoin("user", "user.id", "reports.reporter_id")
+      .select("reports.id")
+      .where("user.email", "=", email)
+      .execute();
+    expect(stored).toEqual([]);
   });
 });

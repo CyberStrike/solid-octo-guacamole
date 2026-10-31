@@ -82,7 +82,7 @@ const reportPage = (ao3WorkId: number, title: string, form: ReportForm = {}) =>
     "Report a work",
     `<p class="draft">Draft: this text has not been proofread yet.</p>
 ${form.error === undefined ? "" : `<p role="alert">${escapeHtml(form.error)}</p>\n`}<p>Tell the moderators what is wrong with <a href="/works/${ao3WorkId}">${escapeHtml(title)}</a>.</p>
-<form method="post" action="/works/${ao3WorkId}/report">
+<form class="report-form" method="post" action="/works/${ao3WorkId}/report">
 <fieldset>
 <legend>Reason</legend>
 ${Object.entries(REASONS)
@@ -148,7 +148,12 @@ export async function submitReport(c: ReportContext) {
     if (!work) return c.notFound();
     if (await isBanned(db, session.user.id)) return c.html(bannedPage(), 403);
 
-    const form = (await readForm(c.req.raw)) ?? new URLSearchParams();
+    const form = await readForm(c.req.raw);
+    // Nothing of it is shown back: the form comes again empty.
+    if (form === null) {
+      const error = "That report was too large. Please try again.";
+      return c.html(reportPage(id, work.title, { error }), 413);
+    }
     const reason = form.get("reason") ?? "";
     const details = form.get("details") ?? "";
     // The server checks, since the page has no script and a form can be posted by hand.
