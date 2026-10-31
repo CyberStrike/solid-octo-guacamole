@@ -187,6 +187,40 @@ describe("17-reports-and-dmca", () => {
     expect(report!.body).toBe("x4 synthetic details");
   });
 
+  it("Report without details is accepted", async () => {
+    const email = "x4-no-details@example.test";
+    const cookie = await signIn(email);
+    expect((await postReport({ reason: "other" }, { cookie })).status).toBe(200);
+    // Details left empty, or only spaces, store none.
+    expect((await postReport({ reason: "other", details: "  \r\n " }, { cookie })).status).toBe(
+      200,
+    );
+    const reports = await reportsBy(email);
+    expect(reports).toEqual([
+      { kind: "other", body: null, status: "open" },
+      { kind: "other", body: null, status: "open" },
+    ]);
+  });
+
+  it("Banned account cannot report", async () => {
+    const email = "x4-banned@example.test";
+    const cookie = await signIn(email);
+    // Banned after signing in: the session stays valid, the account can't report.
+    await db
+      .updateTable("user")
+      .set({ banned_at: new Date() })
+      .where("email", "=", email)
+      .execute();
+    const res = await postReport({ reason: "other", details: "x4 synthetic details" }, { cookie });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toContain("You can't send reports from this account.");
+    expect(await reportsBy(email)).toEqual([]);
+    // Nor is it shown the form.
+    const form = await fetchW(REPORT, { headers: { cookie } });
+    expect(form.status).toBe(403);
+    expect(await form.text()).not.toContain("<form");
+  });
+
   it("Signed-out report submission redirects to sign in", async () => {
     const before = await reportCount();
     const res = await postReport({ reason: "other", details: "x4 synthetic details" });

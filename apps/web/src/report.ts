@@ -49,6 +49,17 @@ const liveWork = (db: Db, ao3WorkId: number) =>
     .where("current_version_id", "is not", null)
     .executeTakeFirst();
 
+/**
+ * Whether the account is banned. Read from the database, not the session: the
+ * session's user has no `banned_at`, and a ban must hold at once.
+ */
+const isBanned = async (db: Db, userId: string) =>
+  (await db.selectFrom("user").select("banned_at").where("id", "=", userId).executeTakeFirst())
+    ?.banned_at != null;
+
+const bannedPage = () =>
+  layout("Report not sent", `<p>You can't send reports from this account.</p>`);
+
 /** The form. `ao3WorkId` is a number, so safe in an href. Every other value is escaped. */
 const reportPage = (ao3WorkId: number, title: string) =>
   layout(
@@ -90,11 +101,13 @@ const reportedPage = () =>
 export async function showReportForm(c: ReportContext) {
   const id = workId(c.req.param("id"));
   if (id === null) return c.notFound();
-  if (c.var.session === null) return c.redirect(signInFirst(id), 302);
+  const session = c.var.session;
+  if (session === null) return c.redirect(signInFirst(id), 302);
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
   try {
     const work = await liveWork(db, id);
     if (!work) return c.notFound();
+    if (await isBanned(db, session.user.id)) return c.html(bannedPage(), 403);
     return c.html(reportPage(id, work.title));
   } finally {
     c.executionCtx.waitUntil(db.destroy());
@@ -113,19 +126,23 @@ export async function submitReport(c: ReportContext) {
   const session = c.var.session;
   if (session === null) return c.redirect(signInFirst(id), 303);
 
-  const form = (await readForm(c.req.raw)) ?? new URLSearchParams();
-  const kind = form.get("reason") ?? "";
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
   try {
     const work = await liveWork(db, id);
     if (!work) return c.notFound();
+    if (await isBanned(db, session.user.id)) return c.html(bannedPage(), 403);
+
+    const form = (await readForm(c.req.raw)) ?? new URLSearchParams();
+    const kind = form.get("reason") ?? "";
+    const details = form.get("details") ?? "";
     await db
       .insertInto("reports")
       .values({
         work_id: work.id,
         reporter_id: session.user.id,
         kind,
-        body: form.get("details"),
+        // Optional: details left empty, or only spaces, are none.
+        body: details.trim() === "" ? null : details,
       })
       .execute();
   } finally {
