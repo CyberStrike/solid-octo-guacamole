@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { emailKey, ipKey, isLimited, tooManyRequests } from "../src/rate-limit";
+import { experimental_readRawConfig } from "wrangler";
+import {
+  emailKey,
+  ipKey,
+  isLimited,
+  LOGIN_WINDOW_SECONDS,
+  tooManyRequests,
+} from "../src/rate-limit";
 
 /** The sign-in limit's key for a client address, or for a request without one. */
 const loginIp = (address: string | null) => ipKey("login", address);
@@ -20,6 +27,15 @@ describe("ipKey", () => {
     // The /64 is the first four groups however the address is shortened.
     expect(await loginIp("2001:db8::1")).toBe(await loginIp("2001:db8:0:0::2"));
     expect(await loginIp("::1")).toBe(await loginIp("::2"));
+  });
+
+  it("keys an IPv4 address written as IPv6 on the IPv4 address", async () => {
+    const key = await loginIp("198.51.100.7");
+    expect(await loginIp("::ffff:198.51.100.7")).toBe(key);
+    expect(await loginIp("::FFFF:198.51.100.7")).toBe(key);
+    const other = await loginIp("::ffff:203.0.113.9");
+    expect(other).not.toBe(key);
+    expect(other).not.toBe(await loginIp("::1"));
   });
 
   it("gives every request without a client address one shared key, still limited", async () => {
@@ -74,6 +90,22 @@ describe("isLimited", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("the sign-in limits in wrangler.jsonc", () => {
+  it("have the window Retry-After says", async () => {
+    const { rawConfig } = experimental_readRawConfig({ config: "wrangler.jsonc" });
+    const periods = Object.fromEntries(
+      (rawConfig.ratelimits ?? []).map((limit: { name: string; simple: { period: number } }) => [
+        limit.name,
+        limit.simple.period,
+      ]),
+    );
+    expect(periods).toEqual({
+      LOGIN_IP_LIMIT: LOGIN_WINDOW_SECONDS,
+      LOGIN_EMAIL_LIMIT: LOGIN_WINDOW_SECONDS,
+    });
   });
 });
 

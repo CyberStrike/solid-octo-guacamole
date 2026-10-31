@@ -116,7 +116,10 @@ export async function requestSignIn(c: LoginContext) {
   }
 
   // The mailer sends to no address longer than this, so no token is made for one.
-  if (email.length > MAX_EMAIL) return formAgain(400, "Enter a valid email address.");
+  // Nor for none, which would otherwise share one limit with every other empty form.
+  if (email.length > MAX_EMAIL || email.trim() === "") {
+    return formAgain(400, "Enter a valid email address.");
+  }
   // After Turnstile, so only a solved check can spend an address's limit.
   if (await isLimited(c.env.LOGIN_EMAIL_LIMIT, await emailKey("login", email))) {
     return tooManyRequests(LOGIN_WINDOW_SECONDS);

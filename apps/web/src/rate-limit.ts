@@ -15,10 +15,12 @@ async function hashKey(prefix: string, value: string): Promise<string> {
 
 /**
  * Who a client address stands for: an IPv4 address whole, and an IPv6 one by its /64, which
- * one subscriber commonly holds all of, written out in full however it was shortened.
+ * one subscriber commonly holds all of, written out in full however it was shortened. An
+ * IPv4 address written as IPv6 (`::ffff:198.51.100.7`) is that IPv4 address.
  */
 function clientOf(address: string): string {
   if (!address.includes(":")) return address;
+  if (address.includes(".")) return address.slice(address.lastIndexOf(":") + 1);
   const [head = "", tail] = address.toLowerCase().split("::");
   const groups = (part = "") => (part === "" ? [] : part.split(":"));
   const zeros = tail === undefined ? 0 : 8 - groups(head).length - groups(tail).length;

@@ -10,6 +10,7 @@ import {
   deliveredEmails,
   emailsTo,
   fetchW,
+  freshIp,
   LOGIN_EMAIL_LIMIT,
   LOGIN_IP_LIMIT,
   loginRequest,
@@ -306,7 +307,7 @@ describe("01-auth-magic-link", () => {
 
   it("Login requests are rate-limited per IP", async () => {
     await windowHeadroom(LOGIN_WINDOW_SECONDS);
-    const ip = "203.0.113.1";
+    const ip = freshIp();
     await fillIpLimit(ip);
 
     // Even for an address it hasn't asked for, with a passing check.
@@ -327,14 +328,14 @@ describe("01-auth-magic-link", () => {
     // Another IP is not held up.
     const other = await postLogin(
       { email: "per-ip@example.test", "cf-turnstile-response": PASSING_TOKEN },
-      { headers: { "cf-connecting-ip": "203.0.113.101" } },
+      { headers: { "cf-connecting-ip": freshIp() } },
     );
     expect(other.status).toBe(200);
   });
 
   it("Login requests are rate-limited per email", async () => {
     await windowHeadroom(LOGIN_WINDOW_SECONDS);
-    const email = "per-email@example.test";
+    const email = `per-email-${crypto.randomUUID()}@example.test`;
     // The limit's worth of links, each asked for from another IP (postLogin's fresh one).
     for (let i = 0; i < LOGIN_EMAIL_LIMIT; i++) {
       const res = await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN });
@@ -345,7 +346,7 @@ describe("01-auth-magic-link", () => {
     // From yet another IP, and spelt differently: the same address.
     const before = await verificationIds();
     const res = await postLogin({
-      email: " PER-EMAIL@example.test ",
+      email: ` ${email.toUpperCase()} `,
       "cf-turnstile-response": PASSING_TOKEN,
     });
     await expectTooManyRequests(res);
@@ -353,6 +354,15 @@ describe("01-auth-magic-link", () => {
     // Nothing more queued: a later request's email has arrived, and still only those.
     await queuedFor(email);
     expect(await emailsTo(email)).toHaveLength(LOGIN_EMAIL_LIMIT);
+  });
+
+  it("Sign-in requests with no address are refused as such, not counted together", async () => {
+    await windowHeadroom(LOGIN_WINDOW_SECONDS);
+    for (let i = 0; i <= LOGIN_EMAIL_LIMIT; i++) {
+      const res = await postLogin({ email: " ", "cf-turnstile-response": PASSING_TOKEN });
+      expect(res.status).toBe(400);
+      expect(await res.text()).toContain('<p role="alert">Enter a valid email address.</p>');
+    }
   });
 
   it("Sign-in requests Turnstile refuses don't count against the address", async () => {
@@ -380,7 +390,7 @@ describe("19-surge-controls-and-quotas", () => {
 
   it("Login is throttled per IP", async () => {
     await windowHeadroom(LOGIN_WINDOW_SECONDS);
-    const ip = "203.0.113.2";
+    const ip = freshIp();
     await fillIpLimit(ip);
     const res = await postLogin(
       { email: "surge-per-ip@example.test", "cf-turnstile-response": PASSING_TOKEN },

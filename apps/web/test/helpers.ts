@@ -65,7 +65,7 @@ const LOGIN_HEADERS = {
  * that sets `cf-connecting-ip` itself meets the per-IP limit. Random rather than counted:
  * every test file of a project shares one limiter.
  */
-const freshIp = () => `10.${crypto.getRandomValues(new Uint8Array(3)).join(".")}`;
+export const freshIp = () => `10.${crypto.getRandomValues(new Uint8Array(3)).join(".")}`;
 
 /** The sign-in form's POST, as a browser on rarepair.fans submits it, from a fresh IP. */
 export const loginRequest = (fields: Record<string, string>) =>
@@ -99,14 +99,14 @@ export const LOGIN_IP_LIMIT = 10;
 export const LOGIN_EMAIL_LIMIT = 3;
 
 /**
- * Waits, if need be, for a window of `periodSeconds` with at least 15 seconds left in it, time
+ * Waits, if need be, for a window of `periodSeconds` with at least 20 seconds left in it, time
  * enough to fill a limit and wait on its emails. The local limiter's windows are fixed and
  * aligned to the clock, so a test that fills one and then expects a 429 must not straddle
  * the boundary.
  */
 export async function windowHeadroom(periodSeconds: number) {
   const left = periodSeconds * 1000 - (Date.now() % (periodSeconds * 1000));
-  if (left < 15_000) await new Promise((resolve) => setTimeout(resolve, left + 100));
+  if (left < 20_000) await new Promise((resolve) => setTimeout(resolve, left + 100));
 }
 
 /**
