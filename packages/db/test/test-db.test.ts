@@ -40,8 +40,11 @@ describe("createTestDb", () => {
           expect(rows).toEqual([{ sum: k + i }]);
         }
       });
-      // A transaction sees its own insert, and nothing of another client's.
-      const transactions = clients.slice(5, 7).map(async (c, k) => {
+      // Each transaction sees its own insert, and its commit or rollback takes only its
+      // own. The first client commits every 2nd round and the second every 4th, so a
+      // commit or rollback that took the other's insert too would change the counts.
+      const transactions = [2, 4].map(async (every, k) => {
+        const c = clients[5 + k]!;
         for (let i = 0; i < ROUNDS; i++) {
           const n = 1000 * (k + 1) + i;
           await c.query("begin");
@@ -51,7 +54,7 @@ describe("createTestDb", () => {
             [n],
           );
           expect(rows).toEqual([{ count: 1 }]);
-          await c.query(i % 2 === 0 ? "commit" : "rollback");
+          await c.query(i % every === 0 ? "commit" : "rollback");
         }
       });
       // A failed transaction stays its client's until its rollback.
@@ -71,10 +74,12 @@ describe("createTestDb", () => {
 
       await Promise.all([...sums, ...transactions, failed, own]);
 
-      // Committed: the even rounds of each transaction loop, rolled back the odd.
-      const { rows } = await sql<{ count: number }>`
-        select count(*)::int as count from client_turns`.execute(t.db);
-      expect(rows).toEqual([{ count: ROUNDS }]);
+      // Committed: 20 of the first client's 40 rounds, and 10 of the second's.
+      const { rows } = await sql<{ first: number; second: number }>`
+        select count(*) filter (where n between 1000 and 1999)::int as first,
+               count(*) filter (where n between 2000 and 2999)::int as second
+        from client_turns`.execute(t.db);
+      expect(rows).toEqual([{ first: 20, second: 10 }]);
     } finally {
       await Promise.all(clients.map((c) => c.end()));
     }
@@ -129,15 +134,34 @@ describe("createTestDb", () => {
     }
   });
 
-  it("frees the database when a client drops part-way through a query", async () => {
+  it("holds other clients until a query's cycle ends, and frees them if its client drops", async () => {
+    const c = await client();
     const dropped = await rawClient();
-    // A Parse with no Sync after it: the query's cycle is open when the client goes.
-    await dropped.parseOnly("select 1");
+    try {
+      // A Parse with no Sync after it: the query's cycle is open.
+      await dropped.parseOnly("select 1");
+      let settled = false;
+      const answer = c.query("select $1::int as n", [7]).finally(() => (settled = true));
+
+      await setTimeout(50);
+      expect(settled).toBe(false);
+      dropped.socket.destroy();
+
+      expect((await answer).rows).toEqual([{ n: 7 }]);
+    } finally {
+      await c.end();
+    }
+  });
+
+  it("frees the database when a client drops after a failed Parse, before its Sync", async () => {
+    const dropped = await rawClient();
+    // The server now skips this client's messages until a Sync that never comes.
+    await expect(dropped.parseOnly("selec 1")).rejects.toThrow("syntax error");
     dropped.socket.destroy();
 
     const c = await client();
     try {
-      expect((await c.query("select $1::int as n", [7])).rows).toEqual([{ n: 7 }]);
+      expect((await c.query("select $1::int as n", [8])).rows).toEqual([{ n: 8 }]);
     } finally {
       await c.end();
     }
@@ -150,6 +174,8 @@ describe("createTestDb's close", () => {
     const c = new pg.Client({ connectionString: other.connectionString });
     await c.connect();
     c.on("error", () => {});
+    // Left open, so close() has a transaction to end.
+    await c.query("begin");
 
     await other.close();
 
@@ -161,16 +187,35 @@ describe("createTestDb's close", () => {
 // Server message types the raw client waits for.
 const READY_FOR_QUERY = 0x5a;
 const PARSE_COMPLETE = 0x31;
+const ERROR_RESPONSE = 0x45;
+
+/** An ErrorResponse's message: its fields are a code byte and a C string each, then a 0. */
+function errorMessage(body: Buffer): string {
+  for (let at = 0; at < body.length && body[at] !== 0;) {
+    const end = body.indexOf(0, at + 1);
+    if (body[at] === 0x4d) return body.toString("utf8", at + 1, end);
+    at = end + 1;
+  }
+  return "error";
+}
+
+/** The server message a raw client's send waits for, and what to do on it or an error. */
+interface Reply {
+  type: number;
+  arrived(): void;
+  failed(err: Error): void;
+}
 
 /**
  * A client that speaks the wire protocol over a bare socket, so a test can drop it at
- * any point. Each `query` resolves at the server's ReadyForQuery.
+ * any point. Each `query` resolves at the server's ReadyForQuery, and rejects with the
+ * server's message on an ErrorResponse.
  */
 async function rawClient() {
   const { hostname, port } = new URL(t.connectionString);
   const socket = net.connect(Number(port), hostname);
   let received = Buffer.alloc(0);
-  let awaited = { type: READY_FOR_QUERY, arrived: () => {} };
+  let awaited: Reply = { type: READY_FOR_QUERY, arrived: () => {}, failed: () => {} };
   socket.on("data", (chunk) => {
     received = Buffer.concat([received, chunk]);
     // Each server message: a type byte, then an int32 length that counts itself.
@@ -178,14 +223,16 @@ async function rawClient() {
       const end = 1 + received.readInt32BE(1);
       if (received.length < end) break;
       const type = received[0];
+      const body = received.subarray(5, end);
       received = received.subarray(end);
-      if (type === awaited.type) awaited.arrived();
+      if (type === ERROR_RESPONSE) awaited.failed(new Error(errorMessage(body)));
+      else if (type === awaited.type) awaited.arrived();
     }
   });
   /** Sends `bytes`, and resolves when a server message of type `until` arrives. */
   const send = (bytes: Buffer, until = READY_FOR_QUERY) =>
-    new Promise<void>((resolve) => {
-      awaited = { type: until, arrived: resolve };
+    new Promise<void>((resolve, reject) => {
+      awaited = { type: until, arrived: resolve, failed: reject };
       socket.write(bytes);
     });
   const message = (type: string, body: Buffer) => {

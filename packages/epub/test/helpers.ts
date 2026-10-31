@@ -77,6 +77,8 @@ export function ao3Epub(spec: Ao3Spec = {}): Uint8Array {
   const workId = spec.workId === undefined ? 1000001 : spec.workId;
   const title = spec.title ?? "Synthetic Work";
   const pseud = spec.pseud ?? "someone";
+  // It goes unescaped into a URL path, XHTML and the OPF.
+  if (!/^[A-Za-z0-9]+$/.test(pseud)) throw new Error(`pseud must be letters and digits: ${pseud}`);
   const stats = spec.stats ?? "Published: 2020-01-02 Words: 12";
   const files = spec.files ?? [
     {

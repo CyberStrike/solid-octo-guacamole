@@ -57,7 +57,7 @@ class OneCycleAtATime extends PGlite {
     // A startup packet has no type byte: it begins with its length's high byte, 0.
     const type = message[0] ?? 0;
     this.midCycle = type !== 0 && !ENDS_CYCLE.has(String.fromCharCode(type));
-    // A throw leaves the cycle open: the rest of it is still queued behind.
+    // A throw here stalls pglite-socket's whole queue anyway (#248), so midCycle stays.
     await super.execProtocolRawStream(message, options);
   }
 }
