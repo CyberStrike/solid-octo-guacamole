@@ -166,6 +166,39 @@ article.chapter {
 article.chapter {
   contain: content;
 }
+
+/* The slim top bar scrolls away with the page: it is never sticky or fixed. */
+.reader-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) * 2) calc(var(--space) * 4);
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: calc(var(--space) * 2);
+  border-bottom: 1px solid var(--rule);
+}
+
+.reader-bar h1 {
+  margin: 0;
+  font-size: var(--text-2);
+}
+
+.chapter-nav,
+.chapter-nav form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) * 2) calc(var(--space) * 4);
+  align-items: center;
+}
+
+.chapter-nav {
+  margin: calc(var(--space) * 4) 0;
+}
+
+.chapter-nav select {
+  font: inherit;
+  max-width: 100%;
+}
 `;
 
 // FNV-1a, enough to give each version of the stylesheet its own URL.

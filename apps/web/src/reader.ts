@@ -50,12 +50,17 @@ export async function showChapter(c: ReaderContext) {
   const fragment = await object.text();
 
   const nav = (end: "top" | "bottom") => chapterNav(id, n, live.chapters, end);
+  // The slim top bar is the reader's only chrome of its own: the work title, which is
+  // the page's one h1, and the settings link. It scrolls away with the page.
+  const bar = `<div class="reader-bar"><h1>${escapeHtml(live.work.title)}</h1><a href="/settings/reader">Reader settings</a></div>`;
   return c.html(
     layout(
-      live.work.title,
+      `${live.work.title}, chapter ${n}`,
       `${nav("top")}
 <article class="chapter">${fragment}</article>
 ${nav("bottom")}`,
+      "",
+      bar,
     ),
   );
 }

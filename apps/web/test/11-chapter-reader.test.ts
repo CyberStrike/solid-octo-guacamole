@@ -8,6 +8,9 @@ import { STRICT, fetchW, nonceOf, withoutNonce } from "./helpers";
 // test file sharing the database sees them. ID 1 is never seeded: 22-waitlist expects
 // /works/1/chapters/2 to be a 404.
 const W = 20001;
+// User text from the database, so the page must escape it.
+const TITLE = `R2 <b>reader</b> & "work"`;
+const TITLE_ESCAPED = "R2 &lt;b&gt;reader&lt;/b&gt; &amp; &quot;work&quot;";
 // As ingest writes it: absolute, on the content origin (ARCHITECTURE, EPUB processor step 6).
 const IMAGE = `https://content.rarepair.fans/works/${W}/img/${"ab".repeat(32)}`;
 const TAGS = [
@@ -18,7 +21,10 @@ const TAGS = [
 // Work W's five chapters. Synthetic markers only: no fic text in tests.
 const CHAPTERS: SeedChapter[] = [
   { html: "<p>W-ONE-TEXT</p>" },
-  { html: "<p>W-TWO-TEXT</p>" },
+  // Notes are inline in the fragment, around the text, as the processor writes them.
+  {
+    html: "<p>Chapter Notes</p><blockquote><p>W-TWO-NOTES</p></blockquote><p>W-TWO-TEXT</p><p>Chapter End Notes</p><blockquote><p>W-TWO-END-NOTES</p></blockquote>",
+  },
   { html: "<p>W-THREE-TEXT</p>" },
   // Test only: a script that got past the sanitizer, and two headings of the chapter's own.
   {
@@ -32,7 +38,7 @@ const db = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 
 beforeAll(async () => {
   const w = await seedWork(db, {
     ao3WorkId: W,
-    title: "R2 reader work",
+    title: TITLE,
     tags: TAGS,
     chapters: CHAPTERS,
   });
@@ -154,6 +160,36 @@ describe("11-reader-and-csp", () => {
       expect(res.status, query).toBe(404);
       expect(res.headers.get("location"), query).toBeNull();
     }
+  });
+
+  it("Notes surround the chapter text", async () => {
+    // The order half. The smaller, muted style needs a hook the sanitizer strips today
+    // (filed as its own issue).
+    const html = await htmlOf(chapterUrl(W, 2));
+    const article = articleOf(html) ?? "";
+    const notes = article.indexOf("W-TWO-NOTES");
+    const text = article.indexOf("W-TWO-TEXT");
+    const endNotes = article.indexOf("W-TWO-END-NOTES");
+    expect(notes).toBeGreaterThan(-1);
+    expect(text).toBeGreaterThan(notes);
+    expect(endNotes).toBeGreaterThan(text);
+    // seedWork's summary is "A seeded summary.": the reader doesn't repeat it.
+    expect(html).not.toContain("A seeded summary");
+  });
+
+  it("Slim top bar", async () => {
+    const html = await htmlOf(chapterUrl(W, 3));
+    const main = html.match(/<main\b[^>]*>([\s\S]*)<\/main>/)?.[1] ?? "";
+    const bar = main.match(/<div class="reader-bar">([\s\S]*?)<\/div>/)?.[1] ?? "";
+    // The work title is the page's one h1, in the bar, escaped; the settings link beside it.
+    expect(bar).toContain(`<h1>${TITLE_ESCAPED}</h1>`);
+    expect(bar).toMatch(/<a href="\/settings\/reader">[^<]+<\/a>/);
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(html).not.toContain("<b>reader</b>");
+    // It comes before the chapter and its nav, and it scrolls away: nothing pins it.
+    expect(main.indexOf('class="reader-bar"')).toBeLessThan(main.indexOf("<nav"));
+    const css = await stylesheetOf(html);
+    expect(rulesFor(css, ".reader-bar").join("\n")).not.toMatch(/position:\s*(sticky|fixed)/);
   });
 
   it("First chapter has no previous link", async () => {
