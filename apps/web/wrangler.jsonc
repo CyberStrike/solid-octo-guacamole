@@ -59,6 +59,18 @@
   "ratelimits": [
     { "name": "LOGIN_IP_LIMIT", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } },
     { "name": "LOGIN_EMAIL_LIMIT", "namespace_id": "1002", "simple": { "limit": 3, "period": 60 } },
+    // POST /waitlist, the same way. Set like sign-in's, to be revisited before launch: a shared
+    // office or school IP on launch day may want a higher IP limit.
+    {
+      "name": "WAITLIST_IP_LIMIT",
+      "namespace_id": "1040",
+      "simple": { "limit": 10, "period": 60 },
+    },
+    {
+      "name": "WAITLIST_EMAIL_LIMIT",
+      "namespace_id": "1041",
+      "simple": { "limit": 3, "period": 60 },
+    },
   ],
   "vars": {
     // "on" until the archive opens (ARCHITECTURE, Wait list): / is the coming-soon
@@ -72,6 +84,12 @@
     // The bucket presigned upload URLs PUT into, under uploads/ (src/presign.ts). It must be
     // the BUCKET binding's bucket_name above, which /complete and ingest read uploads from.
     "R2_BUCKET": "rarepair",
+    // The least time POST /waitlist takes to answer, in milliseconds, so how long it took
+    // can't show whether an address is on the list (#216). It must be longer than the
+    // slowest path (insert, update, queue send, over Hyperdrive to Neon): a floor can't hide
+    // a path slower than itself. 2000 is a first value, to be checked against measured
+    // Hyperdrive timing before launch.
+    "WAITLIST_FLOOR_MS": "2000",
   },
   // Set with `wrangler secret put`. The R2 ones sign upload URLs: an R2 API token with Object
   // Read and Write on the rarepair bucket only. Only its secret key is secret: every issued URL

@@ -11,6 +11,7 @@ import {
   deliveredEmails,
   emailsTo,
   fetchW,
+  freshIp,
   nonceOf,
   PASSING_TOKEN,
   postLogin,
@@ -38,11 +39,14 @@ const FORM_HEADERS = {
 
 const HSTS = "max-age=31536000; includeSubDomains";
 
-/** Submits the wait list form; `headers` are added over a browser's. */
+/**
+ * Submits the wait list form from a fresh IP, so only a test that sets `cf-connecting-ip`
+ * itself meets the per-IP limit; `headers` are added over a browser's.
+ */
 const postWaitlist = (fields: Record<string, string>, headers: Record<string, string> = {}) =>
   fetchW("/waitlist", {
     method: "POST",
-    headers: { ...FORM_HEADERS, ...headers },
+    headers: { ...FORM_HEADERS, "cf-connecting-ip": freshIp(), ...headers },
     body: new URLSearchParams(fields).toString(),
   });
 
@@ -132,6 +136,15 @@ describe("22-waitlist", () => {
 
   it("Joining twice tells nobody anything", async () => {
     const email = fresh("twice");
+    // This joins one address more often than its limit allows in a minute, to test the
+    // resend rules: so its joins run with that limit open. The limit has its own tests.
+    const unlimited: RateLimit = { limit: async () => ({ success: true }) };
+    const join = async (typed: string) =>
+      (
+        await runLogged(joinRequest({ email: typed, "cf-turnstile-response": PASSING_TOKEN }), {
+          WAITLIST_EMAIL_LIMIT: unlimited,
+        })
+      ).res;
 
     const first = await join(email);
     const page = { status: first.status, body: await first.text() };
@@ -365,7 +378,7 @@ async function runLogged(request: Request, bindings: Partial<Cloudflare.Env> = {
 const joinRequest = (fields: Record<string, string>, headers: Record<string, string> = {}) =>
   new Request(`${BASE}/waitlist`, {
     method: "POST",
-    headers: { ...FORM_HEADERS, ...headers },
+    headers: { ...FORM_HEADERS, "cf-connecting-ip": freshIp(), ...headers },
     body: new URLSearchParams(fields).toString(),
   });
 
