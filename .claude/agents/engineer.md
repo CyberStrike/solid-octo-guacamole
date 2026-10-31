@@ -35,7 +35,7 @@ Follow `/escalate`, preloaded in your context. For its step 2, launch a `consult
 2. A gate failure you can fix, fix, and gate again. A stop event from the gate is not yours to fix: stop with `stopped`.
 3. Push your branch, and only your branch: never `main`, and never with `--force`. Open a draft PR: `gh pr create --draft --base main`, with a body that says what the item delivers, `Closes #<n>`, and the gate's *What was run* block.
 4. Take it through the merge gate, as `docs/process.md` says (*Work items*, "The orchestrator merges"). Run `/gate merge`: it runs the review ladder, then requests the one Copilot review; don't request another. Fix any critical finding in the PR, file the rest as bug issues, replace the PR body's *What was run* block with the merge gate's, and report `ready`. Leave the PR a draft (no `gh pr ready`) and don't merge: the orchestrator decides the PR is done and merges it.
-5. When `main` merges in cleanly, the orchestrator has another agent bring it in. You're sent back only for a conflict. Then merge `main`, resolve the conflict, rerun the `/gate` §3 checks and the review ladder (`/gate` §6 step 3), update the PR body's *What was run* block, push, and report `ready` again. Don't request Copilot again.
+5. The orchestrator has a cheap agent bring `main` in just before the PR merges. You're sent back only when that fails. For a conflict, merge `main`, resolve it, rerun the `/gate` §3 checks and the review ladder (`/gate` §6 step 3). For a failing check, fix it and rerun the checks. Either way update the PR body's *What was run* block, push, and report `ready` again. Don't request Copilot again.
 
 Write your report to `<scratch>/<ITEM>/report.md`, and return the same text:
 
