@@ -10,6 +10,20 @@ import { promisify } from "node:util";
 const BUCKET = "rarepair";
 const DAY = 86400;
 
+export function corsRules() {
+  return {
+    rules: [
+      {
+        allowed: {
+          origins: ["https://rarepair.fans"],
+          methods: ["PUT"],
+          headers: ["Content-Type"],
+        },
+      },
+    ],
+  };
+}
+
 export function lifecycleRules() {
   return {
     rules: [
@@ -34,20 +48,14 @@ async function main() {
         encoding: "utf8",
       })
     ).stdout;
+  const configs = { cors: corsRules(), lifecycle: lifecycleRules() };
   const dir = mkdtempSync(join(tmpdir(), "r2-bucket-rules-"));
   try {
-    const lifecycleFile = join(dir, "lifecycle.json");
-    writeFileSync(lifecycleFile, JSON.stringify(lifecycleRules()));
-    await wrangler([
-      "r2",
-      "bucket",
-      "lifecycle",
-      "set",
-      BUCKET,
-      "--file",
-      lifecycleFile,
-      "--force",
-    ]);
+    for (const [kind, config] of Object.entries(configs)) {
+      const file = join(dir, `${kind}.json`);
+      writeFileSync(file, JSON.stringify(config));
+      await wrangler(["r2", "bucket", kind, "set", BUCKET, "--file", file, "--force"]);
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -51,6 +51,24 @@ await test("02-upload-handshake", async (t) => {
   });
 });
 
+await test("CORS for the app origin", async (t) => {
+  await t.test("Browsers on rarepair.fans may PUT an upload with its Content-Type", () => {
+    const { code, calls } = run();
+    assert.equal(code, 0);
+    assert.deepEqual(fileFor(calls, "r2 bucket cors set rarepair"), {
+      rules: [
+        {
+          allowed: {
+            origins: ["https://rarepair.fans"],
+            methods: ["PUT"],
+            headers: ["Content-Type"],
+          },
+        },
+      ],
+    });
+  });
+});
+
 await test("19-surge-controls-and-quotas", async (t) => {
   await t.test("Abandoned uploads expire", () => {
     const { code, calls } = run();
