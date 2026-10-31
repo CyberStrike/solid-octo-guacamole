@@ -139,7 +139,7 @@ waitlist     (email PRIMARY KEY,               -- trimmed and lowercased; delete
 ```
 
 `user.role` is `user`, `moderator` or `admin`. An admin has every moderator
-power, plus the wait list's launch send and purge (Wait list).
+power, plus the wait list's purge (Wait list).
 
 A held upload doesn't make its work held: a first upload always goes live (with
 the notice if the parser gave review reasons), and a later upload that is held
@@ -663,7 +663,7 @@ The site goes up before the archive opens. While the web Worker's `PRELAUNCH`
 setting is on, `/` is a coming-soon page with a wait list form, and every
 other app page redirects there, except `/terms`, `/privacy`, the `/waitlist`
 pages, sign-in, `/welcome/terms`, sign-out and `/admin`, so an admin can sign
-in for the first time and run the launch send. Turning `PRELAUNCH` off opens the archive: `/`
+in for the first time. Turning `PRELAUNCH` off opens the archive: `/`
 becomes the home page and `POST /waitlist` answers 404.
 
 The wait list's pages are the only ones with web fonts: Fraunces and IBM Plex
@@ -691,16 +691,40 @@ markup: its inline `style` attributes become stylesheet rules, because
   keeps other people's and mistyped addresses off the list, so the launch
   email's bounce and complaint rates stay low. That matters because it shares
   the sign-in mail's sending reputation.
-- **The launch send.** An admin starts it from the admin area. The web Worker
-  pages through confirmed rows with `notified_at` empty, setting
-  `notified_at` and putting each batch on `email-bulk` (clearing it again if
-  the enqueue fails), so no address is queued twice. Each invocation queues a
-  bounded number of batches, and a Cron Trigger carries a started send on
-  until nothing is left, so a long list never outgrows one request's limits.
+- **The launch send.** The operator runs `scripts/launch-send.mjs` locally,
+  once. It takes its secrets from the environment only (`DATABASE_URL`,
+  `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` with Queues Write, and
+  `EMAIL_BULK_QUEUE_ID`), and prints counts, an HTTP status or a Cloudflare
+  error code, never an address. Each batch is one transaction: it claims up
+  to 100 confirmed rows with `notified_at` empty in one statement that sets
+  `notified_at` and each row's `unsubscribe_token_hash` (`for update skip
+  locked`), puts the batch on `email-bulk` through the Queues HTTP API, and
+  commits only once the push has succeeded. So no address is claimed twice,
+  whether the script is rerun or two copies run at once, and a failed push, a
+  timeout, a stop signal (SIGINT, SIGTERM, SIGHUP) or a hard kill leaves the
+  batch's `notified_at` empty again, because the database rolls the claim
+  back. A failed push stops the run with a non-zero exit, and the operator
+  reruns it. The script prints how many confirmed addresses are still
+  waiting after each batch and at the end, and exits 0 only when none is.
+  Delivery is at least once, never lost: when Cloudflare accepted a push but
+  the script can't know it (a timeout, an abort, an error status or an
+  unreadable reply after the enqueue, a kill between the push and the commit,
+  or a failed commit), the claim is rolled back and the next run queues those
+  up to 100 addresses again, so they get two launch emails and only the
+  second one's unsubscribe link works. The claimed rows stay locked while
+  the push runs, up to its 30 second limit, so a one-click unsubscribe for
+  one of them waits that long. If the machine sleeps or the network drops
+  mid-batch, the database may hold the open transaction until it notices
+  the dead connection; a rerun in that time skips those rows, reports them
+  as still waiting and exits non-zero, and is run again once they free.
   The mailer sends at the configured rate, so the emails, and the visits
   they bring, arrive over hours. A launch email that both providers refuse
   is dead-lettered to `email-bulk-dlq`, which the web Worker consumes: it
-  clears that address's `notified_at`, so the send queues it again. An
+  clears that address's `notified_at`, so a rerun of the script queues it
+  again (rerun it after the queue has drained, and again after a day). The
+  new claim stores a new token hash over the old one, since only the hash is
+  kept and a raw token can't be recovered from it: that is safe here because
+  a dead-lettered email was never sent. An
   `email-bulk` message is a JSON object `{ "kind": "waitlist-launch", "to":
   <address as stored in waitlist.email>, "url":
   "https://rarepair.fans/waitlist/unsubscribe?token=<base64url token>" }`.
