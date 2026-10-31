@@ -171,11 +171,14 @@ describe("14-browse-and-home", () => {
     expect(textOf(lineOf(cardOf(html, 30030), "card-rating") ?? "")).toBe(
       `Explicit · ${warnings.join(", ")}`,
     );
-    const rules = rulesFor(await stylesheetOf(html), "card-rating");
-    expect(rules).toMatch(/overflow-wrap:\s*anywhere/);
-    expect(rules).not.toMatch(
-      /line-clamp|overflow:\s*hidden|text-overflow|white-space:\s*nowrap|max-height|\bheight/,
-    );
+    const css = await stylesheetOf(html);
+    expect(rulesFor(css, "card-rating")).toMatch(/overflow-wrap:\s*anywhere/);
+    // Nor anything the line sits in: the card and its lines.
+    for (const className of ["card-rating", "work-card", "work-list"]) {
+      expect(rulesFor(css, className), className).not.toMatch(
+        /line-clamp|overflow:\s*hidden|text-overflow|white-space:\s*nowrap|max-height|\bheight/,
+      );
+    }
   });
 
   it("Summary is clamped with a more link", async () => {
@@ -203,7 +206,9 @@ describe("14-browse-and-home", () => {
       '<a href="/works/30040" aria-label="more of Seeded work 30040">more</a>',
     );
     expect(more).toBeGreaterThan(card.indexOf("Clamped summary paragraph 12"));
-    expect(cardOf(html, 30041)).not.toContain(">more</a>");
+    const noSummary = cardOf(html, 30041);
+    expect(noSummary).toContain('href="/works/30041"');
+    expect(noSummary).not.toContain(">more</a>");
     const rules = rulesFor(await stylesheetOf(html), "card-summary");
     expect(rules).toMatch(/(^|[^-])line-clamp:\s*3/);
     expect(rules).toMatch(/-webkit-line-clamp:\s*3/);
@@ -420,8 +425,35 @@ describe("14-browse-and-home tag listing URLs", () => {
     expect(lineOf(cardOf(html, 30110), "card-summary")).toBe(summary);
     const css = await stylesheetOf(html);
     expect(rulesFor(css, "card-summary")).toMatch(/contain:\s*content/);
-    // Card styles name the card's own lines, so a summary's h2 or p doesn't pass for one.
+    // Card styles name the card's own lines, so a summary's h2 or p doesn't pass for one,
+    // and the site's own heading sizes are taken back off a summary's headings.
     expect(css).not.toMatch(/\.work-card (h2|p)\b/);
+    expect(css).toMatch(/\.card-summary :is\(h1, h2, h3, h4, h5, h6\) \{[^}]*font-size: inherit/);
+    // An image is scaled to the clamp, not shown at its own height.
+    expect(css).toMatch(/\.card-summary img \{[^}]*max-height: 4\.35em/);
+    // A list styled without bullets keeps its list semantics in Safari.
+    expect(html).toContain('<ol class="work-list" role="list">');
+  });
+
+  it("A work page's tag links open the tag's listing", async () => {
+    await seedWork(db, {
+      ao3WorkId: 30120,
+      tags: [
+        { type: "fandom", name: "Linked Listing Fandom" },
+        { type: "relationship", name: "Linked Ann/Bea" },
+      ],
+    });
+
+    const page = await htmlOf("/works/30120");
+    const hrefs = [...page.matchAll(/href="(\/tags\/[^"]+)"/g)].map((m) => m[1] ?? "");
+
+    expect(hrefs).toEqual([
+      "/tags/fandom/linked%20listing%20fandom",
+      "/tags/relationship/linked%20ann%2Fbea",
+    ]);
+    for (const href of hrefs) {
+      expect(cardOf(await htmlOf(href), 30120), href).not.toBe("");
+    }
   });
 
   it("A tag listing has the strict policy, no script and no cookie", async () => {

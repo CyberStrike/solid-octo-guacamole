@@ -53,7 +53,7 @@ const tagListingPage = (heading: string, works: ListedWork[]) =>
     heading,
     works.length === 0
       ? "<p>No works have this tag yet.</p>"
-      : `<ol class="work-list">\n${works.map(workCard).join("\n")}\n</ol>`,
+      : `<ol class="work-list" role="list">\n${works.map(workCard).join("\n")}\n</ol>`,
   );
 
 // A tag that folds to nothing has no listing, so it is shown without a link.

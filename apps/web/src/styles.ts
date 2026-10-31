@@ -176,7 +176,6 @@ article.chapter {
 /* By the card's own lines, never a summary's elements. */
 .card-title {
   margin: 0;
-  font-size: var(--text-3);
 }
 
 .work-card > p {
@@ -204,6 +203,20 @@ article.chapter {
 
 .card-summary > * {
   margin: 0;
+}
+
+/* A summary's headings read as its text, never as a card title or the page's. */
+.card-summary :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0;
+  font-size: inherit;
+}
+
+/* An image fits the three lines rather than standing at its own height. */
+.card-summary img {
+  max-width: 100%;
+  max-height: 4.35em;
+  width: auto;
+  height: auto;
 }
 
 /* Tags and stats, the least prominent lines, in small type. */
