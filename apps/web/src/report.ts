@@ -60,24 +60,40 @@ const isBanned = async (db: Db, userId: string) =>
 const bannedPage = () =>
   layout("Report not sent", `<p>You can't send reports from this account.</p>`);
 
+type Kind = keyof typeof REASONS;
+
+const isKind = (value: string): value is Kind => Object.hasOwn(REASONS, value);
+
+/** The longest details kept, in characters, as the form says. */
+const MAX_DETAILS = 2000;
+
+interface ReportForm {
+  /** Why the form came back. */
+  error?: string;
+  /** The reason chosen, when the form comes back. */
+  kind?: Kind;
+  /** What was typed, when the form comes back. */
+  details?: string;
+}
+
 /** The form. `ao3WorkId` is a number, so safe in an href. Every other value is escaped. */
-const reportPage = (ao3WorkId: number, title: string) =>
+const reportPage = (ao3WorkId: number, title: string, form: ReportForm = {}) =>
   layout(
     "Report a work",
     `<p class="draft">Draft: this text has not been proofread yet.</p>
-<p>Tell the moderators what is wrong with <a href="/works/${ao3WorkId}">${escapeHtml(title)}</a>.</p>
+${form.error === undefined ? "" : `<p role="alert">${escapeHtml(form.error)}</p>\n`}<p>Tell the moderators what is wrong with <a href="/works/${ao3WorkId}">${escapeHtml(title)}</a>.</p>
 <form method="post" action="/works/${ao3WorkId}/report">
 <fieldset>
 <legend>Reason</legend>
 ${Object.entries(REASONS)
   .map(
     ([kind, label]) =>
-      `<label><input type="radio" name="reason" value="${kind}"> ${escapeHtml(label)}</label>`,
+      `<label><input type="radio" name="reason" value="${kind}"${kind === form.kind ? " checked" : ""}> ${escapeHtml(label)}</label>`,
   )
   .join("\n")}
 </fieldset>
-<label for="details">Details (optional, up to 2000 characters)</label>
-<textarea id="details" name="details" rows="6" maxlength="2000"></textarea>
+<label for="details">Details (optional, up to ${MAX_DETAILS} characters)</label>
+<textarea id="details" name="details" rows="6" maxlength="${MAX_DETAILS}">${escapeHtml(form.details ?? "")}</textarea>
 <button type="submit">Send report</button>
 </form>`,
   );
@@ -133,8 +149,19 @@ export async function submitReport(c: ReportContext) {
     if (await isBanned(db, session.user.id)) return c.html(bannedPage(), 403);
 
     const form = (await readForm(c.req.raw)) ?? new URLSearchParams();
-    const kind = form.get("reason") ?? "";
+    const reason = form.get("reason") ?? "";
     const details = form.get("details") ?? "";
+    // The server checks, since the page has no script and a form can be posted by hand.
+    const kind = isKind(reason) ? reason : undefined;
+    const error =
+      kind === undefined
+        ? "Choose a reason."
+        : details.length > MAX_DETAILS
+          ? `Details can be up to ${MAX_DETAILS} characters.`
+          : undefined;
+    if (kind === undefined || error !== undefined) {
+      return c.html(reportPage(id, work.title, { error, kind, details }), 400);
+    }
     await db
       .insertInto("reports")
       .values({
