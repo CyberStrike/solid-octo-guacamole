@@ -358,11 +358,14 @@ describe("01-auth-magic-link", () => {
       "cf-turnstile-response": PASSING_TOKEN,
     });
     await expectTooManyRequests(res);
-    // No token, however the address would have been stored. By address: other test
-    // files issue tokens at the same time.
-    for (const spelling of [email, email.toUpperCase(), ` ${email.toUpperCase()} `]) {
-      expect(await tokensMadeFor(spelling, before)).toEqual([]);
-    }
+    // No token, however the address would have been stored: matched in any case and
+    // spacing. By address, since other test files issue tokens at the same time.
+    const made = await db
+      .selectFrom("verification")
+      .select("id")
+      .where("value", "ilike", `%${email}%`)
+      .execute();
+    expect(made.filter((row) => !before.has(row.id))).toEqual([]);
     // Nothing more queued: a later request's email has arrived, and still only those.
     await queuedFor(email);
     expect(await emailsTo(email)).toHaveLength(LOGIN_EMAIL_LIMIT);
