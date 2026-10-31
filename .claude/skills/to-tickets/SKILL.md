@@ -1,13 +1,13 @@
 ---
 name: to-tickets
-description: Break a plan, a design section, a set of scenario specs or the current conversation into tracer-bullet tickets for this repository, each with its blocking edges, a definition of done the gate can check, and links to the scenario cases it satisfies, then publish them as GitHub issues on CyberStrike/solid-octo-guacamole. Use when asked to turn ARCHITECTURE, FRONTEND-DISCOVERY, specs/scenarios or a discussion into tickets or issues.
+description: Break a plan, a design section, a set of scenario specs or the current conversation into tracer-bullet tickets for this repository, each with its blocking edges, a definition of done the gate can check, and links to the scenario cases it satisfies, then publish them as GitHub issues on rare-pair/app. Use when asked to turn ARCHITECTURE, FRONTEND-DISCOVERY, specs/scenarios or a discussion into tickets or issues.
 argument-hint: "[spec path, scenario file, issue number, or nothing for the conversation]"
 disable-model-invocation: true
 ---
 
 # To tickets
 
-Turn a plan into **tickets**: tracer-bullet vertical slices, each one PR that passes `/gate`, each naming the tickets that **block** it. They're published as GitHub issues on `CyberStrike/solid-octo-guacamole`, in the shape `/gate` reads (§1: definition-of-done bullets and a `Depends on:` line).
+Turn a plan into **tickets**: tracer-bullet vertical slices, each one PR that passes `/gate`, each naming the tickets that **block** it. They're published as GitHub issues on `rare-pair/app`, in the shape `/gate` reads (§1: definition-of-done bullets and a `Depends on:` line).
 
 Adapted from Matt Pocock's [`to-tickets`](https://github.com/mattpocock/skills/blob/main/skills/engineering/to-tickets/SKILL.md) skill (MIT, Copyright (c) 2026 Matt Pocock). The upstream license is in `LICENSE-upstream.md` next to this file.
 
@@ -70,14 +70,14 @@ Iterate until the user approves. Publish nothing before that.
 Create the issues in dependency order, blockers first, so each `Depends on:` line can cite real numbers:
 
 ```bash
-gh issue create --repo CyberStrike/solid-octo-guacamole --title "<title>" --body-file <scratchpad file> --label ready-for-agent --label mvp
+gh issue create --repo rare-pair/app --title "<title>" --body-file <scratchpad file> --label ready-for-agent --label mvp
 ```
 
 - **Labels:** `ready-for-agent` on every ticket, unless the user says otherwise; tickets are agent-grabbable by construction. Add `mvp` or `later` to match the scenario directory. If a label doesn't exist yet, create it first (`gh label create`), and say so.
 - **Sub-issues:** when the source was an existing issue, add each ticket as a sub-issue of it:
   ```bash
-  gh api -X POST repos/CyberStrike/solid-octo-guacamole/issues/<parent>/sub_issues \
-    -F sub_issue_id=$(gh api repos/CyberStrike/solid-octo-guacamole/issues/<ticket> --jq .id)
+  gh api -X POST repos/rare-pair/app/issues/<parent>/sub_issues \
+    -F sub_issue_id=$(gh api repos/rare-pair/app/issues/<ticket> --jq .id)
   ```
   The endpoint takes the issue's internal `id`, not its number. Don't close or edit the parent.
 - Write each body to a file in your session scratchpad, never in the repo.
