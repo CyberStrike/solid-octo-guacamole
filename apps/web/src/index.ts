@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { assetRoute } from "./assets";
-import { showTagListing } from "./listing";
 import type { Bindings } from "./env";
+import { showTagListing } from "./listing";
 import { requestSignIn, showSignIn } from "./login";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
 import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";

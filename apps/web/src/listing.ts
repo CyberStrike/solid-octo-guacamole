@@ -62,7 +62,7 @@ const tagLinks = (tags: ListedWork["tags"]) =>
     .map((t) =>
       t.name_norm === ""
         ? escapeHtml(t.name)
-        : `<a href="${escapeHtml(tagHref(t.type, t.name_norm))}">${escapeHtml(t.name)}</a>`,
+        : `<a href="${tagHref(t.type, t.name_norm)}">${escapeHtml(t.name)}</a>`,
     )
     .join(", ");
 
