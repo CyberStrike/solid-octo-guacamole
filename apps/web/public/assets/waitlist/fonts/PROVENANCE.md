@@ -34,5 +34,5 @@ OFL 1.1 with Reserved Font Name "Plex".
 
 Take new files from the publishers' releases only, never from a font CDN (they
 re-subset). Rename each woff2 to the new hash, update `waitlist.<hash>.css` (and
-rename it to its own new hash, after `npm run format`), `STYLESHEET` in
+rename it to its own new hash, after `npm run format`), `WAITLIST_STYLESHEET_PATH` in
 `src/waitlist-pages.ts`, the table above and the test.

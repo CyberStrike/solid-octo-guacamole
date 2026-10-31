@@ -5,10 +5,10 @@
 import { TURNSTILE_ORIGIN } from "./security";
 import { STYLESHEET_PATH } from "./styles";
 
-const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
+export const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
 /** Text made safe to put in an HTML element or attribute. */
-const escapeHtml = (text: string) =>
+export const escapeHtml = (text: string) =>
   text
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
