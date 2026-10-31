@@ -194,6 +194,8 @@ describe("17-reports-and-dmca", () => {
     const html = await res.text();
     expect(html).toContain("<h1>Report sent</h1>");
     expect(html).toContain("A moderator will look at it");
+    // A wrong version is checked, never counted toward hiding the work.
+    expect(html).not.toContain("hidden");
     const [report, ...more] = await reportsBy(email);
     expect(more).toEqual([]);
     // Open, and by U (reportsBy finds it through reporter_id). MOD1's queue and
@@ -291,7 +293,7 @@ describe("report form checks", () => {
       expect(html).toContain('<p role="alert">Choose a reason.</p>');
       expect(html).toContain(`<form class="report-form" method="post" action="${REPORT}">`);
       // What was typed comes back, escaped; a value that is no reason doesn't.
-      expect(html).toContain(">x4 synthetic details</textarea>");
+      expect(html).toContain('maxlength="2000">\nx4 synthetic details</textarea>');
       expect(html).not.toContain("spam<b>");
       expect(html).not.toContain("checked");
     }
@@ -337,6 +339,23 @@ describe("report form checks", () => {
     ]);
   });
 
+  it("Details past the cap in any script come back to edit, not thrown away", async () => {
+    const cookie = await signIn("x4-wide-over@example.test");
+    // 2001 emoji: two UTF-16 units and 12 encoded bytes each, about 24 KB of body.
+    const emoji = "\u{1F600}".repeat(2001);
+    const res = await postReport({ reason: "other", details: emoji }, { cookie });
+    expect(res.status).toBe(400);
+    expect(await res.text()).toContain(`${emoji}</textarea>`);
+  });
+
+  it("Details that start with a line break come back unchanged", async () => {
+    const cookie = await signIn("x4-leading-line@example.test");
+    const res = await postReport({ details: "\r\nx4 second line" }, { cookie });
+    expect(res.status).toBe(400);
+    // The parser drops one newline straight after <textarea>, so the page gives it two.
+    expect(await res.text()).toContain('maxlength="2000">\n\nx4 second line</textarea>');
+  });
+
   it("A NUL in the details, which no one types, is dropped rather than failing", async () => {
     const email = "x4-nul@example.test";
     const cookie = await signIn(email);
@@ -349,7 +368,7 @@ describe("report form checks", () => {
     const email = "x4-too-large@example.test";
     const cookie = await signIn(email);
     const res = await postReport(
-      { reason: "other", details: `x4-echo-${"z".repeat(24 * 1024)}` },
+      { reason: "other", details: `x4-echo-${"z".repeat(70 * 1024)}` },
       { cookie },
     );
     expect(res.status).toBe(413);

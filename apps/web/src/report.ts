@@ -67,7 +67,7 @@ const isBanned = async (db: Db, userId: string) => {
 const NO_STORE = { "Cache-Control": "no-store" };
 
 const bannedPage = () =>
-  layout("Report not sent", `<p>You can't send reports from this account.</p>`);
+  layout("Reporting is closed", `<p>You can't send reports from this account.</p>`);
 
 type Kind = keyof typeof REASONS;
 
@@ -76,10 +76,12 @@ const isKind = (value: string): value is Kind => Object.hasOwn(REASONS, value);
 /** The longest details kept, in characters, as the form says. */
 const MAX_DETAILS = 2000;
 
-// The form at its largest: maxlength counts UTF-16 code units, and none encodes to
-// more than 9 bytes percent-encoded (a three-byte character; a line break, sent as
-// CRLF, is 6), so 2000 come to 18 KB, plus a reason of under 100 bytes.
-const MAX_REPORT_BODY = 20 * 1024;
+// The form at its largest, where maxlength counts UTF-16 code units: none encodes
+// to more than 9 bytes percent-encoded (a three-byte character; a line break, sent
+// as CRLF, is 6), so 2000 come to 18 KB. A browser that counts characters instead
+// (Safari counts each emoji as one) can send several times that, so the cap leaves
+// room for it: such details get the 400 with what was typed, not a 413 that loses it.
+const MAX_REPORT_BODY = 64 * 1024;
 
 interface ReportForm {
   /** Why the form came back. */
@@ -107,7 +109,8 @@ ${Object.entries(REASONS)
   .join("\n")}
 </fieldset>
 <label for="details">Details (optional, up to ${MAX_DETAILS} characters)</label>
-<textarea id="details" name="details" rows="6" maxlength="${MAX_DETAILS}">${escapeHtml(form.details ?? "")}</textarea>
+<textarea id="details" name="details" rows="6" maxlength="${MAX_DETAILS}">
+${escapeHtml(form.details ?? "")}</textarea>
 <button type="submit">Send report</button>
 </form>`,
   );
@@ -116,15 +119,20 @@ ${Object.entries(REASONS)
 const signInFirst = (id: number) => `/login?next=${encodeURIComponent(`/works/${id}/report`)}`;
 
 /**
- * What happens next. It says nothing of how many reports hide a work, which would
- * help anyone gaming it. Draft copy.
+ * What happens next. A wrong version is checked, and never counts toward hiding
+ * the work. It says nothing of how many reports hide a work, which would help
+ * anyone gaming it. Draft copy.
  */
-const reportedPage = () =>
+const reportedPage = (kind: Kind) =>
   layout(
     "Report sent",
     `<p class="draft">Draft: this text has not been proofread yet.</p>
 <p>Thank you. A moderator will look at it. Your report is kept with your account.</p>
-<p>A work several readers report may be hidden until a moderator has looked at it.</p>`,
+${
+  kind === "wrong_version"
+    ? "<p>A moderator will check this version of the work.</p>"
+    : "<p>A work several readers report may be hidden until a moderator has looked at it.</p>"
+}`,
   );
 
 /** `GET /works/:id/report`: the form, for a signed-in reader. */
@@ -155,7 +163,8 @@ export const sameOriginOnly: MiddlewareHandler = async (c, next) => {
 
 /**
  * `POST /works/:id/report`, behind `sameOriginOnly`: stores an open report. A
- * signed-out post is sent to sign in before its body is read.
+ * signed-out post is sent to sign in before its body is read. The work and the
+ * ban are checked once the body is in, so a slow body can't outlast either.
  */
 export async function submitReport(c: ReportContext) {
   const id = workId(c.req.param("id"));
@@ -163,13 +172,13 @@ export async function submitReport(c: ReportContext) {
   const session = c.var.session;
   if (session === null) return c.redirect(signInFirst(id), 303);
 
+  const form = await readForm(c.req.raw, MAX_REPORT_BODY);
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
   try {
     const work = await liveWork(db, id);
     if (!work) return c.notFound();
     if (await isBanned(db, session.user.id)) return c.html(bannedPage(), 403, NO_STORE);
 
-    const form = await readForm(c.req.raw, MAX_REPORT_BODY);
     // Nothing of it is shown back: the form comes again empty.
     if (form === null) {
       const error = "That report was too large. Please try again.";
@@ -201,8 +210,8 @@ export async function submitReport(c: ReportContext) {
         body: details.trim() === "" ? null : details,
       })
       .execute();
+    return c.html(reportedPage(reason), 200, NO_STORE);
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }
-  return c.html(reportedPage(), 200, NO_STORE);
 }
