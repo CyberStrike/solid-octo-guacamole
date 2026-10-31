@@ -54,11 +54,18 @@ const tagLinks = (tags: ListedWork["tags"]) =>
     .map((t) => `<a href="${escapeHtml(tagHref(t.type, t.name_norm))}">${escapeHtml(t.name)}</a>`)
     .join(", ");
 
-function workCard({ work, tags }: ListedWork): string {
+/** The six lines, in order: title and author, rating and warnings, fandoms, summary, tags, stats. */
+function workCard({ work, authors, tags }: ListedWork): string {
   const href = `/works/${work.ao3_work_id}`;
   const ofType = (type: TagType) => tags.filter((t) => t.type === type);
+  const rating = [work.rating ?? "Not Rated", ...ofType("warning").map((t) => t.name)];
   return `<li class="work-card">
 <h2 class="card-title"><a href="${href}">${escapeHtml(work.title)}</a></h2>
+<p class="card-byline">by ${escapeHtml(authors.map((a) => a.pseud).join(", "))}</p>
+<p class="card-rating">${escapeHtml(rating[0] ?? "")} · ${escapeHtml(rating.slice(1).join(", "))}</p>
 <p class="card-fandoms">${tagLinks(ofType("fandom"))}</p>
+<div class="card-summary">${work.summary_html ?? ""}</div>
+<p class="card-tags">${tagLinks([...ofType("relationship"), ...ofType("character")])}</p>
+<p class="card-stats">${work.words?.toLocaleString("en-US") ?? "?"} words</p>
 </li>`;
 }

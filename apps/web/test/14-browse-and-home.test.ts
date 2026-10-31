@@ -45,4 +45,42 @@ describe("14-browse-and-home", () => {
     // Hidden works are left out of listings.
     expect(html).not.toContain('href="/works/30003"');
   });
+
+  it("Work card line order", async () => {
+    await seedWork(db, {
+      ao3WorkId: 30010,
+      title: "Line Order Title",
+      authors: [{ pseud: "Line Order Author", ao3_user: "line_order" }],
+      rating: "Teen And Up Audiences",
+      summary: "<p>Line order summary.</p>",
+      chapters: [{ words: 1500 }],
+      updatedAt: "2024-03-05T00:00:00Z",
+      tags: [
+        { type: "freeform", name: "Line Order Freeform" },
+        { type: "character", name: "Line Order Character" },
+        { type: "relationship", name: "Line Order A/B" },
+        { type: "fandom", name: "Line Order Fandom" },
+        { type: "warning", name: "No Archive Warnings Apply" },
+        { type: "rating", name: "Teen And Up Audiences" },
+      ],
+    });
+
+    const card = cardOf(await htmlOf("/tags/fandom/line%20order%20fandom"), 30010);
+
+    const lines = [
+      "Line Order Title",
+      "Line Order Author",
+      "Teen And Up Audiences · No Archive Warnings Apply",
+      "Line Order Fandom",
+      "Line order summary.",
+      "Line Order A/B",
+      "1,500 words",
+    ];
+    const at = lines.map((text) => card.indexOf(text));
+    expect(
+      at.every((i) => i >= 0),
+      JSON.stringify(at),
+    ).toBe(true);
+    expect(at).toEqual([...at].sort((a, b) => a - b));
+  });
 });
