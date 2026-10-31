@@ -65,6 +65,10 @@ describe("22-waitlist", () => {
     for (const tag of scripts) expect(tag).toContain(`nonce="${nonce}"`);
 
     expect(html).toMatch(/one email when the archive opens, and nothing else/i);
+
+    // It goes through the shared layout, temporary banner and footer included.
+    expect(html).toContain('<aside class="banner"');
+    expect(html).toContain('<a href="/privacy">Privacy</a>');
   });
 
   it("Coming-soon page without JavaScript explains the form needs it", async () => {
@@ -103,11 +107,14 @@ describe("22-waitlist", () => {
   it("Coming-soon page serves its own fonts", async () => {
     const html = await (await fetchW("/")).text();
 
-    // One same-origin stylesheet.
-    const links = tags(html, "link").filter((tag) => tag.includes('rel="stylesheet"'));
-    expect(links).toHaveLength(1);
-    const cssPath = links[0]?.match(/href="([^"]+)"/)?.[1] ?? "";
-    expect(cssPath).toMatch(/^\/assets\//);
+    // Two same-origin stylesheets: the site's, then the wait list's with the fonts.
+    const sheets = tags(html, "link")
+      .filter((tag) => tag.includes('rel="stylesheet"'))
+      .map((tag) => tag.match(/href="([^"]+)"/)?.[1] ?? "");
+    expect(sheets).toHaveLength(2);
+    expect(sheets[0]).toBe(STYLESHEET_PATH);
+    const cssPath = sheets[1] ?? "";
+    expect(cssPath).toMatch(/^\/assets\/waitlist\//);
     const cssRes = await fetchW(cssPath);
     expect(cssRes.status).toBe(200);
     expect(cssRes.headers.get("content-type")).toMatch(/^text\/css/);
@@ -156,12 +163,18 @@ describe("22-waitlist", () => {
     }
     expect(served).toEqual(new Set(Object.values(UPSTREAM_WOFF2)));
 
-    // Nothing from another host but Turnstile's api.js, and no inline style for the CSP to refuse.
-    const refs = [
-      ...[...html.matchAll(/\s(?:src|href)="([^"]*)"/g)].map((m) => m[1] ?? ""),
-      ...[...css.matchAll(/url\(\s*["']?([^"')]*)/g)].map((m) => m[1] ?? ""),
-      ...[...css.matchAll(/@import\s+["']([^"']*)/g)].map((m) => m[1] ?? ""),
-    ];
+    // Nothing from another host but Turnstile's api.js, in the page or either
+    // stylesheet, and no inline style for the CSP to refuse.
+    const siteCss = await (await fetchW(STYLESHEET_PATH)).text();
+    const refs = [...html.matchAll(/\s(?:src|href)="([^"]*)"/g)].map((m) => m[1] ?? "");
+    for (const sheet of [css, siteCss]) {
+      refs.push(
+        ...[...sheet.matchAll(/url\(\s*["']?([^"')]*)/g)].map((m) => m[1] ?? ""),
+        ...[...sheet.matchAll(/@import\s+["']([^"']*)/g)].map((m) => m[1] ?? ""),
+      );
+    }
+    // And only the wait list's sheet loads a web font.
+    expect(siteCss).not.toMatch(/@font-face|woff2/);
     for (const ref of refs) {
       if (ref === TURNSTILE_API) continue;
       expect(new URL(ref, BASE).origin).toBe(BASE);
@@ -240,7 +253,6 @@ describe("22-waitlist", () => {
       ["/robots.txt", "GET"],
       ["/favicon.ico", "GET"],
       ["/assets/waitlist/fonts/fraunces/OFL.txt", "GET"],
-      ["/assets/site.0123456789abcdef.css", "GET"],
     ];
     for (const [path, method] of open) {
       const res = await fetchW(path, { method });

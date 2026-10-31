@@ -1,9 +1,10 @@
 // The wait list's pages (ARCHITECTURE, Wait list), the only ones with web fonts.
-// They have their own shell, apart from pages.ts, until the shared layout (S1)
-// lands. The other wait list pages (WL2, WL3) reuse waitlistPage.
+// They go through the shared layout, with the wait list stylesheet after the site's.
+// The other wait list pages (WL2, WL3) reuse waitlistPage.
 //
 // Draft copy, written from specs/scenarios/mvp/22-waitlist.md for the operator to proof.
 
+import { layout } from "./pages";
 import { TURNSTILE_ORIGIN } from "./security";
 
 const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
@@ -14,15 +15,17 @@ const FRAUNCES_LICENCE = "/assets/waitlist/fonts/fraunces/OFL.txt";
 const PLEX_LICENCE = "/assets/waitlist/fonts/ibm-plex-mono/license.txt";
 
 /**
- * A whole wait list page, in the wait list's web fonts, with their licences linked.
- * Every argument is trusted markup from this file, never escaped (the sitekey is operator config).
+ * A whole wait list page: the shared layout, set in the wait list's web fonts, with
+ * their licences linked. The layout escapes the title; the body and head are trusted
+ * markup from this file, never escaped (the sitekey is operator config).
  */
-export const waitlistPage = (title: string, body: string, head = "") => `<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title} · rarepair</title><link rel="stylesheet" href="${STYLESHEET}">${head}</head>
-<body><main>${body}
-<footer><p>Set in Fraunces (<a href="${FRAUNCES_LICENCE}">licence</a>) and IBM Plex Mono (<a href="${PLEX_LICENCE}">licence</a>).</p></footer></main></body>
-</html>`;
+export const waitlistPage = (title: string, body: string, head = "") =>
+  layout(
+    title,
+    `${body}
+<p class="note">Set in Fraunces (<a href="${FRAUNCES_LICENCE}">licence</a>) and IBM Plex Mono (<a href="${PLEX_LICENCE}">licence</a>).</p>`,
+    `<link rel="stylesheet" href="${STYLESHEET}">${head}`,
+  );
 
 /**
  * The coming-soon page at / while PRELAUNCH is on, with the wait list form. Its button
@@ -31,9 +34,8 @@ export const waitlistPage = (title: string, body: string, head = "") => `<!docty
  */
 export const comingSoonPage = (nonce: string, siteKey: string) =>
   waitlistPage(
-    "Coming soon",
-    `<h1>rarepair is coming soon</h1>
-<p>A temporary, community-run reading archive for fanworks. Upload the epub files you downloaded, and anyone can browse, search and read them in the browser.</p>
+    "rarepair is coming soon",
+    `<p>A temporary, community-run reading archive for fanworks. Upload the epub files you downloaded, and anyone can browse, search and read them in the browser.</p>
 <form method="post" action="/waitlist">
 <label for="email">Email address</label>
 <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required>
