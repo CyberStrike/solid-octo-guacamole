@@ -7,7 +7,11 @@ import { tooManyRequestsPage } from "./pages";
 /** The sign-in limits' window, as wrangler.jsonc sets it: the binding doesn't say. */
 export const LOGIN_WINDOW_SECONDS = 60;
 
-/** A limiter key: a hex SHA-256 of the value under its prefix, so the value itself goes nowhere. */
+/**
+ * A limiter key: a hex SHA-256 of the value under its prefix, so the limiter is never handed
+ * the address itself. Unkeyed, so not a secret: an IPv4 key can be reversed by trying every
+ * address. Fine while keys are never stored or logged.
+ */
 async function hashKey(prefix: string, value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(prefix + value));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -47,9 +51,11 @@ export const emailKey = (scope: string, address: string) =>
  * Whether `key` is over its limit in the current window. When the binding fails the request
  * goes through: the binding's counts are approximate and only meant to slow abuse
  * (ARCHITECTURE, Surge controls), so its outage mustn't take a route down with it. Only the error's name is logged, since the
- * message could carry the key.
+ * message could carry the key. A binding missing from the config is a mistake, not an
+ * outage, so it throws rather than quietly turning the limit off.
  */
-export async function isLimited(limiter: RateLimit, key: string): Promise<boolean> {
+export async function isLimited(limiter: RateLimit | undefined, key: string): Promise<boolean> {
+  if (limiter === undefined) throw new Error("Rate limit binding missing");
   try {
     return !(await limiter.limit({ key })).success;
   } catch (error) {

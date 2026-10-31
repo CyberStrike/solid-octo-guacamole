@@ -405,6 +405,9 @@ describe("19-surge-controls-and-quotas", () => {
     expect(res.headers.get("content-type")).toMatch(/^text\/html/);
     expect(res.headers.get("content-security-policy")).toContain("default-src 'self'");
     expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("strict-transport-security")).toBe(
+      "max-age=31536000; includeSubDomains",
+    );
   });
 });
 

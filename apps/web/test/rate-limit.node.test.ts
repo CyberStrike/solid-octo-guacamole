@@ -93,6 +93,13 @@ describe("isLimited", () => {
   });
 });
 
+describe("isLimited without its binding", () => {
+  it("fails loudly rather than letting every request through", async () => {
+    // As a binding left out of a deploy's config is, whatever Bindings says.
+    await expect(isLimited(undefined, "k")).rejects.toThrow("Rate limit binding missing");
+  });
+});
+
 describe("the sign-in limits in wrangler.jsonc", () => {
   it("have the window Retry-After says", async () => {
     const { rawConfig } = experimental_readRawConfig({ config: "wrangler.jsonc" });
