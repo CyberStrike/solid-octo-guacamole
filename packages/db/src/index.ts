@@ -1,12 +1,14 @@
 export { createDb, type DbConfig } from "./client";
 export { migrate } from "./migrate";
 export { authSchema } from "./auth-schema";
-export { normalizeTagName, compareTagKeys, compareCodeUnits } from "./tags";
+export { normalizeTagName, compareTagKeys, compareCodeUnits, isTagType } from "./tags";
 export { normalizePseud } from "./pseud";
 export {
   getLiveWork,
   listLiveWorksByTag,
+  tagNameKeys,
   insertUpload,
+  type ListedWork,
   type LiveWork,
   type WorkSummary,
 } from "./queries";

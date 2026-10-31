@@ -30,6 +30,9 @@
       "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
     },
   ],
+  // Chapter fragments, which the reader reads under works/ only. The same bucket
+  // apps/content serves images and originals from.
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "rarepair" }],
   // Sign-in emails, sent by apps/mailer.
   "queues": {
     "producers": [{ "binding": "EMAIL", "queue": "email" }],
