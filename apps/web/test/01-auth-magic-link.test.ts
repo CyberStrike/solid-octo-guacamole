@@ -240,30 +240,46 @@ describe("01-auth-magic-link", () => {
   });
 
   it("An oversized sign-in request is refused before it is read", async () => {
-    const before = await verificationIds();
-    const fields = {
-      email: "oversized@example.test",
-      "cf-turnstile-response": PASSING_TOKEN,
-      padding: "x".repeat(20_000),
+    // A form body of exactly `bytes` bytes, passing Turnstile.
+    const prefix = `email=oversized%40example.test&cf-turnstile-response=${PASSING_TOKEN}&padding=`;
+    const formOf = (bytes: number) => prefix + "x".repeat(bytes - prefix.length);
+    // The same, as a stream of unknown length, so no Content-Length is sent.
+    const streamOf = (text: string) => {
+      const bytes = new TextEncoder().encode(text);
+      return new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (let at = 0; at < bytes.length; at += 1000) {
+            controller.enqueue(bytes.slice(at, at + 1000));
+          }
+          controller.close();
+        },
+      });
     };
-    const res = await postLogin(fields);
-    expect(res.status).toBe(413);
-    expect(await res.text()).not.toContain("x".repeat(100));
 
-    // Well under the limit, but an address too long to send to is not shown back.
-    const longEmail = `${"a".repeat(2000)}@example.test`;
-    const echoed = await postLogin({
-      email: longEmail,
-      "cf-turnstile-response": "a-failing-token",
-    });
-    expect(echoed.status).toBe(400);
-    expect(await echoed.text()).not.toContain("a".repeat(255));
-
-    // The same without a Content-Length: a streamed body is cut off at the limit too.
-    const body = new Blob([new URLSearchParams(fields).toString()]).stream();
-    const streamed = await postLogin({}, { body });
-    expect(streamed.status).toBe(413);
+    const before = await verificationIds();
+    for (const body of [formOf(16 * 1024 + 1), streamOf(formOf(16 * 1024 + 1))]) {
+      const res = await postLogin({}, { body });
+      expect(res.status).toBe(413);
+      const html = await res.text();
+      expect(formTag(html)).not.toBeNull();
+      expect(html).not.toContain("oversized");
+      expect(html).not.toContain("x".repeat(100));
+    }
     await expectNothingCreated("oversized@example.test", before);
+
+    // 16 KB exactly is read, either way.
+    for (const body of [formOf(16 * 1024), streamOf(formOf(16 * 1024))]) {
+      expect((await postLogin({}, { body })).status).toBe(200);
+    }
+  });
+
+  it("An address too long to send to is not shown back", async () => {
+    const longEmail = `${"a".repeat(2000)}@example.test`;
+    const res = await postLogin({ email: longEmail, "cf-turnstile-response": "a-failing-token" });
+    expect(res.status).toBe(400);
+    const html = await res.text();
+    expect(formTag(html)).not.toBeNull();
+    expect(html).not.toContain("a".repeat(255));
   });
 
   it("Requesting a link while Turnstile can't be reached is refused", async () => {

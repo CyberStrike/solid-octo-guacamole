@@ -22,14 +22,15 @@ export const showSignIn = (c: LoginContext) =>
     }),
   );
 
-// The sign-in form at its largest: a 254-character address, a 512-character next and
-// a 2048-character token, percent-encoded, come to under 5 KB.
-const MAX_BODY = 8 * 1024;
+// The sign-in form at its largest, every character percent-encoded at its widest:
+// a 254-character address and a 512-character next (up to 9 bytes each, as
+// UTF-8) and a 2048-character token (3 each) come to about 13 KB.
+const MAX_BODY = 16 * 1024;
 
 /**
  * The fields of a plain form post, or null when the body is over `MAX_BODY`
- * bytes, which stops being read there. Anything else, such as a multipart body,
- * has no fields.
+ * bytes, which stops being read there, or breaks off. Anything else, such as a
+ * multipart body, has no fields and is never read.
  */
 async function readForm(request: Request): Promise<URLSearchParams | null> {
   const type = request.headers.get("content-type") ?? "";
@@ -41,17 +42,24 @@ async function readForm(request: Request): Promise<URLSearchParams | null> {
 
   // Counted as it arrives, since a streamed body declares no length.
   const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
+  const decoder = new TextDecoder();
+  let text = "";
   let size = 0;
-  for (let read = await reader.read(); !read.done; read = await reader.read()) {
-    size += read.value.byteLength;
-    if (size > MAX_BODY) {
-      await reader.cancel();
-      return null;
+  try {
+    for (let read = await reader.read(); !read.done; read = await reader.read()) {
+      size += read.value.byteLength;
+      if (size > MAX_BODY) {
+        // Not awaited: the refusal doesn't wait on, or fail with, the stream.
+        reader.cancel().catch(() => undefined);
+        return null;
+      }
+      text += decoder.decode(read.value, { stream: true });
     }
-    chunks.push(read.value);
+  } catch {
+    // The client broke the body off.
+    return null;
   }
-  return new URLSearchParams(await new Blob(chunks).text());
+  return new URLSearchParams(text + decoder.decode());
 }
 
 /**
