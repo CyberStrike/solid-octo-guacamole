@@ -6,7 +6,8 @@ import type { TestProject } from "vitest/node";
 // each test makes its own user and uploads rather than resetting it.
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   // The setup's own client, plus room for each queue invocation's pool and the tests' own,
-  // in every file running at once: a test holds at most six (the flood case's uploads).
+  // in every file running at once. The most one test opens together is the flood case's
+  // five uploads; a finished invocation's pool can still be closing (ctx.waitUntil).
   const t = await createTestDb({ maxConnections: 64 });
   project.provide("databaseUrl", t.connectionString);
   return () => t.close();

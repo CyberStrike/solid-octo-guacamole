@@ -11,7 +11,8 @@ import { createTestDb, type TestDb } from "../src/testing";
 
 let t: TestDb;
 beforeAll(async () => {
-  t = await createTestDb({ maxConnections: 16 });
+  // As many as the web and ingest suites give it.
+  t = await createTestDb({ maxConnections: 64 });
   await sql`create table client_turns (n int not null)`.execute(t.db);
 });
 afterAll(async () => {
@@ -95,7 +96,7 @@ describe("createTestDb", () => {
         .query<{ count: number }>("select count(*)::int as count from client_turns where n = -1")
         .finally(() => (settled = true));
 
-      await setTimeout(50);
+      await setTimeout(200);
       expect(settled).toBe(false);
       await holder.query("rollback");
 
@@ -146,7 +147,7 @@ describe("createTestDb", () => {
       let settled = false;
       const answer = c.query("select $1::int as n", [7]).finally(() => (settled = true));
 
-      await setTimeout(50);
+      await setTimeout(200);
       expect(settled).toBe(false);
       dropped.socket.destroy();
 

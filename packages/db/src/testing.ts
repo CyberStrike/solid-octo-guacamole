@@ -27,11 +27,12 @@ export interface TestDbOptions {
   maxConnections?: number;
 }
 
-// Frontend messages after which the backend answers ReadyForQuery (Sync, Query,
-// FunctionCall, PasswordMessage, and CopyDone or CopyFail after a COPY) or
-// closes (Terminate). Any other (Parse, Bind, Describe, Execute, Close, Flush,
-// CopyData) is part-way through a cycle. Nothing here uses COPY or SASL, so a
-// COPY inside a pipeline, or a SASL exchange, isn't kept whole.
+// Frontend messages that end a cycle: after them the backend answers
+// ReadyForQuery (Sync, Query, FunctionCall, a cleartext PasswordMessage, and
+// CopyDone or CopyFail) or closes (Terminate). Any other (Parse, Bind, Describe,
+// Execute, Close, Flush, CopyData) is part-way through one. Nothing here uses
+// COPY or SASL, and neither is kept whole: a Query that starts a COPY, and a SASL
+// response ('p' too), are answered with more of the exchange, not ReadyForQuery.
 const ENDS_CYCLE = new Set(["S", "Q", "F", "p", "c", "f", "X"]);
 
 /**

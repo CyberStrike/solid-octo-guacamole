@@ -366,10 +366,10 @@ describe("04-ingest-job-lifecycle", () => {
     const first = watchedWorker(holding);
     const second = watchedWorker(holding);
 
-    // Two invocations started at once, each with its own connection to Postgres, overlapping
-    // through connect, claim and the R2 read. The test database is one PGlite session, so
-    // the two claims still run one after the other: this shows one claim winning, not a
-    // real Postgres's row lock and re-check under READ COMMITTED.
+    // Two invocations started at once, each with its own connection to Postgres; nothing
+    // orders them, and the loser acks at its claim. The test database is one PGlite
+    // session, so the two claims run one after the other: this shows one claim winning,
+    // not a real Postgres's row lock and re-check under READ COMMITTED.
     const [firstResult, secondResult] = await Promise.all([
       deliver([{ upload_id: id }], { handler: first.handler }),
       deliver([{ upload_id: id }], { handler: second.handler }),
