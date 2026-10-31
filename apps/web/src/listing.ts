@@ -7,7 +7,7 @@ import {
   createDb,
   isTagType,
   listLiveWorksByTag,
-  normalizeTagName,
+  tagNameKeys,
   type ListedWork,
   type TagType,
 } from "@archive/db";
@@ -22,15 +22,13 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
   const type = c.req.param("type");
   const name = c.req.param("name");
   if (type === undefined || name === undefined || !isTagType(type)) return c.notFound();
-  const nameNorm = normalizeTagName(type, name);
-  // A name of only punctuation folds to nothing, which names no tag. Nor does
-  // one with a NUL, which Postgres refuses as a parameter.
-  if (nameNorm === "" || nameNorm.includes("\0")) return c.notFound();
+  const keys = tagNameKeys(type, name);
+  if (keys.length === 0) return c.notFound();
   // One query, on one connection.
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   try {
-    const works = await listLiveWorksByTag(db, type, nameNorm);
-    return c.html(tagListingPage(headingOf(works, type, nameNorm), works));
+    const works = await listLiveWorksByTag(db, type, name);
+    return c.html(tagListingPage(headingOf(works, type, keys), works));
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }
@@ -42,9 +40,9 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
  * work the heading is fixed, so a tag only they use reads like one nobody has
  * used, and the page repeats nothing from its URL.
  */
-function headingOf(works: ListedWork[], type: TagType, nameNorm: string): string {
+function headingOf(works: ListedWork[], type: TagType, keys: string[]): string {
   const spellings = works.flatMap((w) =>
-    w.tags.flatMap((t) => (t.type === type && t.name_norm === nameNorm ? [t.name] : [])),
+    w.tags.flatMap((t) => (t.type === type && keys.includes(t.name_norm) ? [t.name] : [])),
   );
   return spellings.sort(compareCodeUnits)[0] ?? "No works with this tag";
 }
@@ -57,9 +55,17 @@ const tagListingPage = (heading: string, works: ListedWork[]) =>
       : `<ol class="work-list" role="list">\n${works.map(workCard).join("\n")}\n</ol>`,
   );
 
-/** Whether a summary has anything to read: text or an image. */
+// Entities for spaces and zero-width marks, which the sanitizer leaves as written.
+const BLANK_ENTITY =
+  /&(?:nbsp|ensp|emsp|thinsp|zwnj|zwj|#160|#x0*a0|#820[1-9]|#x200[0-9a-d]|#8203|#65279|#xfeff);?/giu;
+
+/**
+ * Whether a summary has anything to read: an image, or text that isn't only
+ * spaces, zero-width marks or entities for them. Linear: `[^<>]` can't backtrack.
+ */
 const hasContent = (html: string) =>
-  /<img\b/.test(html) || /[^\s]/.test(html.replace(/<[^>]*>/g, "").replaceAll("&nbsp;", ""));
+  /<img\b/.test(html) ||
+  /[^\s\p{Cf}]/u.test(html.replace(/<[^<>]*>/g, "").replace(BLANK_ENTITY, ""));
 
 // A tag that folds to nothing has no listing, so it is shown without a link.
 const tagLinks = (tags: ListedWork["tags"]) =>

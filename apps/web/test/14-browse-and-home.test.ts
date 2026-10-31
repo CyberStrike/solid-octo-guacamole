@@ -199,7 +199,7 @@ describe("14-browse-and-home", () => {
     // Markup with nothing to read is no summary either.
     await seedWork(db, {
       ao3WorkId: 30042,
-      summary: "<p> </p><br>",
+      summary: "<p> &nbsp;&#160;&#xA0;&emsp;&zwnj;​</p><br>",
       tags: [{ type: "fandom", name: "Clamped Summary Fandom" }],
     });
 
@@ -403,6 +403,8 @@ describe("14-browse-and-home tag listing URLs", () => {
       // A fixed heading: the page repeats nothing a URL can say.
       expect(html.match(/<h1>([^<]*)<\/h1>/g), name).toEqual(["<h1>No works with this tag</h1>"]);
       expect(html).not.toContain(decodeURIComponent(name));
+      // Nor anything of the removed and hidden works.
+      expect(html).not.toMatch(/Url Empty Freeform|Url Hidden Freeform!|3010[01]|Seeded work/);
       expect(html).toContain("No works");
       expect(html).not.toContain("work-card");
     }
@@ -433,7 +435,10 @@ describe("14-browse-and-home tag listing URLs", () => {
     );
     expect(lineOf(cardOf(html, 30110), "card-summary")).toBe(summary);
     const css = await stylesheetOf(html);
-    expect(rulesFor(css, "card-summary")).toMatch(/contain:\s*content/);
+    const summaryRules = rulesFor(css, "card-summary");
+    expect(summaryRules).toMatch(/contain:\s*content/);
+    // Three lines high at most, whatever the markup (a table isn't counted in lines).
+    expect(summaryRules).toMatch(/max-height:\s*calc\(3 \* 1\.45em\)/);
     // Card styles name the card's own lines, so a summary's h2 or p doesn't pass for one,
     // and the site's own heading sizes are taken back off a summary's headings.
     expect(css).not.toMatch(/\.work-card (h2|p)\b/);
@@ -451,6 +456,8 @@ describe("14-browse-and-home tag listing URLs", () => {
       tags: [
         { type: "fandom", name: "Linked Listing Fandom" },
         { type: "relationship", name: "Linked Ann/Bea" },
+        // Its name_norm normalizes again to something else: the link still finds it.
+        { type: "character", name: "Ι͂ Linked" },
       ],
     });
 
@@ -460,6 +467,7 @@ describe("14-browse-and-home tag listing URLs", () => {
     expect(hrefs).toEqual([
       "/tags/fandom/linked%20listing%20fandom",
       "/tags/relationship/linked%20ann%2Fbea",
+      "/tags/character/%CE%B9%CD%82%20linked",
     ]);
     for (const href of hrefs) {
       expect(cardOf(await htmlOf(href), 30120), href).not.toBe("");

@@ -199,6 +199,8 @@ article.chapter {
   line-clamp: 3;
   overflow: hidden;
   contain: content;
+  /* Markup the clamp counts no lines in, such as a table, is cut at three lines too. */
+  max-height: calc(3 * 1.45em);
 }
 
 .card-summary > * {

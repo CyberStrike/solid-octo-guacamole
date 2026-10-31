@@ -79,6 +79,22 @@ describe("packages/db tag listing", () => {
     expect(anonymous?.authors).toEqual([{ pseud: "Anonymous", ao3_user: null }]);
   });
 
+  it("A listing by a stored name_norm finds its works, though the rule isn't idempotent", async () => {
+    // Iota with a perispomeni: lowercasing after NFKC leaves a form a second NFKC composes.
+    const name = "Ι͂ Listing";
+    const s = await seedWork(t.db, { tags: [{ type: "fandom", name }] });
+    const stored = normalizeTagName("fandom", name);
+    expect(normalizeTagName("fandom", stored)).not.toBe(stored);
+
+    const works = await listLiveWorksByTag(t.db, "fandom", stored);
+
+    expect(works.map((w) => w.work.id)).toEqual([s.workId]);
+  });
+
+  it("A name holding a NUL lists no works", async () => {
+    expect(await listLiveWorksByTag(t.db, "fandom", "a\u0000b")).toEqual([]);
+  });
+
   it("A name with nothing left once folded lists no works", async () => {
     await seedWork(t.db, { tags: [{ type: "freeform", name: "???" }] });
     expect(await listLiveWorksByTag(t.db, "freeform", "!!!")).toEqual([]);

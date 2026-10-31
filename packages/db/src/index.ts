@@ -6,6 +6,7 @@ export { normalizePseud } from "./pseud";
 export {
   getLiveWork,
   listLiveWorksByTag,
+  tagNameKeys,
   insertUpload,
   type ListedWork,
   type LiveWork,

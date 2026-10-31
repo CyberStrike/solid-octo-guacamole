@@ -158,18 +158,29 @@ export async function getLiveWork(
 export type ListedWork = Pick<LiveWork, "work" | "authors" | "tags">;
 
 /**
+ * The names a listing of `name` matches: `name` under the tag rule, and `name`
+ * itself, since a tag link carries a stored `name_norm` and the rule isn't
+ * idempotent for a few letters (NFKC can compose what lowercasing left). Empty
+ * when it names no tag: it folds to nothing, or holds a NUL, which Postgres refuses.
+ */
+export function tagNameKeys(type: TagType, name: string): string[] {
+  const nameNorm = normalizeTagName(type, name);
+  if (nameNorm === "" || name.includes("\0")) return [];
+  return nameNorm === name ? [name] : [nameNorm, name];
+}
+
+/**
  * The `live` works carrying a tag of this type that matches `name` under the
- * tag rule, however each work spelled it, with their bylines and tags. By AO3
- * work ID, and every one of them: B2 adds paging and sorting.
+ * tag rule (`tagNameKeys`), however each work spelled it, with their bylines
+ * and tags. By AO3 work ID, and every one of them: B2 adds paging and sorting.
  */
 export async function listLiveWorksByTag(
   db: Kysely<Database>,
   type: TagType,
   name: string,
 ): Promise<ListedWork[]> {
-  const nameNorm = normalizeTagName(type, name);
-  // A name of only punctuation folds to nothing, which names no tag.
-  if (nameNorm === "") return [];
+  const keys = tagNameKeys(type, name);
+  if (keys.length === 0) return [];
   const rows = await db
     .selectFrom("works")
     .select(SUMMARY)
@@ -196,7 +207,7 @@ export async function listLiveWorksByTag(
           .innerJoin("tags", "tags.id", "work_tags.tag_id")
           .select("work_tags.tag_id")
           .whereRef("work_tags.work_id", "=", "works.id")
-          .where("tags.name_norm", "=", nameNorm)
+          .where("tags.name_norm", "in", keys)
           .where("tags.type", "=", type),
       ),
     )
