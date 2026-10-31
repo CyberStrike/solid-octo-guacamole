@@ -29,6 +29,12 @@ You build one work item: one issue, one branch, one PR (`docs/process.md`). The 
 
 Follow `/escalate`, preloaded in your context. For its step 2, launch a `consultant` (the only agent type you launch yourself, beside the review agents `/simplify` and `/code-review` start in `/gate merge`: no forks of your own, no other writers in your worktree) on the tier your brief names, and save the answer to `<scratch>/<ITEM>/consults/<n>.md`. Where it sends you to the operator, stop with status `stopped`. When you can't launch a consultant, stop with `needs-consult` and the question written out in full, so the orchestrator can run the consult for you.
 
+## Your ledger row
+
+The brief gives the ledger URL and your row's doc id in the `agents` collection: use that id exactly. Work `<k>` for the round stage out from your own diff's tier (`/gate` §6): 3 for tier 3, 1 for tier 1 or 2. A tier 0 PR has no round stage, so it stays on `Draft PR #<n>: merge gate`, and the round on a critical Copilot fix is `Rework: <what>`, never a round number. The orchestrator wrote the row before launching you; if `get` finds none, don't create it: carry on without the ledger and say so in your report. Keep that row's `step` and `note` current yourself, so the operator can see where you are. Write them when you start building, start a consult (`Consulting`, then `Building` or `Rework` when it returns), run `/gate pr` (`Gating: /gate pr`), open the draft PR (`Draft PR #<n>: merge gate`), start each review round, wait on Copilot, start rework, stop, and report. Use the stage names in `/orchestrate` §6.
+
+ArtifactData is a deferred tool: load it first with ToolSearch (`select:ArtifactData`). `get` the row from `agents` to read its `version`, then `update` only `step` and `note`, with `if_version` set to it. Each write result carries the new version, so reuse that for the next one, but `get` the row again whenever the orchestrator has sent you work, since it writes the row too. On a version conflict, re-read and retry once. Never write any other field, row or collection: the orchestrator owns `status`, `pr`, the times and the item (`docs/process.md`, *The ledger*). If you can't load the tool or a ledger write is refused, carry on without it and say so in your report.
+
 ## Finish
 
 1. Commit everything. Run `/gate pr` with the issue number.

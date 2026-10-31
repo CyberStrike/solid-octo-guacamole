@@ -63,8 +63,8 @@ Collections, with the fields `docs/ledger/page.html` reads:
     - `merged`, `done` or `closed` (Done; `closed` for an item that ended without merging)
   - `gates` names the items that must merge first: the issue's `Depends on:` line.
 - **`agents`**: one doc per explorer, builder, consultant, gate or reviewer (the cheap agent that brings `main` in before a merge is a `gate`). Fields:
-  - kind (`explorer`, `builder`, `consultant`, `gate` or `reviewer`), name, item (or task, for work with no item), model, lane, step, pr[], startedAt, finishedAt, note
-  - the doc id is `<item or task>-<kind>`, with `-<n>` added for the second and later of the same kind: `E1-explorer`, `E1-builder`, `E1-consultant-2`. A relaunched agent gets a new id, so the first one's row stays.
+  - kind (`explorer`, `builder`, `consultant`, `gate`, or `reviewer` for an ad hoc review only, never the review agents inside `/gate merge`), name, item (or task, for work with no item), model, lane, step, pr[], startedAt, finishedAt, note
+  - the doc id is `<item or task>-<kind>`, with `-<n>` added for the second and later of the same kind: `E1-explorer`, `E1-builder`, `E1-consultant-2`. A relaunched agent gets a new id, so the first one's row stays. For consultants, `n` counts every consult of the item, the engineer's own and the orchestrator's: query `agents` for the next free id before adding a row.
   - status is `running`, `idle`, `finished` or `failed`. An agent that may still be sent more work, such as a builder whose PR is open, is `idle`; it's `finished` once that can't happen (its PR merged, or the item closed).
 - **`questions`**: one per open design question, with id `Q<n>`, title, state (`open` or `closed`), proceeding and note.
 - **`reviews`**: the operator's task list, with title, detail, ref, url, order and state (`open` or `done`).
@@ -76,6 +76,7 @@ The document `meta/state` holds `main` (short sha) and `updatedAt`, which the pa
 Rules:
 
 - **When to update:** at every launch, report, merge, filed issue, question closure and operator ruling.
+- **Who writes an agent's row:** the orchestrator, at launch and at report, for every field but two. A builder engineer writes only its own row's `step` and `note`, pinned with `if_version` (`.claude/agents/engineer.md`, *Your ledger row*). Explorers, consultants and the merge-main gate agent write nothing: the orchestrator keeps their `step`. The consults an engineer runs itself get their rows at its report, already `finished`. The review agents inside an engineer's `/gate merge` have no rows: the builder's `step` shows the round. `step` is the stage the page shows on a running or idle agent's card (stage names in `/orchestrate` §6).
 - **Real times only:** every time on it comes from `date -u`, a commit, or GitHub's `mergedAt`. Never an estimate.
 - **Before a status summary,** query `agents` for `running` and `idle` rows and reconcile them with what is actually running.
 - **After every merge and every hand-back,** check the ledger against GitHub with `scripts/ledger-check.mjs`, from a checkout of this repository:
