@@ -13,11 +13,16 @@ const script = fileURLToPath(new URL("r2-bucket-rules.mjs", import.meta.url));
 const stub = fileURLToPath(new URL("test/wrangler-stub.mjs", import.meta.url));
 const root = dirname(dirname(script));
 
-// No Cloudflare credentials reach the script under test, so a regression that drops the stub
-// cannot change a real bucket.
-const env = Object.fromEntries(
-  Object.entries(process.env).filter(([name]) => !name.startsWith("CLOUDFLARE_")),
-);
+// None of the developer's Cloudflare credentials reach the script under test: the CLOUDFLARE_
+// variables are dropped, and a token that is not one takes wrangler's place before any
+// `wrangler login` on disk. A regression that drops the stub fails to authenticate instead of
+// changing a real bucket.
+const env = {
+  ...Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !name.startsWith("CLOUDFLARE_")),
+  ),
+  CLOUDFLARE_API_TOKEN: "not-a-cloudflare-token",
+};
 
 // Runs the script with the stub as its wrangler (or with `wrangler` as the override, "" for none;
 // `relative` passes the stub's path relative to the directory it runs in). The stub fails a call
@@ -45,8 +50,8 @@ function run(args = [], { fail = "", wrangler = stub, relative: rel = false } = 
   }
 }
 
-// The scenarios' THEN, as a rule: everything under uploads/ is deleted 604800 s (7 days) after
-// it was written.
+// The scenarios' THEN, as a rule: everything under uploads/ expires 604800 s (7 days) after it was
+// written. R2 then deletes it, typically within 24 hours; the scenarios hold at the rule level.
 const expireUploads = {
   id: "expire-uploads",
   enabled: true,
@@ -212,7 +217,9 @@ await test("The installed wrangler", async (t) => {
     const { wrangler } = JSON.parse(stdout);
     assert.ok(existsSync(wrangler), wrangler);
     const manifest = join(dirname(dirname(wrangler)), "package.json");
-    assert.equal(JSON.parse(readFileSync(manifest, "utf8")).version, "4.156.0");
+    const pinned = JSON.parse(readFileSync(join(root, "apps/content/package.json"), "utf8"))
+      .devDependencies.wrangler;
+    assert.equal(JSON.parse(readFileSync(manifest, "utf8")).version, pinned);
   });
 });
 
@@ -222,6 +229,14 @@ await test("An overridden wrangler", async (t) => {
     assert.equal(code, 0);
     assert.equal(calls.length, 4);
     assert.ok(stderr.includes(stub), stderr);
+  });
+});
+
+await test("The bucket", async (t) => {
+  await t.test("Is the one apps/content binds", () => {
+    const config = readFileSync(join(root, "apps/content/wrangler.jsonc"), "utf8");
+    assert.match(config, /"binding": "BUCKET", "bucket_name": "rarepair"/);
+    assert.ok(fileFor(run().calls, "r2 bucket cors set rarepair"));
   });
 });
 

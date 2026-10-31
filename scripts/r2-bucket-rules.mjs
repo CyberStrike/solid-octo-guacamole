@@ -2,7 +2,8 @@
 // Applies the R2 bucket's rules: the CORS rule that lets the upload page PUT a raw epub straight
 // to a presigned URL (ARCHITECTURE, Ingestion pipeline, step 1), and the lifecycle rule that
 // expires uploads/ after 7 days, so an upload whose /complete never comes deletes itself
-// (ARCHITECTURE, Orphaned uploads). Then it prints the bucket's current rules, for the gate.
+// (ARCHITECTURE, Orphaned uploads); R2 removes an expired object typically within 24 hours. Then it
+// prints the bucket's current rules, for the gate.
 //
 //   node scripts/r2-bucket-rules.mjs [--dry-run]
 //
@@ -35,7 +36,7 @@
 // Exits 0 when the rules are applied and printed (or the dry run printed them), and 2 on a usage
 // error or when wrangler fails: missing, unauthenticated, or refused. Each rule set it replaces is
 // named on stdout as it lands, so a run that fails part way says how far it got; it is safe to
-// repeat.
+// repeat, but not to run twice at once, since the two sets can interleave.
 import { execFile } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -161,7 +162,8 @@ if (
     process.exit(2);
   }
   try {
-    process.exit(await main(args[0] === "--dry-run"));
+    // exitCode, not exit(), so the printed rules reach a pipe in full.
+    process.exitCode = await main(args[0] === "--dry-run");
   } catch (error) {
     console.error(`r2-bucket-rules: failed: ${error.message ?? error}`);
     process.exit(2);
