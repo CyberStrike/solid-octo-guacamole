@@ -4,7 +4,7 @@ import { env } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fetchW, STRICT, withoutNonce } from "./helpers";
 
-// Work IDs 30000-30999 and these tag names are this file's alone: one database
+// Work IDs 30000-31999 and these tag names are this file's alone: one database
 // serves every test file in the project, and a listing sees whatever shares its tag.
 const db = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 });
 afterAll(async () => {
@@ -490,6 +490,413 @@ describe("14-browse-and-home tag listing URLs", () => {
     expect(www.headers.get("location")).toBe(
       "https://rarepair.fans/tags/fandom/harry%20potter?x=1",
     );
+  });
+});
+
+/** The AO3 work IDs of a listing's cards, in page order. */
+const idsOf = (html: string) =>
+  cardsOf(html).map((card) => Number(card.match(/href="\/works\/(\d+)"/)?.[1]));
+
+/** IDs from `from` to `to`, inclusive. */
+const range = (from: number, to: number) =>
+  Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+/** Runs `seed` the first time it's called, so each describe that reads its works can ask for them. */
+const once = (seed: () => Promise<void>) => {
+  let seeded: Promise<void> | undefined;
+  return () => (seeded ??= seed());
+};
+
+const PAGED = "/tags/fandom/paged%20listing%20fandom";
+
+const seedPaged = once(async () => {
+  // 45 works with one updated date, so AO3 work ID orders them; one hidden.
+  for (const ao3WorkId of range(31001, 31045)) {
+    await seedWork(db, { ao3WorkId, tags: [{ type: "fandom", name: "Paged Listing Fandom" }] });
+  }
+  await seedWork(db, {
+    ao3WorkId: 31046,
+    status: "hidden",
+    hiddenCause: "reports",
+    tags: [{ type: "fandom", name: "Paged Listing Fandom" }],
+  });
+});
+
+describe("14-browse-and-home listing pages", () => {
+  beforeAll(seedPaged);
+
+  it("Twenty works fit on one page, and the twenty-first starts a second", async () => {
+    for (const ao3WorkId of range(31401, 31421)) {
+      await seedWork(db, {
+        ao3WorkId,
+        rating: ao3WorkId === 31421 ? "Mature" : "Explicit",
+        tags: [{ type: "fandom", name: "Edge Listing Fandom" }],
+      });
+    }
+    const edge = "/tags/fandom/edge%20listing%20fandom";
+
+    // 21 works: a second page of one, and no third.
+    expect(cardsOf(await htmlOf(edge))).toHaveLength(20);
+    expect(idsOf(await htmlOf(`${edge}?page=2`))).toEqual([31421]);
+    expect((await fetchW(`${edge}?page=3`)).status).toBe(404);
+    // 20 works: one page, no pager, and no page 2.
+    const twenty = await htmlOf(`${edge}?rating=Explicit`);
+    expect(cardsOf(twenty)).toHaveLength(20);
+    expect(twenty).not.toContain('class="pager"');
+    expect((await fetchW(`${edge}?rating=Explicit&page=2`)).status).toBe(404);
+    // A parameter given twice is read as its first value.
+    expect(idsOf(await htmlOf(`${edge}?page=2&page=1`))).toEqual([31421]);
+  });
+
+  it("A long listing's pager links the first page, the last and two either side", async () => {
+    // 141 works: eight pages.
+    for (const ao3WorkId of range(31201, 31341)) {
+      await seedWork(db, { ao3WorkId, tags: [{ type: "fandom", name: "Long Listing Fandom" }] });
+    }
+    const long = "/tags/fandom/long%20listing%20fandom";
+    const numbersOf = async (page: number) =>
+      [
+        ...(
+          (await htmlOf(`${long}?page=${page}`)).match(/<nav class="pager"[\s\S]*?<\/nav>/)?.[0] ??
+          ""
+        ).matchAll(/<li(?: aria-hidden="true")?>(?:<a [^>]*>|<span aria-current="page">)?([^<]+)/g),
+      ].map((m) => m[1]);
+
+    expect(await numbersOf(1)).toEqual(["1", "2", "3", "…", "8", "Next"]);
+    expect(await numbersOf(6)).toEqual(["Previous", "1", "…", "4", "5", "6", "7", "8", "Next"]);
+    // Only the first, the last and two either side: a gap of one page is still a gap.
+    expect(await numbersOf(5)).toEqual([
+      "Previous",
+      "1",
+      "…",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "Next",
+    ]);
+  }, 60_000);
+
+  it("Tag listing shows paged works", async () => {
+    const first = await htmlOf(PAGED);
+    const pages = [first, await htmlOf(`${PAGED}?page=2`), await htmlOf(`${PAGED}?page=3`)];
+
+    expect(pages.map((p) => cardsOf(p).length)).toEqual([20, 20, 5]);
+    // Every work once, none twice, none missing.
+    expect(pages.flatMap(idsOf)).toEqual(range(31001, 31045));
+    expect(first).toMatch(/<nav class="pager" aria-label="Pages">/);
+    expect(first).toContain(`<a rel="next" href="${PAGED}?page=2">`);
+    // The heading is the tag's, whatever the page, sort or filter shows.
+    for (const html of [...pages, await htmlOf(`${PAGED}?sort=words&rating=Explicit`)]) {
+      expect(html.match(/<h1>[^<]*<\/h1>/g)).toEqual(["<h1>Paged Listing Fandom</h1>"]);
+    }
+  });
+
+  it("Pagination uses real links", async () => {
+    const navOf = (html: string) => html.match(/<nav class="pager"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    const linksOf = (html: string) =>
+      [...navOf(html).matchAll(/<a (?:rel="(\w+)" )?href="([^"]+)">([^<]+)<\/a>/g)].map(
+        ([, rel = "", href = "", text = ""]) => ({
+          rel,
+          href: href.replaceAll("&amp;", "&"),
+          text,
+        }),
+      );
+    const [one, two, three] = [
+      await htmlOf(PAGED),
+      await htmlOf(`${PAGED}?page=2`),
+      await htmlOf(`${PAGED}?page=3`),
+    ];
+
+    expect(linksOf(two)).toEqual([
+      { rel: "prev", href: PAGED, text: "Previous" },
+      { rel: "", href: PAGED, text: "1" },
+      { rel: "", href: `${PAGED}?page=3`, text: "3" },
+      { rel: "next", href: `${PAGED}?page=3`, text: "Next" },
+    ]);
+    // The current page is marked, and not a link.
+    expect(navOf(two)).toContain('<span aria-current="page">2</span>');
+    expect(linksOf(one).map((l) => l.text)).toEqual(["2", "3", "Next"]);
+    expect(linksOf(three).map((l) => l.text)).toEqual(["Previous", "1", "2"]);
+    // Each link is a page of its own.
+    for (const { href } of linksOf(two)) {
+      expect(cardsOf(await htmlOf(href)), href).toHaveLength(href.endsWith("3") ? 5 : 20);
+    }
+    // No infinite scroll: nothing runs on the page.
+    for (const html of [one, two, three]) expect(html).not.toMatch(/<script/i);
+  });
+
+  it("A malformed page number is the first page, and one past the last is not found", async () => {
+    const first = idsOf(await htmlOf(PAGED));
+
+    for (const page of ["0", "-1", "abc", "1.5", "2e1", ""]) {
+      expect(idsOf(await htmlOf(`${PAGED}?page=${page}`)), page).toEqual(first);
+    }
+    for (const page of ["4", "99999999999999999999", String(Number.MAX_SAFE_INTEGER)]) {
+      const res = await fetchW(`${PAGED}?page=${page}`);
+      expect(res.status, page).toBe(404);
+      expect(res.headers.get("cache-control") ?? "", page).not.toMatch(/max-age/);
+    }
+  });
+});
+
+const SORTED = "/tags/fandom/sorted%20listing%20fandom";
+
+const seedSorted = once(async () => {
+  const fandom = { type: "fandom" as const, name: "Sorted Listing Fandom" };
+  const slowBurn = (name: string) => [fandom, { type: "freeform" as const, name }];
+  const works = [
+    [31101, "2021-03-01", 1200, "Explicit", true, slowBurn("Listing Slow Burn")],
+    [31102, "2023-05-01", 7000, "Mature", true, slowBurn("listing slow-burn!")],
+    // Never updated: its published date, 2020-01-01, stands in.
+    [31103, null, 5000, null, false, slowBurn("Listing Slow Burn")],
+    [31104, "2022-01-01", 300, "Explicit", false, [fandom]],
+    [31105, "2020-06-01", 2500, "Explicit", true, [fandom]],
+  ] as const;
+  for (const [ao3WorkId, updated, words, rating, complete, tags] of works) {
+    await seedWork(db, {
+      ao3WorkId,
+      updatedAt: updated && `${updated}T00:00:00Z`,
+      chapters: [{ words }],
+      rating,
+      complete,
+      tags: [...tags],
+    });
+  }
+});
+
+describe("14-browse-and-home listing sort and filters", () => {
+  beforeAll(async () => {
+    await seedPaged();
+    await seedSorted();
+  });
+
+  it("Sort by updated date", async () => {
+    const res = await fetchW(`${SORTED}?sort=updated`);
+
+    expect(res.status).toBe(200);
+    expect(idsOf(await res.text())).toEqual([31102, 31104, 31101, 31105, 31103]);
+    // The default is the same order.
+    expect(idsOf(await htmlOf(SORTED))).toEqual([31102, 31104, 31101, 31105, 31103]);
+    // Page links keep the sort.
+    expect(await htmlOf(`${PAGED}?sort=words&page=2`)).toContain(
+      `<a rel="next" href="${PAGED}?sort=words&amp;page=3">`,
+    );
+  });
+
+  it("Sort by word count", async () => {
+    const html = await htmlOf(`${SORTED}?sort=words`);
+
+    expect(idsOf(html)).toEqual([31102, 31103, 31105, 31101, 31104]);
+    expect(cardsOf(html).map((card) => lineOf(card, "card-stats")?.split(" · ")[0])).toEqual([
+      "7,000 words",
+      "5,000 words",
+      "2,500 words",
+      "1,200 words",
+      "300 words",
+    ]);
+    // A sort the form doesn't offer is the default.
+    expect(idsOf(await htmlOf(`${SORTED}?sort=title`))).toEqual([
+      31102, 31104, 31101, 31105, 31103,
+    ]);
+  });
+
+  it("Filter by rating", async () => {
+    const explicit = await htmlOf(`${SORTED}?rating=Explicit`);
+
+    expect(idsOf(explicit)).toEqual([31104, 31101, 31105]);
+    expect(idsOf(await htmlOf(`${SORTED}?rating=Not+Rated`))).toEqual([31103]);
+    // A rating the form doesn't offer filters nothing.
+    expect(idsOf(await htmlOf(`${SORTED}?rating=Bogus`))).toHaveLength(5);
+  });
+
+  it("Filter by tag and completion", async () => {
+    const narrowed = await htmlOf(`${SORTED}?tag=Listing+Slow+Burn&tag_type=freeform&complete=yes`);
+
+    // Both spellings of the tag, complete only.
+    expect(idsOf(narrowed)).toEqual([31102, 31101]);
+    expect(idsOf(await htmlOf(`${SORTED}?tag=listing+slow+burn&complete=no`))).toEqual([31103]);
+    expect(idsOf(await htmlOf(`${SORTED}?complete=no`))).toEqual([31104, 31103]);
+    // The name as another type is another tag.
+    expect(await htmlOf(`${SORTED}?tag=Listing+Slow+Burn&tag_type=character`)).toContain(
+      "No works match",
+    );
+    // A type the form doesn't offer is its default, freeform.
+    expect(idsOf(await htmlOf(`${SORTED}?tag=Listing+Slow+Burn&tag_type=rating`))).toEqual([
+      31102, 31101, 31103,
+    ]);
+    // A tag that names nothing, and an unknown completion, filter nothing.
+    for (const ignored of ["tag=%21%21%21", "tag=a%00b", "tag=", "complete=maybe"]) {
+      expect(idsOf(await htmlOf(`${SORTED}?${ignored}`)), ignored).toHaveLength(5);
+    }
+  });
+});
+
+/** A listing's GET form, read as a browser would: where it goes and each control's value. */
+const formOf = (html: string) => {
+  const form = html.match(
+    /<form class="listing-filters" method="get" action="([^"]*)">([\s\S]*?)<\/form>/,
+  );
+  const body = form?.[2] ?? "";
+  const fields = new Map<string, { value: string; options: string[] }>();
+  const controls =
+    /<select id="[^"]+" name="([^"]+)">([\s\S]*?)<\/select>|<input id="[^"]+" name="([^"]+)" type="text" value="([^"]*)">/g;
+  for (const [, select, inner = "", input, value = ""] of body.matchAll(controls)) {
+    if (input !== undefined) {
+      fields.set(input, { value, options: [] });
+      continue;
+    }
+    const options = [...inner.matchAll(/<option value="([^"]*)"( selected)?>/g)];
+    const chosen = options.find((o) => o[2]) ?? options[0];
+    fields.set(select ?? "", { value: chosen?.[1] ?? "", options: options.map((o) => o[1] ?? "") });
+  }
+  return { action: form?.[1] ?? "", fields, body };
+};
+
+/** The URL a browser submits the form to, with these controls changed. Empty values are sent too. */
+const submit = (html: string, changes: Record<string, string>) => {
+  const { action, fields } = formOf(html);
+  const values = [...fields].map(([name, f]) => [name, textOf(changes[name] ?? f.value)]);
+  return `${textOf(action)}?${new URLSearchParams(values).toString()}`;
+};
+
+/** The works the form, canonical and cache cases read. */
+const seedListings = async () => {
+  await seedPaged();
+  await seedSorted();
+};
+
+describe("14-browse-and-home listing form", () => {
+  beforeAll(seedListings);
+
+  it("Sort and filter work without JS", async () => {
+    const page = await htmlOf(SORTED);
+    const { action, fields, body } = formOf(page);
+
+    expect(action).toBe(SORTED);
+    expect([...fields.keys()]).toEqual(["sort", "rating", "complete", "tag", "tag_type"]);
+    expect(fields.get("sort")?.options).toEqual(["updated", "words"]);
+    expect(fields.get("rating")?.options).toEqual([
+      "",
+      "General Audiences",
+      "Teen And Up Audiences",
+      "Mature",
+      "Explicit",
+      "Not Rated",
+    ]);
+    expect(fields.get("complete")?.options).toEqual(["", "yes", "no"]);
+    expect(fields.get("tag_type")?.options).toEqual([
+      "freeform",
+      "fandom",
+      "relationship",
+      "character",
+    ]);
+    // Every control has a label, and the form a visible button.
+    for (const id of body.matchAll(/<(?:select|input) id="([^"]+)"/g)) {
+      expect(body).toContain(`<label for="${id[1]}">`);
+    }
+    expect(body).toMatch(/<button type="submit">[^<]+<\/button>/);
+
+    const url = submit(page, { sort: "words", rating: "Explicit", complete: "yes" });
+    const res = await fetchW(url);
+    const html = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(url).toContain("sort=words");
+    expect(idsOf(html)).toEqual([31105, 31101]);
+    // The page comes back with the choices made, ready to change again.
+    const again = formOf(html).fields;
+    expect([
+      again.get("sort")?.value,
+      again.get("rating")?.value,
+      again.get("complete")?.value,
+    ]).toEqual(["words", "Explicit", "yes"]);
+    expect(html.match(/<h1>[^<]*<\/h1>/g)).toEqual(["<h1>Sorted Listing Fandom</h1>"]);
+    expect(html).not.toMatch(/<script|<style|style=/i);
+
+    // A tag, submitted with its type; then a choice nothing matches, which can be undone.
+    const narrowed = await htmlOf(submit(page, { tag: "Listing Slow Burn", complete: "no" }));
+    expect(idsOf(narrowed)).toEqual([31103]);
+    expect(formOf(narrowed).fields.get("tag")?.value).toBe("Listing Slow Burn");
+    const none = await htmlOf(submit(page, { rating: "General Audiences" }));
+    expect(none).toContain("<p>No works match these filters.</p>");
+    expect(formOf(none).fields.get("rating")?.value).toBe("General Audiences");
+  });
+
+  it("What a reader types into the form stays text", async () => {
+    const typed = `"><script>alert(1)</script>&x=1`;
+    const html = await htmlOf(`${SORTED}?tag=${encodeURIComponent(typed)}`);
+
+    expect(html).not.toMatch(/<script/i);
+    expect(formOf(html).fields.get("tag")?.value).toBe(
+      "&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;&amp;x=1",
+    );
+  });
+
+  it("A listing names its canonical URL, with its sort and filters", async () => {
+    const canonicalOf = async (path: string) =>
+      (await htmlOf(path)).match(/<link rel="canonical" href="([^"]*)">/g);
+
+    // The tag's folded name, the choices that aren't defaults, and no page 1.
+    expect(
+      await canonicalOf(
+        "/tags/fandom/Sorted%20Listing%20Fandom?sort=words&rating=&complete=yes&tag=&tag_type=freeform&page=1",
+      ),
+    ).toEqual([`<link rel="canonical" href="${SORTED}?sort=words&amp;complete=yes">`]);
+    // A narrowing tag is folded too, so its spellings share the page.
+    for (const tag of ["Listing+Slow+Burn", "listing%20slow-burn%21"]) {
+      expect(await canonicalOf(`${SORTED}?tag=${tag}`), tag).toEqual([
+        `<link rel="canonical" href="${SORTED}?tag=listing+slow+burn&amp;tag_type=freeform">`,
+      ]);
+    }
+    expect(await canonicalOf(`${PAGED}?page=2`)).toEqual([
+      `<link rel="canonical" href="${PAGED}?page=2">`,
+    ]);
+  });
+});
+
+/**
+ * The listing's cache header, on the listing and its variants, and on nothing that isn't one.
+ * `private`: a page may carry one reader's cookies' effects, so no shared cache keeps it.
+ */
+async function expectShortListingCache() {
+  for (const path of [
+    SORTED,
+    `${SORTED}?sort=words&rating=Explicit`,
+    `${SORTED}?rating=General+Audiences`,
+    `${PAGED}?page=3`,
+    "/tags/freeform/url%20never%20seeded",
+  ]) {
+    const res = await fetchW(path);
+    expect(res.status, path).toBe(200);
+    expect(res.headers.get("cache-control"), path).toBe(
+      "private, max-age=60, stale-while-revalidate=60",
+    );
+    expect(res.headers.get("set-cookie"), path).toBeNull();
+    expect(withoutNonce(res.headers.get("content-security-policy")), path).toBe(STRICT);
+  }
+  for (const path of [`${PAGED}?page=4`, "/tags/genre/x", "/tags/fandom/%21%21%21"]) {
+    const res = await fetchW(path);
+    expect(res.status, path).toBe(404);
+    expect(res.headers.get("cache-control") ?? "", path).not.toMatch(/max-age/);
+  }
+}
+
+describe("14-browse-and-home listing cache", () => {
+  beforeAll(seedListings);
+
+  it("Listings are briefly cached", async () => {
+    await expectShortListingCache();
+  });
+});
+
+describe("19-surge-controls-and-quotas", () => {
+  beforeAll(seedListings);
+
+  it("Listings use a short cache", async () => {
+    await expectShortListingCache();
   });
 });
 
