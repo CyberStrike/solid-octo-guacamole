@@ -22,7 +22,11 @@ const PASSING_TOKEN = "XXXX.DUMMY.TOKEN.XXXX";
 /** The sign-in form as a browser on rarepair.fans submits it. */
 function postLogin(
   fields: Record<string, string>,
-  { url = "/login", headers = {} }: { url?: string; headers?: Record<string, string> } = {},
+  {
+    url = "/login",
+    headers = {},
+    body = new URLSearchParams(fields).toString(),
+  }: { url?: string; headers?: Record<string, string>; body?: BodyInit } = {},
 ) {
   return fetchW(url, {
     method: "POST",
@@ -32,7 +36,7 @@ function postLogin(
       "sec-fetch-site": "same-origin",
       ...headers,
     },
-    body: new URLSearchParams(fields).toString(),
+    body,
   });
 }
 
@@ -233,6 +237,33 @@ describe("01-auth-magic-link", () => {
     });
     expect(bare.status).toBe(403);
     await expectNothingCreated("no-headers@example.test", before);
+  });
+
+  it("An oversized sign-in request is refused before it is read", async () => {
+    const before = await verificationIds();
+    const fields = {
+      email: "oversized@example.test",
+      "cf-turnstile-response": PASSING_TOKEN,
+      padding: "x".repeat(20_000),
+    };
+    const res = await postLogin(fields);
+    expect(res.status).toBe(413);
+    expect(await res.text()).not.toContain("x".repeat(100));
+
+    // Well under the limit, but an address too long to send to is not shown back.
+    const longEmail = `${"a".repeat(2000)}@example.test`;
+    const echoed = await postLogin({
+      email: longEmail,
+      "cf-turnstile-response": "a-failing-token",
+    });
+    expect(echoed.status).toBe(400);
+    expect(await echoed.text()).not.toContain("a".repeat(255));
+
+    // The same without a Content-Length: a streamed body is cut off at the limit too.
+    const body = new Blob([new URLSearchParams(fields).toString()]).stream();
+    const streamed = await postLogin({}, { body });
+    expect(streamed.status).toBe(413);
+    await expectNothingCreated("oversized@example.test", before);
   });
 
   it("Requesting a link while Turnstile can't be reached is refused", async () => {

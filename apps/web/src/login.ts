@@ -22,13 +22,36 @@ export const showSignIn = (c: LoginContext) =>
     }),
   );
 
-/** The fields of a plain form post. Anything else, such as a multipart body, has none. */
-async function readForm(request: Request): Promise<URLSearchParams> {
+// The sign-in form at its largest: a 254-character address, a 512-character next and
+// a 2048-character token, percent-encoded, come to under 5 KB.
+const MAX_BODY = 8 * 1024;
+
+/**
+ * The fields of a plain form post, or null when the body is over `MAX_BODY`
+ * bytes, which stops being read there. Anything else, such as a multipart body,
+ * has no fields.
+ */
+async function readForm(request: Request): Promise<URLSearchParams | null> {
   const type = request.headers.get("content-type") ?? "";
   if (!type.toLowerCase().startsWith("application/x-www-form-urlencoded")) {
     return new URLSearchParams();
   }
-  return new URLSearchParams(await request.text());
+  if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return null;
+  if (request.body === null) return new URLSearchParams();
+
+  // Counted as it arrives, since a streamed body declares no length.
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (let read = await reader.read(); !read.done; read = await reader.read()) {
+    size += read.value.byteLength;
+    if (size > MAX_BODY) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(read.value);
+  }
+  return new URLSearchParams(await new Blob(chunks).text());
 }
 
 /**
@@ -40,11 +63,26 @@ export async function requestSignIn(c: LoginContext) {
   if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
 
   const form = await readForm(c.req.raw);
+  if (form === null) {
+    // Nothing of it is shown back: the form comes again empty.
+    const error = "That request was too large. Please try again.";
+    return c.html(
+      signInPage(c.get("nonce"), { siteKey: c.env.TURNSTILE_SITE_KEY, next: "/", error }),
+      413,
+    );
+  }
   const email = form.get("email") ?? "";
   const next = safeNext(form.get("next"));
+  // What was typed comes back in the form, unless it's too long to be an address.
+  const typed = email.length > MAX_EMAIL ? "" : email;
   const formAgain = (status: 400 | 503, error: string) =>
     c.html(
-      signInPage(c.get("nonce"), { siteKey: c.env.TURNSTILE_SITE_KEY, next, email, error }),
+      signInPage(c.get("nonce"), {
+        siteKey: c.env.TURNSTILE_SITE_KEY,
+        next,
+        email: typed,
+        error,
+      }),
       status,
     );
 
