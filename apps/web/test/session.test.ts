@@ -5,7 +5,7 @@ import { Hono } from "hono";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Bindings } from "../src/env";
 import { sessionMiddleware, type SessionVariables } from "../src/session";
-import { BASE, emailsTo, fetchW, PASSING_TOKEN, postLogin } from "./helpers";
+import { BASE, emailsTo, PASSING_TOKEN, postLogin } from "./helpers";
 
 // The session middleware later pages use. No route of the Worker uses it yet, so it
 // is tested on a probe app of its own, with the Worker's bindings and a real cookie
@@ -35,15 +35,8 @@ async function signIn(email: string): Promise<string> {
   expect((await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN })).status).toBe(200);
   const [sent] = await emailsTo(email);
   const token = new URL(sent!.url).searchParams.get("token")!;
-  const res = await fetchW("/login/confirm", {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      origin: BASE,
-      "sec-fetch-site": "same-origin",
-    },
-    body: new URLSearchParams({ token, next: "/" }).toString(),
-  });
+  // The confirm page's form, as a browser on rarepair.fans posts it.
+  const res = await postLogin({ token, next: "/" }, { url: "/login/confirm" });
   expect(res.status).toBe(303);
   return res.headers.getSetCookie()[0]!.split(";")[0]!;
 }

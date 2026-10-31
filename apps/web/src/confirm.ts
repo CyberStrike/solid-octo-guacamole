@@ -1,6 +1,6 @@
 import { createDb } from "@archive/db";
 import type { Context } from "hono";
-import { makeAuth } from "./auth";
+import { makeAuth, SESSION_COOKIE } from "./auth";
 import type { Bindings } from "./env";
 import { INVALID_TOKEN, readForm } from "./login";
 import { confirmPage, forbiddenPage, serverErrorPage } from "./pages";
@@ -54,8 +54,6 @@ export async function confirmSignIn(c: ConfirmContext) {
   }
 }
 
-const SESSION_COOKIE = "__Secure-better-auth.session_token=";
-
 /** Where a used, expired or unknown link is sent: `showSignIn` says why. `next` is dropped. */
 export const REFUSED = `/login?error=${INVALID_TOKEN}`;
 
@@ -68,7 +66,7 @@ export const REFUSED = `/login?error=${INVALID_TOKEN}`;
  */
 export function answerVerified(verified: Response): Response | null {
   if (verified.status !== 302) return null;
-  if (verified.headers.getSetCookie().some((cookie) => cookie.startsWith(SESSION_COOKIE))) {
+  if (verified.headers.getSetCookie().some((cookie) => cookie.startsWith(`${SESSION_COOKIE}=`))) {
     return new Response(null, { status: 303, headers: verified.headers });
   }
   const location = URL.parse(verified.headers.get("location") ?? "");

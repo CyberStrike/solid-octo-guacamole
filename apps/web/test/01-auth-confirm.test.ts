@@ -44,16 +44,7 @@ async function issued(email: string, next?: string) {
 
 /** The confirm page's POST, as a browser on rarepair.fans submits it. */
 const confirm = (fields: Record<string, string>, headers: Record<string, string> = {}) =>
-  fetchW("/login/confirm", {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      origin: "https://rarepair.fans",
-      "sec-fetch-site": "same-origin",
-      ...headers,
-    },
-    body: new URLSearchParams(fields).toString(),
-  });
+  postLogin(fields, { url: "/login/confirm", headers });
 
 /** The session cookies a response sets. */
 const sessionCookies = (res: Response) =>

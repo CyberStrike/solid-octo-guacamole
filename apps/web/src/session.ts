@@ -1,6 +1,7 @@
 import { createDb } from "@archive/db";
 import type { MiddlewareHandler } from "hono";
-import { makeAuth } from "./auth";
+import { getCookie } from "hono/cookie";
+import { makeAuth, SESSION_COOKIE } from "./auth";
 import type { Bindings } from "./env";
 
 /** A signed-in user and their session, as Better Auth reads them from the cookie. */
@@ -18,6 +19,11 @@ export const sessionMiddleware: MiddlewareHandler<{
   Bindings: Bindings;
   Variables: SessionVariables;
 }> = async (c, next) => {
+  // Signed out: no cookie, so nothing to look up.
+  if (getCookie(c, SESSION_COOKIE) === undefined) {
+    c.set("session", null);
+    return next();
+  }
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
   try {
     const { headers, response } = await makeAuth(c.env, db).api.getSession({

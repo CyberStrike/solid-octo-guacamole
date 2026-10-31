@@ -54,10 +54,9 @@ const tokensMadeFor = async (to: string, before: Set<string>) =>
     await db
       .selectFrom("verification")
       .select(["id", "identifier", "value", "expires_at"])
+      .where("value", "like", `%${JSON.stringify(to)}%`)
       .execute()
-  )
-    .filter((row) => !before.has(row.id))
-    .filter((row) => row.value.includes(JSON.stringify(to)));
+  ).filter((row) => !before.has(row.id));
 
 /** Shows that a refused request left nothing behind: no token and no email. */
 async function expectNothingCreated(to: string, before: Set<string>) {

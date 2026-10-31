@@ -19,7 +19,6 @@ const READY = 0x5a;
 const IDLE = 0x49;
 
 interface Client {
-  owned: boolean;
   /** What the client sent before it had the turn. */
   pending: Buffer[];
   upstream: net.Socket;
@@ -38,7 +37,6 @@ export async function oneClientAtATime(
 
   const give = (client: Client) => {
     owner = client;
-    client.owned = true;
     for (const chunk of client.pending.splice(0)) client.upstream.write(chunk);
   };
   const take = (client: Client) => {
@@ -49,7 +47,6 @@ export async function oneClientAtATime(
     const queued = waiting.indexOf(client);
     if (queued !== -1) waiting.splice(queued, 1);
     if (owner !== client) return;
-    client.owned = false;
     owner = null;
     const next = waiting.shift();
     if (next !== undefined) give(next);
@@ -60,14 +57,14 @@ export async function oneClientAtATime(
     open.add(socket);
     socket.on("close", () => open.delete(socket));
     const upstream = net.connect(Number(target.port), target.hostname);
-    const client: Client = { owned: false, pending: [], upstream };
+    const client: Client = { pending: [], upstream };
     let sslAnswerDue = false;
     let fromServer = Buffer.alloc(0);
 
     socket.on("data", (chunk) => {
       if (chunk.length >= 8 && chunk.readInt32BE(0) === 8 && chunk.readInt32BE(4) === SSL_REQUEST)
         sslAnswerDue = true;
-      if (client.owned) {
+      if (owner === client) {
         upstream.write(chunk);
       } else {
         client.pending.push(chunk);

@@ -6,6 +6,12 @@ import type { Bindings } from "./env";
 import { LINK_LIFETIME_MINUTES, SITE } from "./signin";
 
 /**
+ * The session cookie's name: Better Auth's default, with the `__Secure-` prefix
+ * `useSecureCookies` adds (ARCHITECTURE, Auth). Tests pin it against the real header.
+ */
+export const SESSION_COOKIE = "__Secure-better-auth.session_token";
+
+/**
  * Better Auth, built per request: bindings only exist inside one, and a
  * per-request instance shares no in-process state with another isolate's
  * (ARCHITECTURE, Auth). Our routes call `auth.api.*`; `auth.handler`, with
