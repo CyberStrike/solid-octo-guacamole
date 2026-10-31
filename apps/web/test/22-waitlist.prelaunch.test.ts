@@ -1,5 +1,7 @@
-import { exports } from "cloudflare:workers";
+import { createExecutionContext } from "cloudflare:test";
+import { env, exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
+import app from "../src/index";
 
 // Runs in the "prelaunch" project: wrangler.jsonc exactly as it deploys, PRELAUNCH on.
 
@@ -100,11 +102,12 @@ describe("22-waitlist", () => {
   });
 
   it("Coming-soon page allows the Turnstile frame and nothing more", async () => {
-    for (const [path, method] of [
+    const requests: [string, string][] = [
       ["/", "GET"],
       ["/", "HEAD"],
       ["/?ref=1", "GET"],
-    ]) {
+    ];
+    for (const [path, method] of requests) {
       const res = await fetchW(path, { method });
       expect(withoutNonce(res.headers.get("content-security-policy"))).toBe(TURNSTILE);
     }
@@ -241,5 +244,22 @@ describe("22-waitlist", () => {
     const www = await fetchW("https://www.rarepair.fans/upload");
     expect(www.status).toBe(308);
     expect(www.headers.get("location")).toBe("https://rarepair.fans/upload");
+  });
+
+  it("A missing or misspelt PRELAUNCH keeps the archive closed", async () => {
+    // wrangler.jsonc ships it on.
+    expect(env.PRELAUNCH).toBe("on");
+    // Only "off" opens the archive: the same handler, with the setting overridden.
+    for (const PRELAUNCH of [undefined, "", "false", "OFF", "0"]) {
+      const overridden = { ...env, PRELAUNCH };
+      const upload = await app.fetch(
+        new Request(`${BASE}/upload`),
+        overridden,
+        createExecutionContext(),
+      );
+      expect(upload.status, String(PRELAUNCH)).toBe(302);
+      const home = await app.fetch(new Request(`${BASE}/`), overridden, createExecutionContext());
+      expect(withoutNonce(home.headers.get("content-security-policy"))).toBe(TURNSTILE);
+    }
   });
 });
