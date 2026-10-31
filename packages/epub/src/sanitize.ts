@@ -81,6 +81,9 @@ const RENAME = new Map([["strike", "s"]]);
 // noreferrer: following a link must not tell the target which work a reader is on.
 const EXTERNAL_REL = "nofollow noopener noreferrer ugc";
 
+/** The only same-site link the serializer emits: a chapter in our reader. */
+const READER_URL = /^\/works\/[1-9]\d{0,9}\/chapters\/[1-9]\d{0,9}$/;
+
 export interface SanitizeContext {
   /** Returns the rewritten URL for an epub-internal image, or null to drop the img. */
   resolveImage(src: string, fromFile: string): string | null;
@@ -171,7 +174,8 @@ function serializeNode(node: Node, ctx: SanitizeContext): string {
       // A link to another chapter becomes a same-site reader link; any other
       // internal link (#fragments, other files) or unsafe scheme becomes plain text.
       const chapter = ctx.resolveChapterLink?.(decodeEntities(raw).trim(), node.file);
-      if (!chapter) return inner();
+      // Checked here too: only a reader URL may leave the serializer without rel.
+      if (!chapter || !READER_URL.test(chapter)) return inner();
       attrs = ` href="${escapeAttr(chapter)}"${attrs}`;
     }
   }

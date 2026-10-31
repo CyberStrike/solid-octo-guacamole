@@ -119,9 +119,9 @@ async function run(
   // The reader takes only digits with no leading zero, within Postgres's int4:
   // for any other ID a chapter link would be dead, so links stay text.
   const readerId = /^[1-9]\d{0,9}$/.test(ao3WorkId) && Number(ao3WorkId) <= 2_147_483_647;
-  // The chapter being serialized, so a link to it stays plain text; null outside chapters.
-  let current: number | null = null;
-  const ctx: SanitizeContext = {
+  // `current` is the chapter being serialized, so a link to it stays plain
+  // text; null outside chapters.
+  const ctxFor = (current: number | null): SanitizeContext => ({
     resolveImage(src, fromFile) {
       const target = resolveHref(dirOf(fromFile), src);
       const candidate = target ? candidates.get(target.path) : undefined;
@@ -131,7 +131,8 @@ async function run(
     },
     resolveChapterLink(href, fromFile) {
       if (!readerId) return null;
-      const target = resolveHref(dirOf(fromFile), href);
+      // Browsers drop tabs and newlines from a URL before reading it.
+      const target = resolveHref(dirOf(fromFile), href.replace(/[\t\n\r]/g, ""));
       // `#` and an empty href name no target: only a file or an anchor does.
       if (!target || (target.path === "" && target.anchor === null)) return null;
       const n = split.chapterFor(target.path || fromFile, target.anchor);
@@ -140,7 +141,8 @@ async function run(
     },
     // "See the end of the work/chapter for more notes" links point inside the epub.
     skip: (el) => hasClass(el, "endnote-link"),
-  };
+  });
+  const ctx = ctxFor(null);
   const html = (el: ElementNode | null): string | null => {
     const out = el ? serializeChildren(el.children, ctx).trim() : "";
     return out === "" ? null : out;
@@ -157,11 +159,10 @@ async function run(
   reviewReasons.push(...split.reviewReasons);
   const chapters: Chapter[] = [];
   for (const c of split.chapters) {
-    current = chapters.length + 1;
-    const body = serializeChildren(c.nodes, ctx).trim();
-    chapters.push({ n: current, title: c.title, html: body, words: countWords(body) });
+    const n = chapters.length + 1;
+    const body = serializeChildren(c.nodes, ctxFor(n)).trim();
+    chapters.push({ n, title: c.title, html: body, words: countWords(body) });
   }
-  current = null;
   const endNotesHtml = html(preface.endNotes);
 
   // AO3 always sets a rating; without one the preface was not parsed (e.g. a

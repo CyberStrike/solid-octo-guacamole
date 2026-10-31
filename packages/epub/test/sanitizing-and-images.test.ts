@@ -509,6 +509,51 @@ describe("chapter links", () => {
     expect(work.endNotesHtml).toContain(`<a href="/works/1000001/chapters/1">end-one</a>`);
   });
 
+  it("an anchor on an element wrapping a chapter start goes to that chapter", async () => {
+    const work = await processEpub(
+      ao3Epub({
+        files: [
+          {
+            name: "w.xhtml",
+            body: `<div id="chapters" class="userstuff1">
+  <div id="part1"><h2 class="heading">One</h2><p>marker-one <a href="#part2">to-part-2</a> <a href="#chapters">to-region</a></p></div>
+  <div id="part2"><h2 class="heading">Two</h2><p>marker-two <a href="#part1">to-part-1</a></p></div>
+</div>`,
+          },
+        ],
+        navPoints: [],
+      }),
+    );
+    expect(work.chapters).toHaveLength(2);
+    const [one, two] = work.chapters.map((c) => c.html);
+    expect(one).toContain(`<a href="/works/1000001/chapters/2">to-part-2</a>`);
+    expect(one).toContain("to-region"); // the region opens with chapter 1: the same chapter
+    expect(one).not.toContain(">to-region</a>");
+    expect(two).toContain(`<a href="/works/1000001/chapters/1">to-part-1</a>`);
+  });
+
+  it("an id written with entities matches its decoded link", async () => {
+    const work = await processEpub(
+      threeChapters({
+        c1: `<a href="Three%20Parts_split_001.xhtml#caf%C3%A9">to-encoded</a>`,
+        c3: `<span id="caf&#233;">target</span>`,
+      }),
+    );
+    expect(work.chapters[0]!.html).toContain(`<a href="/works/1000001/chapters/3">to-encoded</a>`);
+  });
+
+  it("tabs and newlines in an href are ignored, as browsers do, and . names no file", async () => {
+    const work = await processEpub(
+      threeChapters({
+        c1: `<a href="Three%20Parts_split_001.x&#10;html&#9;#c3">ws-three</a> <a href=".#c2">dot-two</a> <a href="./#c2">dot-slash-two</a>`,
+      }),
+    );
+    const c1 = work.chapters[0]!.html;
+    expect(c1).toContain(`<a href="/works/1000001/chapters/3">ws-three</a>`);
+    expect(c1).toContain("dot-two dot-slash-two");
+    expect(c1.match(/<a /g)).toHaveLength(1);
+  });
+
   it("a work ID the reader would refuse gives no chapter links", async () => {
     // One above Postgres int4: the reader 404s on it, so a link would be dead.
     const work = await processEpub(

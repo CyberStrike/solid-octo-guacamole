@@ -10,6 +10,7 @@ import {
   type ElementNode,
   type Node,
 } from "./dom";
+import { decodeEntities } from "./entities";
 import type { NavPoint } from "./package";
 import { regionsById } from "./preface";
 
@@ -118,12 +119,13 @@ function takeLeadingHeading(nodes: Node[]): string | null {
   return cleanText(h) || null;
 }
 
-/** First element with each id in `root`. */
+/** First element with each id in `root`, keyed by the decoded id (links and the NCX are decoded). */
 function idIndex(root: ElementNode): Map<string, ElementNode> {
   const out = new Map<string, ElementNode>();
   walk(root, (n) => {
     if (n.type !== "element") return;
-    const id = idOf(n);
+    const raw = idOf(n);
+    const id = raw === undefined ? undefined : decodeEntities(raw);
     if (id !== undefined && !out.has(id)) out.set(id, n);
   });
   return out;
@@ -245,29 +247,36 @@ interface Target {
 }
 
 /**
- * Resolves a link into spine file `path`: to the element with id `anchor`, or
- * without an anchor to the file's first content. Null when the file is not in
- * the spine or the target is outside `scopes` (the preface, afterword or end
- * notes, which no chapter shows).
+ * Resolves a link into spine file `path`: to the first content of the element
+ * with id `anchor` (so an anchor wrapping a chapter heading lands in that
+ * chapter), or without an anchor to the file's first content. Null when the
+ * file is not in the spine or the target is outside the file's `scopes`: in
+ * the TOC and heading splits those are the #chapters regions, so a target in
+ * the preface, afterword or end notes reaches no chapter.
  */
 function linkTargets(
   index: SpineIndex,
   scopes: Map<SpineDoc, ElementNode[]>,
 ): (path: string, anchor: string | null) => Target | null {
-  // Per file, so many links to one file cost one scan.
-  const first = new Map<SpineDoc, number | null>();
+  // Cached, so many links to one place cost one scan.
+  const first = new Map<SpineDoc | ElementNode, number | null>();
+  const firstOf = (key: SpineDoc | ElementNode, nodes: readonly Node[]) => {
+    if (!first.has(key)) first.set(key, firstContent(nodes));
+    return first.get(key) ?? null;
+  };
   return (path, anchor) => {
     const doc = index.doc(path);
     if (!doc) return null;
     const own = scopes.get(doc)!;
     if (anchor === null) {
-      if (!first.has(doc)) first.set(doc, firstContent(own));
-      const pos = first.get(doc) ?? null;
+      const pos = firstOf(doc, own);
       return pos === null ? null : { doc, pos };
     }
     const el = index.element(doc, anchor);
-    if (!el || !own.some((s) => s.pos <= el.pos && el.pos <= s.end)) return null;
-    return { doc, pos: el.pos };
+    if (!el) return null;
+    const scope = own[firstReaching(own, el.pos)];
+    if (!scope || scope.pos > el.pos) return null;
+    return { doc, pos: firstOf(el, [el]) ?? el.pos };
   };
 }
 
