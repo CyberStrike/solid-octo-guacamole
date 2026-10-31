@@ -4,6 +4,8 @@
   "name": "rarepair-web",
   "main": "src/index.ts",
   "compatibility_date": "2026-08-01",
+  // Better Auth needs AsyncLocalStorage, and pg needs Node's net and crypto (ARCHITECTURE, Auth).
+  "compatibility_flags": ["nodejs_compat"],
   "routes": [
     { "pattern": "rarepair.fans/*", "zone_name": "rarepair.fans" },
     { "pattern": "www.rarepair.fans/*", "zone_name": "rarepair.fans" },
@@ -11,4 +13,13 @@
   // No second copy of the app on a workers.dev or preview URL.
   "workers_dev": false,
   "preview_urls": false,
+  // Neon Postgres. The id is a placeholder until the Hyperdrive config is created; tests replace
+  // the local connection string with their own database.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000000000000000000000000000",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
+    },
+  ],
 }
