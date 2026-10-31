@@ -12,7 +12,7 @@ export interface Env {
 export type Steps = Pick<JobDeps, "process" | "save">;
 
 const DEFAULT_STEPS: Steps = {
-  process: (bytes) => processEpub(bytes),
+  process: processEpub,
   // Saving the work is I2's (#32). Until then a parsed upload stays `processing`, and its
   // lease runs out with nothing to redeliver it. Nothing deploys before I2.
   save: async () => {},

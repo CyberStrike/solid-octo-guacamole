@@ -2,7 +2,7 @@ import type { Database } from "@archive/db";
 import { EpubError, LIMITS, type ParsedWork } from "@archive/epub";
 import type { Kysely } from "kysely";
 import { MAX_RETRIES } from "./config";
-import { claimLease, endLease, type Lease, type Outcome } from "./lease";
+import { claimLease, endLease, type Lease, type Outcome, type Stage } from "./lease";
 
 /** What a job needs from outside: the request's Kysely, the bucket and the two steps. */
 export interface JobDeps {
@@ -16,9 +16,6 @@ export interface JobDeps {
 
 /** What the queue does with the message: `ack` it, or `retry` it. */
 export type Verdict = "ack" | "retry";
-
-/** Where a job was when it stopped, as `uploads.error_stage` records it. */
-type Stage = "read" | "process" | "save";
 
 /**
  * Runs one upload's job, on the message's `attempt` (from 1), and says whether its message is

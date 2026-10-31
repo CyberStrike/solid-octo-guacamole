@@ -1,4 +1,5 @@
 import type { Database, UploadStatus } from "@archive/db";
+import type { EpubErrorCode } from "@archive/epub";
 import { sql, type Kysely } from "kysely";
 import { LEASE_SECONDS } from "./config";
 
@@ -37,28 +38,26 @@ export async function claimLease(db: Kysely<Database>, uploadId: string): Promis
   return row ? { id: row.id, r2Key: row.r2_key, until: row.lease_until as Date } : null;
 }
 
-/** How a job ends for its upload, as the row records it. */
-export interface Outcome {
-  status: Extract<UploadStatus, "pending" | "processing"> | RejectedStatus;
-  /** The stage that failed, and a short fixed code for what happened. */
-  failure?: { stage: string; error: string };
-}
+/** Where a job was when it stopped, as `uploads.error_stage` records it. */
+export type Stage = "read" | "process" | "save";
 
-type RejectedStatus = Extract<
-  UploadStatus,
-  "not_epub" | "zip_bomb" | "too_large" | "not_ao3" | "parse_failed"
->;
+/** How a job ends for its upload: back to `pending` for a retry, or a rejection code. */
+export interface Outcome {
+  status: "pending" | Extract<UploadStatus, EpubErrorCode>;
+  /** The stage that failed, and a short fixed code for what happened. */
+  failure?: { stage: Stage; error: string };
+}
 
 /**
  * Records the outcome and ends the lease, only while this job still holds it: a job that
- * outlived its lease leaves the row to the job that took it over. False when it didn't.
+ * outlived its lease leaves the row to the job that took it over.
  */
 export async function endLease(
   db: Kysely<Database>,
   lease: Lease,
   outcome: Outcome,
-): Promise<boolean> {
-  const result = await db
+): Promise<void> {
+  await db
     .updateTable("uploads")
     .set({
       status: outcome.status,
@@ -69,6 +68,5 @@ export async function endLease(
     .where("id", "=", lease.id)
     .where("status", "=", "processing")
     .where("lease_until", "=", lease.until)
-    .executeTakeFirst();
-  return result.numUpdatedRows > 0n;
+    .execute();
 }

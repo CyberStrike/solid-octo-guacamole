@@ -23,7 +23,7 @@
         "max_concurrency": 2,
         // Three retries, two minutes apart, for R2 and Postgres outages. The job's lease is
         // 60 seconds, under the retry delay, so a retry of a crashed job finds its lease
-        // expired. MAX_RETRIES in src/job.ts mirrors max_retries.
+        // expired. src/config.ts mirrors max_retries and the lease.
         "max_retries": 3,
         "retry_delay": 120,
         // A job that fails for good is recorded as parse_failed, then dead-lettered here.
