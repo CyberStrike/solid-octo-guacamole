@@ -32,7 +32,7 @@ const MAX_BODY = 16 * 1024;
  * bytes, which stops being read there, or breaks off. Anything else, such as a
  * multipart body, has no fields and is never read.
  */
-async function readForm(request: Request): Promise<URLSearchParams | null> {
+export async function readForm(request: Request): Promise<URLSearchParams | null> {
   const type = request.headers.get("content-type") ?? "";
   if (!type.toLowerCase().startsWith("application/x-www-form-urlencoded")) {
     return new URLSearchParams();

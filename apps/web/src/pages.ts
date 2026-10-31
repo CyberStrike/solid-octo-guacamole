@@ -149,3 +149,18 @@ export const forbiddenPage = () =>
     "Request refused",
     `<p>That request didn't come from rarepair. <a href="/login">Sign in here</a>.</p>`,
   );
+
+/**
+ * The emailed link's page: only a button that posts the token. Opening the link
+ * uses nothing up, so a mail scanner's prefetch can't spend it. No script, so it
+ * works with JavaScript off. `next` is already reduced to a same-site path.
+ */
+export const confirmPage = (token: string, next: string) =>
+  layout(
+    "Sign in",
+    `<form method="post" action="/login/confirm">
+<input type="hidden" name="token" value="${escapeHtml(token)}">
+<input type="hidden" name="next" value="${escapeHtml(next)}">
+<button type="submit">Sign in</button>
+</form>`,
+  );
