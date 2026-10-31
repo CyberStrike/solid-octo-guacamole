@@ -17,6 +17,10 @@ async function hashKey(prefix: string, value: string): Promise<string> {
 export const loginIpKey = (request: Request) =>
   hashKey("login-ip:", request.headers.get("cf-connecting-ip") ?? "unknown");
 
+/** The sign-in limit's key for an email address, however it was spelt: trimmed and lowercased. */
+export const loginEmailKey = (address: string) =>
+  hashKey("login-email:", address.trim().toLowerCase());
+
 /** Whether `key` is over its limit in the current window. */
 export async function isLimited(limiter: RateLimit, key: string): Promise<boolean> {
   return !(await limiter.limit({ key })).success;

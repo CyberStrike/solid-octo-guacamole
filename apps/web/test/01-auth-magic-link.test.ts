@@ -9,7 +9,9 @@ import {
   deliveredEmails,
   emailsTo,
   fetchW,
+  LOGIN_EMAIL_LIMIT,
   LOGIN_IP_LIMIT,
+  LOGIN_WINDOW_SECONDS,
   loginRequest,
   nonceOf,
   PASSING_TOKEN,
@@ -322,6 +324,42 @@ describe("01-auth-magic-link", () => {
     );
     expect(other.status).toBe(200);
   });
+
+  it("Login requests are rate-limited per email", async () => {
+    await windowHeadroom();
+    const email = "per-email@example.test";
+    // The limit's worth of links, each asked for from another IP (postLogin's fresh one).
+    for (let i = 0; i < LOGIN_EMAIL_LIMIT; i++) {
+      const res = await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN });
+      expect(res.status).toBe(200);
+    }
+    expect(await emailsTo(email, { atLeast: LOGIN_EMAIL_LIMIT })).toHaveLength(LOGIN_EMAIL_LIMIT);
+
+    // From yet another IP, and spelt differently: the same address.
+    const before = await verificationIds();
+    const res = await postLogin({
+      email: " PER-EMAIL@example.test ",
+      "cf-turnstile-response": PASSING_TOKEN,
+    });
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("60");
+    expect(await res.text()).toContain("Please try again in 60 seconds.");
+    expect(await verificationIds()).toEqual(before);
+    // Nothing more queued: a later request's email has arrived, and still only those.
+    await queuedFor(email);
+    expect(await emailsTo(email)).toHaveLength(LOGIN_EMAIL_LIMIT);
+  });
+
+  it("Sign-in requests Turnstile refuses don't count against the address", async () => {
+    await windowHeadroom();
+    const email = "per-email-unsolved@example.test";
+    for (let i = 0; i < LOGIN_EMAIL_LIMIT; i++) {
+      const res = await postLogin({ email, "cf-turnstile-response": "a-failing-token" });
+      expect(res.status).toBe(400);
+    }
+    const res = await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN });
+    expect(res.status).toBe(200);
+  });
 });
 
 describe("19-surge-controls-and-quotas", () => {
@@ -333,6 +371,30 @@ describe("19-surge-controls-and-quotas", () => {
     expect(formTag(html)).not.toBeNull();
     expect(html).toContain('<p role="alert">');
     await expectNothingCreated("surge-turnstile@example.test", before);
+  });
+
+  it("Login is throttled per IP", async () => {
+    await windowHeadroom();
+    const ip = "203.0.113.2";
+    await fillIpLimit(ip);
+    const res = await postLogin(
+      { email: "surge-per-ip@example.test", "cf-turnstile-response": PASSING_TOKEN },
+      { headers: { "cf-connecting-ip": ip } },
+    );
+
+    expect(res.status).toBe(429);
+    // Whole seconds, and the page says the same wait.
+    const retryAfter = res.headers.get("retry-after");
+    expect(retryAfter).toMatch(/^\d+$/);
+    expect(retryAfter).toBe(String(LOGIN_WINDOW_SECONDS));
+    const html = await res.text();
+    expect(html).toContain("<h1>Too many requests</h1>");
+    expect(html).toContain(`Please try again in ${retryAfter} seconds.`);
+    // A plain page: no form and no script, under the same CSP as every page, never cached.
+    expect(html).not.toMatch(/<form|<script/);
+    expect(res.headers.get("content-type")).toMatch(/^text\/html/);
+    expect(res.headers.get("content-security-policy")).toContain("default-src 'self'");
+    expect(res.headers.get("cache-control")).toBe("no-store");
   });
 });
 

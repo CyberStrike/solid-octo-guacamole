@@ -4,7 +4,13 @@ import type { Context } from "hono";
 import { makeAuth } from "./auth";
 import type { Bindings } from "./env";
 import { checkEmailPage, forbiddenPage, signInPage } from "./pages";
-import { isLimited, LOGIN_WINDOW_SECONDS, loginIpKey, tooManyRequests } from "./rate-limit";
+import {
+  isLimited,
+  LOGIN_WINDOW_SECONDS,
+  loginEmailKey,
+  loginIpKey,
+  tooManyRequests,
+} from "./rate-limit";
 import type { SecurityVariables } from "./security";
 import { isSameOrigin, safeNext } from "./signin";
 import { verifyTurnstile } from "./turnstile";
@@ -116,6 +122,10 @@ export async function requestSignIn(c: LoginContext) {
 
   // The mailer sends to no address longer than this, so no token is made for one.
   if (email.length > MAX_EMAIL) return formAgain(400, "Enter a valid email address.");
+  // After Turnstile, so only a solved check can spend an address's limit.
+  if (await isLimited(c.env.LOGIN_EMAIL_LIMIT, await loginEmailKey(email))) {
+    return tooManyRequests(LOGIN_WINDOW_SECONDS);
+  }
 
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
   try {
