@@ -72,6 +72,15 @@ function decodeOnce(v: string): string {
     .replace(/&amp;/g, "&");
 }
 
+/** What a browser would make of a value that still holds references: numeric ones and the few named ones that hide a scheme. */
+function decodeReferences(v: string): string {
+  return v
+    .replace(/&#x([0-9a-f]+);?/gi, (_m, h: string) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);?/g, (_m, d: string) => String.fromCodePoint(Number(d)))
+    .replace(/&(Tab|NewLine);/g, "")
+    .replace(/&colon;/g, ":");
+}
+
 /** Walks the output as tokens, so it fails on any markup that is not an allowed tag. */
 function violations(html: string): string[] {
   const bad: string[] = [];
@@ -110,8 +119,10 @@ function violations(html: string): string[] {
         if (attr === "src" && !value.startsWith(IMAGE_BASE)) bad.push(`src ${value}`);
         if (attr === "rel" && value !== "nofollow noopener noreferrer ugc")
           bad.push(`rel ${value}`);
-        // oxlint-disable-next-line no-control-regex -- control characters can hide a scheme
-        const squeezed = value.replace(/[\u0000- ]/g, "").toLowerCase();
+        const squeezed = decodeReferences(value)
+          // oxlint-disable-next-line no-control-regex -- control characters can hide a scheme
+          .replace(/[\u0000- ]/g, "")
+          .toLowerCase();
         if (/^(javascript|vbscript|data):/.test(squeezed)) bad.push(`scheme in ${attr}`);
       }
     }
@@ -158,45 +169,75 @@ const isRejection = (e: unknown) => e instanceof EpubError && e.code === "parse_
 /**
  * HTMLRewriter refuses some markup outright (a `<noembed>` inside a `<select>`),
  * and processEpub reports that as `parse_failed`: a rejection, not a bypass.
- * When a batch is rejected, each input is retried alone and may only be
- * rejected with that same code.
+ * Returns whether the input was checked, or rejected for that reason; any
+ * other error propagates. Every checked output keeps the paragraph before it.
  */
-async function checkAll(field: Field, inputs: string[]): Promise<void> {
+async function checkAlone(field: Field, input: string): Promise<"checked" | "rejected"> {
+  let html: string | null;
   try {
-    assertSafe(await run(field, markered(inputs)), inputs.join("\n---\n"));
-    return;
+    html = await run(field, markered([input]));
   } catch (e) {
-    if (!isRejection(e)) throw e;
+    if (isRejection(e)) return "rejected";
+    throw e;
   }
-  for (const input of inputs) {
-    try {
-      assertSafe(await run(field, markered([input])), input);
-    } catch (e) {
-      if (!isRejection(e)) throw e;
-    }
-  }
+  assertSafe(html, input);
+  expect(html, `lost the text before ${JSON.stringify(input)}`).toContain("<p>alpha-0</p>");
+  return "checked";
 }
+
+/** Each input in its own epub, so an earlier payload can't swallow a later one. */
+async function checkEach(field: Field, inputs: string[]): Promise<void> {
+  let checked = 0;
+  for (const input of inputs) if ((await checkAlone(field, input)) === "checked") checked++;
+  // A sanitizer that rejected nearly everything would make this test vacuous.
+  expect(
+    checked,
+    `${field}: only ${checked} of ${inputs.length} inputs were accepted`,
+  ).toBeGreaterThanOrEqual(Math.ceil(inputs.length * 0.9));
+}
+
+/** Many inputs in one epub, to catch an earlier payload changing how later ones parse. */
+async function checkTogether(field: Field, inputs: string[]): Promise<void> {
+  let html: string | null;
+  try {
+    html = await run(field, markered(inputs));
+  } catch (e) {
+    if (isRejection(e)) return; // the same inputs are checked alone by checkEach
+    throw e;
+  }
+  assertSafe(html, inputs.join("\n---\n"));
+}
+
+const generated = (field: Field): string[] => {
+  const r = prng(SEED + FIELDS.indexOf(field));
+  return Array.from({ length: GENERATED }, (_, i) => (i % 2 === 0 ? generate(r) : mutateCorpus(r)));
+};
 
 describe("Fuzzing with an XSS corpus finds no bypass", () => {
   const families = [...new Set(CORPUS.map((p) => p.family))];
 
   for (const field of FIELDS) {
-    it(`yields only allowed markup from every corpus family in the ${field}`, async () => {
-      for (const family of families) {
-        const inputs = CORPUS.filter((p) => p.family === family).map((p) => p.html);
-        await checkAll(field, inputs);
-      }
+    it(`yields only allowed markup from each corpus payload alone in the ${field}`, async () => {
+      await checkEach(
+        field,
+        CORPUS.map((p) => p.html),
+      );
     });
 
-    it(`yields only allowed markup from seeded mutations in the ${field}`, async () => {
-      const r = prng(SEED + FIELDS.indexOf(field));
-      const batches = 10;
-      for (let b = 0; b < batches; b++) {
-        const inputs = Array.from({ length: GENERATED / batches }, (_, i) =>
-          i % 2 === 0 ? generate(r) : mutateCorpus(r),
+    it(`yields only allowed markup from each seeded mutation alone in the ${field}`, async () => {
+      await checkEach(field, generated(field));
+    });
+
+    it(`yields only allowed markup from payloads that share a document in the ${field}`, async () => {
+      for (const family of families) {
+        await checkTogether(
+          field,
+          CORPUS.filter((p) => p.family === family).map((p) => p.html),
         );
-        await checkAll(field, inputs);
       }
+      const inputs = generated(field);
+      for (let b = 0; b < inputs.length; b += 15)
+        await checkTogether(field, inputs.slice(b, b + 15));
     });
   }
 
@@ -204,20 +245,6 @@ describe("Fuzzing with an XSS corpus finds no bypass", () => {
     await expect(
       run("chapter", `<select><noembed><img src=x onerror=alert(1)></noembed></select>`),
     ).rejects.toMatchObject({ code: "parse_failed" });
-  });
-
-  it("yields only allowed markup from each corpus payload alone, and keeps the text before it", async () => {
-    for (const [n, p] of CORPUS.entries()) {
-      let html: string | null;
-      try {
-        html = await run("chapter", `<p>alpha-${n}</p>${p.html}`);
-      } catch (e) {
-        if (!isRejection(e)) throw e;
-        continue;
-      }
-      assertSafe(html, p.html);
-      expect(html, p.html).toContain(`alpha-${n}`);
-    }
   });
 
   it("keeps an inline image from the manifest and drops a handler on it", async () => {
@@ -258,7 +285,7 @@ describe("Fuzzing with an XSS corpus finds no bypass", () => {
           return await run(field, body);
         } catch (e) {
           if (!isRejection(e)) throw e;
-          return "parse_failed";
+          return `parse_failed: ${e instanceof Error ? e.message : ""}`;
         }
       };
       expect(await once()).toBe(await once());

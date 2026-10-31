@@ -1,7 +1,7 @@
 // An XSS corpus written for this project, grouped by the way each payload tries
 // to get past a sanitizer, plus a seeded mutation generator. Not a test file.
-// Marker text never contains a scheme or tag word, so the oracle can tell
-// surviving prose from a surviving payload.
+// The test puts a plain-text marker paragraph before each input and checks it
+// survives; the oracle itself works on the output's structure, not on words.
 
 export interface Payload {
   family: string;
@@ -148,7 +148,7 @@ export function prng(seed: number): () => number {
 type Rand = () => number;
 const pick = <T>(r: Rand, xs: readonly T[]): T => xs[Math.floor(r() * xs.length)]!;
 
-const SCHEMES = ["javascript", "vbscript", "data", "JavaScript", "file"];
+const SCHEMES = ["javascript", "vbscript", "data", "file"];
 const SCRIPTISH = [
   `<script>alert(1)</script>`,
   `<img src=x onerror=alert(1)>`,
