@@ -22,8 +22,9 @@ export type TurnstileAction = (typeof TURNSTILE_ACTIONS)[keyof typeof TURNSTILE_
 
 // Cloudflare's published test secrets, which always pass, always fail, or report a spent token
 // (https://developers.cloudflare.com/turnstile/troubleshooting/testing/). Their dummy flow
-// doesn't promise the action the widget set, so under them only the host is compared:
-// wrangler dev and a deploy still on the test keys keep working. A real secret always checks.
+// doesn't promise the action the widget set, so under them the action isn't compared (the
+// host still is, and their dummy reply says "localhost"): `wrangler dev` keeps working.
+// A real secret always checks both.
 const CLOUDFLARE_TEST_SECRETS = new Set([
   "1x0000000000000000000000000000000AA",
   "2x0000000000000000000000000000000AA",

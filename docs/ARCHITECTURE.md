@@ -422,7 +422,7 @@ can be snapshotted.
   allowance, `frame-src https://challenges.cloudflare.com`, for the challenge
   iframe. Turnstile's `api.js` loads through a nonced `<script>`, which
   `'strict-dynamic'` already covers. Reader and work pages never get it.
-- **Pages are never stored by a shared cache with their nonce.** The CSP
+- **HTML pages aren't left to a shared cache with their nonce.** The CSP
   middleware sets `Cache-Control: private, no-store` on every HTML response
   that has no `Cache-Control` of its own, so a zone Cache Rule or a proxy can't
   hand one visitor's nonce to the next. A page that sets its own keeps it,
