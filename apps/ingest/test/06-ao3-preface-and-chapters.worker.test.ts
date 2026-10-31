@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { zipEntries } from "../../../packages/epub/test/helpers";
-import { deliver, pendingUpload, uploadRow } from "./helpers";
+import { ao3Epub, zipEntries } from "../../../packages/epub/test/helpers";
+import {
+  bucketKeys,
+  deliver,
+  liveWork,
+  newWorkId,
+  parsedWork,
+  pendingUpload,
+  savedRows,
+  uploadRow,
+  watchedWorker,
+} from "./helpers";
 
 /** A well-formed epub with no AO3 preface, carrying `metadata` in its OPF. Synthetic text. */
 const prefacelessEpub = (metadata: string) =>
@@ -49,5 +59,73 @@ describe("06-ao3-preface-and-chapters", () => {
       prefacelessEpub(`<dc:source>https://archiveofourown.org/works/6</dc:source>
         <dc:contributor opf:role="bkp">FanFicFare [https://github.com/JimmXinu/FanFicFare]</dc:contributor>`),
     );
+  });
+
+  it("Provenance from the preface line", async () => {
+    const workId = newWorkId();
+    const id = await pendingUpload(ao3Epub({ workId }));
+
+    await deliver([{ upload_id: id }]);
+
+    const live = await liveWork(workId);
+    expect(live?.work.ao3_work_id).toBe(workId);
+    expect(live?.version.r2_prefix).toBe(`works/${workId}/${id}/`);
+    expect(await bucketKeys(`works/${workId}/`)).toEqual([`works/${workId}/${id}/1.html`]);
+  });
+
+  it("Unknown labels are kept in raw_meta", async () => {
+    const workId = newWorkId();
+    const id = await pendingUpload(
+      ao3Epub({
+        workId,
+        extraDl: `<dt class="calibre3">Synthetic Label:</dt><dd class="calibre4">synthetic value</dd>`,
+      }),
+    );
+
+    await deliver([{ upload_id: id }]);
+
+    expect((await uploadRow(id)).status).toBe("live");
+    const { works } = await savedRows(workId, id);
+    expect(works.map((w) => w.raw_meta)).toEqual([{ "Synthetic Label": "synthetic value" }]);
+  });
+
+  it("Tags are stored as written with a normalized form", async () => {
+    const work = parsedWork({
+      fandoms: ["Harry Potter - J. K. Rowling"],
+      relationships: ["Kirk / Spock"],
+    });
+    const workId = Number(work.ao3WorkId);
+    const id = await pendingUpload(ao3Epub({ workId }));
+    const { handler } = watchedWorker({ process: async () => work });
+
+    await deliver([{ upload_id: id }], { handler });
+
+    const live = await liveWork(workId);
+    // In the author's order: rating, warnings, then the fandom and the relationship.
+    expect(live?.tags.map(({ type, name, name_norm }) => ({ type, name, name_norm }))).toEqual([
+      { type: "rating", name: "General Audiences", name_norm: "general audiences" },
+      {
+        type: "warning",
+        name: "No Archive Warnings Apply",
+        name_norm: "no archive warnings apply",
+      },
+      {
+        type: "fandom",
+        name: "Harry Potter - J. K. Rowling",
+        name_norm: "harry potter j k rowling",
+      },
+      { type: "relationship", name: "Kirk / Spock", name_norm: "kirk/spock" },
+    ]);
+  });
+
+  it("Anonymous works stay anonymous", async () => {
+    const work = parsedWork({ authors: [{ pseud: "Anonymous", user: null }] });
+    const workId = Number(work.ao3WorkId);
+    const id = await pendingUpload(ao3Epub({ workId }));
+    const { handler } = watchedWorker({ process: async () => work });
+
+    await deliver([{ upload_id: id }], { handler });
+
+    expect((await liveWork(workId))?.authors).toEqual([{ pseud: "Anonymous", ao3_user: null }]);
   });
 });

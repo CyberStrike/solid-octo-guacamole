@@ -185,7 +185,7 @@ export const savedRows = (ao3WorkId: number, uploadId: string, tagNames: string[
   withDb(async (db) => ({
     works: await db
       .selectFrom("works")
-      .select(["id", "status", "current_version_id"])
+      .select(["id", "status", "current_version_id", "raw_meta"])
       .where("ao3_work_id", "=", ao3WorkId)
       .execute(),
     versions: await db
