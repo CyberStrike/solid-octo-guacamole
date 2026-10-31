@@ -28,8 +28,12 @@ export interface SeedWorkOptions extends SeedVersionOptions {
   /** Default: a random one, so test files sharing a database don't collide. */
   ao3WorkId?: number;
   title?: string;
+  /** `summary_html`, as the sanitizer would leave it. Null for none. */
+  summary?: string | null;
   rating?: string | null;
   complete?: boolean;
+  /** AO3's last-updated date. Default 2020-02-01; null for none. */
+  updatedAt?: string | null;
   /** The uploader. Default: a new user. */
   userId?: string;
   authors?: { pseud: string; ao3_user: string | null }[];
@@ -103,11 +107,11 @@ export async function seedWork(
       .values({
         ao3_work_id: ao3WorkId,
         title: options.title ?? `Seeded work ${ao3WorkId}`,
-        summary_html: "<p>A seeded summary.</p>",
+        summary_html: options.summary === undefined ? "<p>A seeded summary.</p>" : options.summary,
         rating,
         language: "English",
         published_at: "2020-01-01T00:00:00Z",
-        updated_at: "2020-02-01T00:00:00Z",
+        updated_at: options.updatedAt === undefined ? "2020-02-01T00:00:00Z" : options.updatedAt,
         // The version below sets the counts as it becomes current.
         chapters_count: 0,
         complete: options.complete ?? true,

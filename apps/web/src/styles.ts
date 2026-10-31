@@ -145,10 +145,15 @@ footer {
   font-size: var(--text-1);
 }
 
+/* Layout containment makes the chapter the containing block of anything positioned
+   inside it, so no fragment can lay itself over the page. Paint containment clips at
+   its edge, so the padding keeps focus rings inside it. */
 article.chapter {
   font-family: var(--reading);
   line-height: 1.6;
   max-width: 66ch;
+  contain: content;
+  padding: var(--space);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -159,6 +164,121 @@ article.chapter {
     animation: none;
     transition: none;
   }
+}
+
+/* The chapter reader (R2). Paint containment clips what overflows the chapter: long
+   words break through main's overflow-wrap, images shrink to fit, and wide tables scroll. */
+article.chapter img {
+  max-width: 100%;
+  height: auto;
+}
+
+article.chapter table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* The slim top bar scrolls away with the page: it is never sticky or fixed. */
+.reader-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) * 2) calc(var(--space) * 4);
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: calc(var(--space) * 2);
+  border-bottom: 1px solid var(--rule);
+}
+
+.reader-bar h1 {
+  margin: 0;
+  font-size: var(--text-2);
+}
+
+.chapter-nav,
+.chapter-nav form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) * 2) calc(var(--space) * 4);
+  align-items: center;
+}
+
+.chapter-nav {
+  margin: calc(var(--space) * 4) 0;
+}
+
+.chapter-nav select {
+  font: inherit;
+  max-width: 100%;
+}
+
+/* Work cards (FRONTEND-DISCOVERY, Work card): sections by whitespace and a hairline. */
+.work-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.work-card {
+  padding: calc(var(--space) * 4) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+/* By the card's own lines, never a summary's elements. */
+.card-title {
+  margin: 0;
+}
+
+.work-card > p {
+  margin: var(--space) 0;
+}
+
+/* Rating and warnings: the author's size at weight 600, never clamped or hidden. */
+.card-rating {
+  overflow-wrap: anywhere;
+}
+
+.card-rating strong {
+  font-weight: 600;
+}
+
+/* The whole summary stays in the HTML; only three lines show. */
+.card-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  contain: content;
+  /* Markup the clamp counts no lines in, such as a table, is cut at three lines too. */
+  max-height: calc(3 * 1.45em);
+}
+
+.card-summary > * {
+  margin: 0;
+}
+
+/* A summary's headings look like its text, not a card title or the page's
+   (screen readers still list them: #250). */
+.card-summary :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+/* An image takes about one of the three lines rather than its own height. */
+.card-summary img {
+  max-width: 100%;
+  max-height: 1.45em;
+  width: auto;
+  height: auto;
+}
+
+/* Tags and stats, the least prominent lines, in small type. */
+.card-tags,
+.card-stats {
+  font-size: var(--text-1);
 }
 
 /* work page */

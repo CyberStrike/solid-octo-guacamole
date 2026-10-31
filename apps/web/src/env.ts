@@ -9,6 +9,8 @@ export type Bindings = {
   ASSETS: Fetcher;
   /** Neon Postgres. */
   HYPERDRIVE: Hyperdrive;
+  /** Chapter fragments, under works/ (ARCHITECTURE, Reading). */
+  BUCKET: R2Bucket;
   /** The queue apps/mailer sends from. */
   EMAIL: Queue<EmailMessage>;
   /** `POST /login` requests per client IP (src/rate-limit.ts). */
@@ -18,4 +20,11 @@ export type Bindings = {
   TURNSTILE_SECRET_KEY: string;
   /** Signs Better Auth's session cookies. */
   BETTER_AUTH_SECRET: string;
+  /** The bucket presigned upload URLs PUT into (src/presign.ts). */
+  R2_BUCKET: string;
+  /** The Cloudflare account whose R2 S3 endpoint presigned URLs name. */
+  R2_ACCOUNT_ID: string;
+  /** The R2 API token presigned URLs are signed with: Object Read and Write on R2_BUCKET only. */
+  R2_ACCESS_KEY_ID: string;
+  R2_SECRET_ACCESS_KEY: string;
 };

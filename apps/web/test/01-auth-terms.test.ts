@@ -255,6 +255,31 @@ describe("01-auth-magic-link", () => {
     expect(await from("/welcome/terms?next=/works/1")).toBe("/");
   });
 
+  it("Before accepting, an upload request gets no row and no URL", async () => {
+    const email = "terms-upload@example.test";
+    const cookie = await signIn(email);
+    const fields = { size: "1000", "cf-turnstile-response": PASSING_TOKEN };
+
+    const res = await postLogin(fields, { url: "/uploads", headers: { cookie } });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/welcome/terms");
+    // Cross-site is still refused first, as the upload page's script expects.
+    const crossSite = await postLogin(fields, {
+      url: "/uploads",
+      headers: { cookie, origin: "https://evil.example" },
+    });
+    expect(crossSite.status).toBe(403);
+    expect(crossSite.headers.get("content-type")).toMatch(/^application\/json/);
+
+    const uploads = await db
+      .selectFrom("uploads")
+      .innerJoin("user", "user.id", "uploads.user_id")
+      .select("uploads.id")
+      .where("user.email", "=", email)
+      .execute();
+    expect(uploads).toEqual([]);
+  });
+
   it("Returning user skips the terms page", async () => {
     const email = "terms-returning@example.test";
     await signIn(email);

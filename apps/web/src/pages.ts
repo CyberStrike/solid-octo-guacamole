@@ -5,6 +5,7 @@
 import { TURNSTILE_ORIGIN } from "./security";
 import { LINK_LIFETIME_MINUTES } from "./signin";
 import { STYLESHEET_PATH } from "./styles";
+import { EPUB_TYPE, MAX_UPLOAD_MB } from "./upload-limit";
 
 export const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
@@ -23,10 +24,18 @@ export const escapeHtml = (text: string) =>
 /**
  * A whole HTML document: skip link, temporary banner, header, one chrome h1 made
  * from the title, the body inside main, then the footer. The title is escaped.
- * The body and head are trusted markup from the caller (this file or
- * waitlist-pages.ts), never escaped; every caller escapes any value it puts in them.
+ * The body and head are trusted markup from the caller (this file,
+ * waitlist-pages.ts or reader.ts), never escaped; every caller escapes any value it
+ * puts in them, except the reader's chapter fragment, which is trusted only because
+ * the sanitizer wrote it. So is `heading`, which replaces the default h1 for a page
+ * whose one h1 sits in other chrome, such as the reader's top bar.
  */
-export const layout = (title: string, body: string, head = "") => `<!doctype html>
+export const layout = (
+  title: string,
+  body: string,
+  head = "",
+  heading = `<h1>${escapeHtml(title)}</h1>`,
+) => `<!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)} · rarepair</title><link rel="stylesheet" href="${STYLESHEET_PATH}">${head}</head>
 <body>
@@ -34,7 +43,7 @@ export const layout = (title: string, body: string, head = "") => `<!doctype htm
 <aside class="banner" aria-label="Notice">rarepair is an unofficial, temporary stopgap. <a href="/about">About this site</a></aside>
 <header><a class="site-name" href="/">rarepair</a></header>
 <main id="main">
-<h1>${escapeHtml(title)}</h1>
+${heading}
 ${body}
 </main>
 <footer><a href="/remove">Remove my work</a> · <a href="/about">About</a> · <a href="/terms">Terms</a> · <a href="/privacy">Privacy</a></footer>
@@ -149,6 +158,25 @@ export const signInPage = (nonce: string, form: SignInForm) =>
 </form>
 <script nonce="${escapeHtml(nonce)}">document.getElementById("sign-in").hidden = false;</script>
 <p>We'll email you a link that signs you in. It can take a minute to arrive during busy periods.</p>`,
+    `<script src="${TURNSTILE_API}" nonce="${escapeHtml(nonce)}" async defer></script>`,
+  );
+
+/**
+ * The upload page, signed in. Like the sign-in form it starts `hidden` and a nonced
+ * script shows it. It is no form: the page's script asks `POST /uploads` for a URL and
+ * PUTs the file to R2 itself, so without JavaScript nothing on it can send a file.
+ */
+export const uploadPage = (nonce: string, siteKey: string) =>
+  layout(
+    "Upload a work",
+    `<noscript><p>Uploading needs JavaScript, for its anti-spam check and to send the file. Reading works without it.</p></noscript>
+<div id="upload" hidden>
+<label for="file">EPUB files, ${MAX_UPLOAD_MB} MB at most each</label>
+<input id="file" type="file" name="file" accept=".epub,${EPUB_TYPE}" multiple>
+<div class="cf-turnstile" data-sitekey="${escapeHtml(siteKey)}"></div>
+<button type="button">Upload</button>
+</div>
+<script nonce="${escapeHtml(nonce)}">document.getElementById("upload").hidden = false;</script>`,
     `<script src="${TURNSTILE_API}" nonce="${escapeHtml(nonce)}" async defer></script>`,
   );
 

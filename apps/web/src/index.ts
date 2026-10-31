@@ -3,7 +3,9 @@ import { except } from "hono/combine";
 import { assetRoute } from "./assets";
 import { confirmSignIn, showConfirm } from "./confirm";
 import type { Bindings } from "./env";
+import { showTagListing } from "./listing";
 import { requestSignIn, showSignIn } from "./login";
+import { jumpToChapter, showChapter } from "./reader";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
 import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
 import {
@@ -15,6 +17,7 @@ import {
 import { requireSignIn, sessionMiddleware, type SessionVariables } from "./session";
 import { STYLESHEET, STYLESHEET_PATH } from "./styles";
 import { acceptTerms, showTerms, termsGate, WELCOME_TERMS } from "./terms";
+import { requestUpload, sameOriginUpload, showUpload } from "./upload";
 import { joinWaitlist } from "./waitlist";
 import { comingSoonPage } from "./waitlist-pages";
 import { showWork } from "./work-page";
@@ -31,6 +34,8 @@ app.use(strictTransportSecurity);
 app.use(wwwToBareDomain);
 app.use(closedBeforeLaunch);
 app.use(contentSecurityPolicy);
+// Before the session, so a cross-site upload request is refused without a lookup.
+app.post("/uploads", sameOriginUpload);
 // The session, once, for every page; routes read c.var.session and never mount it
 // again. Static files skip it, and the lookup's database connection with it. Then
 // an account that hasn't accepted the terms is sent to accept them.
@@ -54,14 +59,20 @@ app.post(WELCOME_TERMS, acceptTerms);
 app.post("/waitlist", joinWaitlist);
 // After launch, a stale link to the form goes home. Before it, nothing is at GET /waitlist.
 app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));
-app.get("/upload", (c) => c.html(turnstilePage("Upload a work", c.get("nonce"))));
+app.get("/upload", showUpload);
+app.post("/uploads", requestUpload);
 app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce"))));
+
+// The reader. Closed before launch, like every /works/ page.
+app.get("/works/:id/chapters/:n", showChapter);
+app.get("/works/:id/chapters", jumpToChapter);
 
 app.get("/about", (c) => c.html(aboutPage()));
 app.get("/terms", (c) => c.html(termsPage()));
 app.get("/privacy", (c) => c.html(privacyPage()));
 
 app.get("/works/:id", showWork);
+app.get("/tags/:type/:name", showTagListing);
 
 // The URL carries a hash of the content, so the response never changes under it.
 app.get(STYLESHEET_PATH, (c) =>
@@ -76,7 +87,10 @@ app.notFound((c) => c.html(notFoundPage(), 404));
 // Hono's default logs the whole error, and one from Postgres can quote the row it
 // failed on, a sign-in address included. Log only what kind of error it was.
 app.onError((error, c) => {
-  console.error(`${c.req.method} ${c.req.path}: ${error.name}`);
+  // The path is decoded, so a control, format or line-separator character in it
+  // could start a forged line or reorder what a log viewer shows.
+  const path = c.req.path.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, "?");
+  console.error(`${c.req.method} ${path}: ${error.name}`);
   return c.text("Internal Server Error", 500);
 });
 
