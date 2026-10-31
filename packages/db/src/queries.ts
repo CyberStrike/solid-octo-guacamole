@@ -1,6 +1,6 @@
 // Typed reads and writes over the catalogue and uploads. Each takes the
 // caller's Kysely, so a Worker passes the one it made for the request.
-import type { ExpressionBuilder, Kysely, Selectable } from "kysely";
+import { sql, type ExpressionBuilder, type Kysely, type Selectable } from "kysely";
 import { jsonArrayFrom } from "kysely/helpers/postgres";
 import type {
   ChapterTable,
@@ -10,7 +10,7 @@ import type {
   WorkTable,
   WorkVersionTable,
 } from "./schema";
-import { normalizeTagName } from "./tags";
+import { compareCodeUnits, normalizeTagName } from "./tags";
 
 /** A work's own fields, as a page shows them. */
 export type WorkSummary = Pick<
@@ -169,17 +169,80 @@ export function tagNameKeys(type: TagType, name: string): string[] {
   return nameNorm === name ? [name] : [nameNorm, name];
 }
 
+/**
+ * How the live works carrying this tag spell it, each once, by code unit. Only
+ * live works count, so a hidden or removed work's spelling is never shown.
+ */
+export async function liveTagSpellings(
+  db: Kysely<Database>,
+  type: TagType,
+  name: string,
+): Promise<string[]> {
+  const keys = tagNameKeys(type, name);
+  if (keys.length === 0) return [];
+  const rows = await db
+    .selectFrom("tags")
+    .innerJoin("work_tags", "work_tags.tag_id", "tags.id")
+    .innerJoin("works", "works.id", "work_tags.work_id")
+    .select("tags.name")
+    .distinct()
+    .where("works.status", "=", "live")
+    .where("tags.type", "=", type)
+    .where("tags.name_norm", "in", keys)
+    .execute();
+  // By code unit, not by the database's collation.
+  return rows.map((r) => r.name).sort(compareCodeUnits);
+}
+
+const NOT_RATED = "Not Rated";
+
 /** A page of a tag listing, and how many works the listing holds in all. */
 export interface TagListing {
   works: ListedWork[];
   total: number;
 }
 
-/** Which page of a listing to read. Pages count from 1. */
+/**
+ * A listing's order: last updated (the updated date, else the published one),
+ * newest first; or word count, longest first.
+ */
+export type ListingSort = "updated" | "words";
+
+/** Which page of a listing to read, and in what order. Pages count from 1. */
 export interface ListingOptions {
+  sort?: ListingSort;
+  /** Only works with this rating. "Not Rated" also finds works with none, as a card shows them. */
+  rating?: string;
+  /** Only works that also carry this tag, matched as the listing's own is. */
+  tag?: { type: TagType; name: string };
+  /** Only complete works, or only works in progress. */
+  complete?: boolean;
   page?: number;
   pageSize?: number;
 }
+
+type WorksWhere = ExpressionBuilder<Database, "works">;
+
+/** The work carries a tag of this type whose `name_norm` is one of `keys`. */
+const tagged = (eb: WorksWhere, type: TagType, keys: string[]) =>
+  eb.exists(
+    eb
+      .selectFrom("work_tags")
+      .innerJoin("tags", "tags.id", "work_tags.tag_id")
+      .select("work_tags.tag_id")
+      .whereRef("work_tags.work_id", "=", "works.id")
+      .where("tags.name_norm", "in", keys)
+      .where("tags.type", "=", type),
+  );
+
+const rated = (eb: WorksWhere, rating: string) =>
+  rating === NOT_RATED
+    ? eb.or([
+        eb("works.rating", "=", rating),
+        eb("works.rating", "is", null),
+        eb("works.rating", "=", ""),
+      ])
+    : eb("works.rating", "=", rating);
 
 /**
  * The `live` works carrying a tag of this type that matches `name` under the
@@ -190,22 +253,20 @@ export async function listLiveWorksByTag(
   db: Kysely<Database>,
   type: TagType,
   name: string,
-  { page = 1, pageSize = 20 }: ListingOptions = {},
+  { sort = "updated", rating, tag, complete, page = 1, pageSize = 20 }: ListingOptions = {},
 ): Promise<TagListing> {
   const keys = tagNameKeys(type, name);
-  if (keys.length === 0) return { works: [], total: 0 };
-  const listed = (eb: ExpressionBuilder<Database, "works">) =>
+  const tagKeys = tag === undefined ? [] : tagNameKeys(tag.type, tag.name);
+  if (keys.length === 0 || (tag !== undefined && tagKeys.length === 0)) {
+    return { works: [], total: 0 };
+  }
+  const listed = (eb: WorksWhere) =>
     eb.and([
       eb("works.status", "=", "live"),
-      eb.exists(
-        eb
-          .selectFrom("work_tags")
-          .innerJoin("tags", "tags.id", "work_tags.tag_id")
-          .select("work_tags.tag_id")
-          .whereRef("work_tags.work_id", "=", "works.id")
-          .where("tags.name_norm", "in", keys)
-          .where("tags.type", "=", type),
-      ),
+      tagged(eb, type, keys),
+      ...(tag === undefined ? [] : [tagged(eb, tag.type, tagKeys)]),
+      ...(rating === undefined ? [] : [rated(eb, rating)]),
+      ...(complete === undefined ? [] : [eb("works.complete", "=", complete)]),
     ]);
   const { count } = await db
     .selectFrom("works")
@@ -234,6 +295,10 @@ export async function listLiveWorksByTag(
       ).as("tags"),
     ])
     .where(listed)
+    .orderBy(
+      sort === "words" ? sql`works.words` : sql`coalesce(works.updated_at, works.published_at)`,
+      (ob) => ob.desc().nullsLast(),
+    )
     // AO3 work ID last, so a page never repeats or skips a work.
     .orderBy("works.ao3_work_id")
     .limit(pageSize)

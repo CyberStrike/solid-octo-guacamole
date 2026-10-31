@@ -1,5 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { getLiveWork, insertUpload, listLiveWorksByTag, normalizeTagName } from "../src/index";
+import {
+  getLiveWork,
+  insertUpload,
+  listLiveWorksByTag,
+  liveTagSpellings,
+  normalizeTagName,
+} from "../src/index";
 import { seedWork } from "../src/seed";
 import { createTestDb, type TestDb } from "../src/testing";
 
@@ -55,6 +61,110 @@ describe("14 browse and home", () => {
       seeded.sort((a, b) => a - b),
     );
     expect(await page(4)).toEqual({ works: [], total: 45 });
+  });
+
+  it("Sort by updated date", async () => {
+    const tags = [{ type: "fandom" as const, name: "Sorted Db Updated" }];
+    const older = await seedWork(t.db, { tags, updatedAt: "2021-03-01T00:00:00Z" });
+    const newest = await seedWork(t.db, { tags, updatedAt: "2023-05-01T00:00:00Z" });
+    // Never updated: its published date, 2020-01-01, stands in.
+    const never = await seedWork(t.db, { tags, updatedAt: null });
+    const middle = await seedWork(t.db, { tags, updatedAt: "2022-01-01T00:00:00Z" });
+
+    const sorted = await listLiveWorksByTag(t.db, "fandom", "Sorted Db Updated", {
+      sort: "updated",
+    });
+    const byDefault = await listLiveWorksByTag(t.db, "fandom", "Sorted Db Updated");
+
+    const expected = [newest, middle, older, never].map((s) => s.workId);
+    expect(sorted.works.map((w) => w.work.id)).toEqual(expected);
+    expect(byDefault.works.map((w) => w.work.id)).toEqual(expected);
+  });
+
+  it("Sort by word count", async () => {
+    const tags = [{ type: "fandom" as const, name: "Sorted Db Words" }];
+    const short = await seedWork(t.db, { tags, chapters: [{ words: 1200 }] });
+    const long = await seedWork(t.db, { tags, chapters: [{ words: 4000 }, { words: 3000 }] });
+    const middle = await seedWork(t.db, { tags, chapters: [{ words: 5000 }] });
+    const tied = await seedWork(t.db, { tags, chapters: [{ words: 1200 }] });
+    const noCount = await seedWork(t.db, { tags, chapters: [{ words: 900 }] });
+    await t.db.updateTable("works").set({ words: null }).where("id", "=", noCount.workId).execute();
+
+    const { works } = await listLiveWorksByTag(t.db, "fandom", "Sorted Db Words", {
+      sort: "words",
+    });
+
+    // Equal counts by AO3 work ID; a work with no count last.
+    const [first, second] = [short, tied].sort((a, b) => a.ao3WorkId - b.ao3WorkId);
+    expect(works.map((w) => w.work.words)).toEqual([7000, 5000, 1200, 1200, null]);
+    expect(works.map((w) => w.work.id)).toEqual(
+      [long, middle, first, second, noCount].map((s) => s?.workId),
+    );
+  });
+
+  it("Filter by rating", async () => {
+    const tags = [{ type: "fandom" as const, name: "Filtered Db Rating" }];
+    const explicit = await seedWork(t.db, { tags, rating: "Explicit" });
+    await seedWork(t.db, { tags, rating: "Mature" });
+    const unrated = await seedWork(t.db, { tags, rating: "Not Rated" });
+    const none = await seedWork(t.db, { tags, rating: null });
+    const blank = await seedWork(t.db, { tags, rating: "" });
+    const list = (rating: string) =>
+      listLiveWorksByTag(t.db, "fandom", "Filtered Db Rating", { rating });
+
+    const onlyExplicit = await list("Explicit");
+    // A card shows no rating as "Not Rated", so the filter finds those too.
+    const notRated = await list("Not Rated");
+
+    expect(onlyExplicit.works.map((w) => w.work.id)).toEqual([explicit.workId]);
+    expect(onlyExplicit.total).toBe(1);
+    expect(notRated.works.map((w) => w.work.id).sort()).toEqual(
+      [unrated, none, blank].map((s) => s.workId).sort(),
+    );
+    expect(notRated.total).toBe(3);
+  });
+
+  it("Filter by tag and completion", async () => {
+    const fandom = { type: "fandom" as const, name: "Filtered Db Narrow" };
+    const both = await seedWork(t.db, {
+      tags: [fandom, { type: "freeform", name: "Db Slow Burn" }],
+      complete: true,
+    });
+    // Another spelling of the same tag.
+    const spelled = await seedWork(t.db, {
+      tags: [fandom, { type: "freeform", name: "db slow-burn!" }],
+      complete: true,
+    });
+    const inProgress = await seedWork(t.db, {
+      tags: [fandom, { type: "freeform", name: "Db Slow Burn" }],
+      complete: false,
+    });
+    // The name as another type is another tag.
+    await seedWork(t.db, {
+      tags: [fandom, { type: "character", name: "Db Slow Burn" }],
+      complete: true,
+    });
+    await seedWork(t.db, { tags: [fandom], complete: false });
+    const list = (complete: boolean) =>
+      listLiveWorksByTag(t.db, "fandom", "Filtered Db Narrow", {
+        tag: { type: "freeform", name: "db slow burn" },
+        complete,
+      });
+
+    const complete = await list(true);
+    const unfinished = await list(false);
+
+    expect(complete.works.map((w) => w.work.id).sort()).toEqual(
+      [both, spelled].map((s) => s.workId).sort(),
+    );
+    expect(complete.total).toBe(2);
+    expect(unfinished.works.map((w) => w.work.id)).toEqual([inProgress.workId]);
+    // A narrowing tag that names nothing matches nothing.
+    expect(
+      await listLiveWorksByTag(t.db, "fandom", "Filtered Db Narrow", {
+        tag: { type: "freeform", name: "!!!" },
+      }),
+    ).toEqual(NONE);
   });
 });
 
@@ -116,6 +226,25 @@ describe("packages/db tag listing", () => {
     const { works } = await listLiveWorksByTag(t.db, "fandom", stored);
 
     expect(works.map((w) => w.work.id)).toEqual([s.workId]);
+  });
+
+  it("A tag's spellings come from its live works only, by code unit", async () => {
+    await seedWork(t.db, { tags: [{ type: "fandom", name: "db spelt  heading!" }] });
+    await seedWork(t.db, { tags: [{ type: "fandom", name: "Db Spelt Heading" }] });
+    await seedWork(t.db, { tags: [{ type: "fandom", name: "Db Spelt Heading" }] });
+    await seedWork(t.db, {
+      status: "hidden",
+      hiddenCause: "reports",
+      tags: [{ type: "fandom", name: "DB SPELT HEADING" }],
+    });
+    await seedWork(t.db, { tags: [{ type: "character", name: "Db Spelt Heading?" }] });
+
+    expect(await liveTagSpellings(t.db, "fandom", "db spelt heading")).toEqual([
+      "Db Spelt Heading",
+      "db spelt  heading!",
+    ]);
+    expect(await liveTagSpellings(t.db, "fandom", "db never spelt")).toEqual([]);
+    expect(await liveTagSpellings(t.db, "fandom", "!!!")).toEqual([]);
   });
 
   it("A name holding a NUL lists no works", async () => {
