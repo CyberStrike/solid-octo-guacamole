@@ -41,7 +41,7 @@ export async function showChapter(c: ReaderContext) {
   // Chapter HTML comes only from a fragment the sanitizer wrote, under works/ and this
   // version's own prefix: never an upload, an original or an image, whatever the row says.
   const key = chapter.r2_key;
-  if (!key.startsWith("works/") || !key.startsWith(live.version.r2_prefix)) {
+  if (!key.startsWith("works/") || !isFragmentKey(key, id, live.version.r2_prefix)) {
     return unavailable(c);
   }
   // The fragment is trusted markup only because the sanitizer wrote it; it goes in unescaped.
@@ -121,6 +121,18 @@ ${prev === null ? "" : `<a rel="prev" href="${chapterUrl(id, prev)}">Previous ch
 </form>
 ${next === null ? "" : `<a rel="next" href="${chapterUrl(id, next)}">Next chapter</a>`}
 </nav>`;
+}
+
+/**
+ * Whether a chapter's key is a fragment of this work's version: the version's prefix is
+ * `works/<ao3_work_id>/<upload_id>/` for this work (ARCHITECTURE, Why these pieces),
+ * never its `img/` folder, and the key is a file directly under it.
+ */
+export function isFragmentKey(key: string, id: number, prefix: string) {
+  const upload = prefix.match(new RegExp(`^works/${id}/([^/]+)/$`))?.[1];
+  if (upload === undefined || upload === "img" || upload === "." || upload === "..") return false;
+  const file = key.startsWith(prefix) ? key.slice(prefix.length) : "";
+  return file !== "" && !file.includes("/");
 }
 
 /** A chapter whose fragment can't be read: empty, uncached, and no detail. */
