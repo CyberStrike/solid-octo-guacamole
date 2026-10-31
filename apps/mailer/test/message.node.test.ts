@@ -28,6 +28,7 @@ describe("the email queue's message contract", () => {
     ["another port", "https://rarepair.fans:8443/waitlist/confirm?token=abc"],
     ["user info", "https://evil.example@rarepair.fans/waitlist/confirm?token=abc"],
     ["a fragment", "https://rarepair.fans/waitlist/confirm?token=abc#more"],
+    ["an empty fragment", "https://rarepair.fans/waitlist/confirm?token=abc#"],
     ["a longer path", "https://rarepair.fans/waitlist/confirm/x?token=abc"],
     ["a path with a suffix", "https://rarepair.fans/waitlist/confirmx?token=abc"],
     ["the bare site", "https://rarepair.fans/"],
@@ -44,6 +45,10 @@ describe("the email queue's message contract", () => {
     expect(parseMessage(waitlist(url))).toBeNull();
   });
 
+  it("refuses a sign-in email with an empty fragment", () => {
+    expect(parseMessage(signIn("https://rarepair.fans/login/confirm?token=abc#"))).toBeNull();
+  });
+
   it("refuses a sign-in email linking to /waitlist/confirm", () => {
     expect(parseMessage(signIn("https://rarepair.fans/waitlist/confirm?token=abc"))).toBeNull();
   });
@@ -57,6 +62,7 @@ describe("the email queue's message contract", () => {
     ["a NUL", "read\u0000er@example.test"],
     ["an escape", "read\u001ber@example.test"],
     ["a DEL", "read\u007fer@example.test"],
+    ["a C1 next-line", "read\u0085er@example.test"],
   ])("refuses a wait list confirmation email to %s", (_, to) => {
     const url = "https://rarepair.fans/waitlist/confirm?token=abc";
     expect(parseMessage({ kind: "waitlist-confirm", to, url })).toBeNull();

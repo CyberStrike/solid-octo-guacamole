@@ -63,7 +63,7 @@ function waitlistExpired() { document.getElementById("join").disabled = true; }
 export const waitlistCheckEmailPage = () =>
   waitlistPage(
     "Check your email to confirm",
-    `<p>If that address can join, we've sent it a link to confirm. The link works once, for 7 days.</p>
+    `<p>If that address can join, we've sent it a link to confirm. The link works once, for 7 days, and only the newest one works.</p>
 <p>Once you confirm, your address gets one email when the archive opens, and nothing else.</p>`,
   );
 

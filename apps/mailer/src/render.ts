@@ -17,7 +17,7 @@ export function render(message: EmailMessage, from: string): OutgoingEmail {
         from,
         to: message.to,
         subject: "Confirm your place on the rarepair wait list",
-        text: `Use this link to confirm your address for the rarepair wait list. It works once, for 7 days.\n\n${message.url}\n\nOnce you confirm, you'll get one email when the archive opens, and nothing else.\n\nIf you didn't ask to join, you can ignore this email.\n`,
+        text: `Use this link to confirm your address for the rarepair wait list. It works once, for up to 7 days. A newer confirmation email replaces it.\n\n${message.url}\n\nOnce you confirm, you'll get one email when the archive opens, and nothing else.\n\nIf you didn't ask to join, you can ignore this email.\n`,
       };
   }
 }

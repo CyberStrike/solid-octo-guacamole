@@ -233,6 +233,21 @@ describe("22-waitlist", () => {
     expect(await res.text()).not.toContain("a".repeat(300));
   });
 
+  it("A join request over 16 KB is refused unread, with the form again", async () => {
+    const email = fresh("too-large");
+    const res = await postWaitlist({
+      email,
+      "cf-turnstile-response": PASSING_TOKEN,
+      padding: "x".repeat(16 * 1024),
+    });
+    expect(res.status).toBe(413);
+    const html = await res.text();
+    expectFormAgain(res, html);
+    // Nothing of it is shown back.
+    expect(html).not.toContain(email);
+    expect(await rowOf(email)).toBeUndefined();
+  });
+
   it("Join request without a valid address is refused", async () => {
     const marker = crypto.randomUUID().slice(0, 8);
     const local = `bad-${marker}`;
@@ -259,6 +274,19 @@ describe("22-waitlist", () => {
       expectFormAgain(res, html);
       expect(html).toContain("Enter a valid email address.");
     }
+    // At the length limit: 254 characters join, 255 don't. Its own marker: one is emailed.
+    const edge = crypto.randomUUID().slice(0, 8);
+    const at = (length: number) => {
+      const domain = `@${edge}.test`;
+      return `${"a".repeat(length - domain.length)}${domain}`;
+    };
+    const longest = await postWaitlist({ email: at(254), "cf-turnstile-response": PASSING_TOKEN });
+    expect(longest.status).toBe(200);
+    expect(await rowOf(at(254))).toBeDefined();
+    const tooLong = await postWaitlist({ email: at(255), "cf-turnstile-response": PASSING_TOKEN });
+    expect(tooLong.status).toBe(400);
+    expect(await rowOf(at(255))).toBeUndefined();
+
     // No field is missing a check: with no address at all, it's refused the same way.
     const none = await postWaitlist({ "cf-turnstile-response": PASSING_TOKEN });
     expect(none.status).toBe(400);

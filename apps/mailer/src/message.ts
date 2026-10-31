@@ -33,7 +33,9 @@ const LINK_PATHS: Record<EmailMessage["kind"], string> = {
 export const isSendableAddress = (to: string) =>
   to.length <= 254 &&
   // oxlint-disable-next-line no-control-regex -- control characters are what it refuses
-  /^[^\s@<>()",;:\\[\]\u0000-\u001f\u007f]+@[^\s@<>()",;:\\[\]\u0000-\u001f\u007f]+$/.test(to);
+  /^[^\s@<>()",;:\\[\]\u0000-\u001f\u007f-\u009f]+@[^\s@<>()",;:\\[\]\u0000-\u001f\u007f-\u009f]+$/.test(
+    to,
+  );
 
 // A wait list link carries its token and nothing else: base64url, as apps/web makes it.
 const WAITLIST_QUERY = /^\?token=[A-Za-z0-9_-]+$/;
@@ -51,7 +53,7 @@ export function parseMessage(body: unknown): EmailMessage | null {
   // The kind's own page on the site, with no user info to disguise the host and no fragment.
   const link = URL.parse(url);
   if (link === null || link.origin !== SITE || link.pathname !== LINK_PATHS[kind]) return null;
-  if (link.username !== "" || link.password !== "" || link.hash !== "") return null;
+  if (link.username !== "" || link.password !== "" || link.href.includes("#")) return null;
   // A wait list link without its token could confirm nothing, and needs nothing more.
   if (kind === "waitlist-confirm" && !WAITLIST_QUERY.test(link.search)) return null;
   // The parsed href, not the raw string: parsing drops line breaks that would add lines to the email.
