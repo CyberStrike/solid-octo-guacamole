@@ -18,8 +18,20 @@ async function settled(promise: Promise<unknown>) {
 describe("floorOf", () => {
   it("reads a whole number of milliseconds, and keeps the default when the var is missing or not one", () => {
     expect(floorOf("300")).toBe(300);
-    expect(floorOf("0")).toBe(0);
-    for (const bad of [undefined, "", "soon", "-5", "1.5", "NaN"]) {
+    expect(floorOf("1")).toBe(1);
+    expect(floorOf("30000")).toBe(30_000);
+    for (const bad of [
+      undefined,
+      "",
+      "soon",
+      "-5",
+      "1.5",
+      "NaN",
+      "0",
+      "00",
+      "30001",
+      "3000000000",
+    ]) {
       expect(floorOf(bad), String(bad)).toBe(DEFAULT_FLOOR_MS);
     }
   });

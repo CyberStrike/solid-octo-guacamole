@@ -1,9 +1,16 @@
 /** Used when `WAITLIST_FLOOR_MS` is missing or misspelt: a bad var never turns the floor off. */
 export const DEFAULT_FLOOR_MS = 2000;
 
-/** A floor var's value in milliseconds: a whole number, or else the default. */
+/** The longest floor accepted: a longer one would overflow setTimeout and fire at once. */
+const MAX_FLOOR_MS = 30_000;
+
+/**
+ * A floor var's value in milliseconds: a whole number from 1 to 30000, or else the default,
+ * so a zero or a typo can't turn the floor off.
+ */
 export function floorOf(raw: string | undefined): number {
-  return raw !== undefined && /^\d+$/.test(raw) ? Number(raw) : DEFAULT_FLOOR_MS;
+  const ms = raw !== undefined && /^\d+$/.test(raw) ? Number(raw) : 0;
+  return ms >= 1 && ms <= MAX_FLOOR_MS ? ms : DEFAULT_FLOOR_MS;
 }
 
 /**
@@ -15,8 +22,10 @@ export function floorOf(raw: string | undefined): number {
  */
 export async function padTo<T>(floorMs: number, work: () => Promise<T>): Promise<T> {
   const floor = new Promise<void>((resolve) => setTimeout(resolve, floorMs));
-  const outcome = await Promise.allSettled([work(), floor]);
-  const [job] = outcome;
-  if (job.status === "rejected") throw job.reason;
-  return job.value;
+  try {
+    return await work();
+  } finally {
+    // Also when `work` throws: a failure is no faster than a success.
+    await floor;
+  }
 }

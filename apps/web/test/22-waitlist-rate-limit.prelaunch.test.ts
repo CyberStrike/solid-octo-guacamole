@@ -172,6 +172,7 @@ describe("22-waitlist rate limits", () => {
 describe("22-waitlist response-time floor", () => {
   const FLOOR_MS = 600;
   const SLACK_MS = 20;
+  const open: RateLimit = { limit: async () => ({ success: true }) };
 
   /** The Worker's answer to `request` with the floor at FLOOR_MS and `bindings` over the env. */
   async function timed(request: Request, bindings: Partial<Cloudflare.Env> = {}) {
@@ -179,7 +180,8 @@ describe("22-waitlist response-time floor", () => {
     const started = performance.now();
     const res = await app.fetch(
       request,
-      { ...env, ...bindings, WAITLIST_FLOOR_MS: String(FLOOR_MS) },
+      // The address limit is open: one address is joined more often than it allows here.
+      { ...env, WAITLIST_EMAIL_LIMIT: open, ...bindings, WAITLIST_FLOOR_MS: String(FLOOR_MS) },
       ctx,
     );
     const elapsed = performance.now() - started;
