@@ -3,6 +3,7 @@
 // policy and nonced challenge script can be served and tested.
 
 import { TURNSTILE_ORIGIN } from "./security";
+import { LINK_LIFETIME_MINUTES } from "./signin";
 
 const TURNSTILE_API = `${TURNSTILE_ORIGIN}/turnstile/v0/api.js`;
 
@@ -67,7 +68,7 @@ export const checkEmailPage = () =>
   page(
     "Check your email",
     `<h1>Check your email</h1>
-<p>We've sent you a sign-in link. It lasts 15 minutes.</p>
+<p>We've sent you a sign-in link. It lasts ${LINK_LIFETIME_MINUTES} minutes.</p>
 <p>The link can take a minute to arrive during busy periods.</p>`,
   );
 

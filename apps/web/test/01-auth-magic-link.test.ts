@@ -1,7 +1,7 @@
 import { createDb } from "@archive/db";
 import { env, exports } from "cloudflare:workers";
 import { afterAll, describe, expect, it } from "vitest";
-import { parseMessage } from "../../mailer/src/message";
+import { parseMessage, type EmailMessage } from "../../mailer/src/message";
 
 const BASE = "https://rarepair.fans";
 // SAFETY: the default export is the Worker under test, loaded from wrangler.jsonc's main.
@@ -54,8 +54,10 @@ async function deliveredEmails(): Promise<unknown[]> {
 async function emailsTo(to: string, { atLeast = 1 } = {}) {
   const deadline = Date.now() + 10_000;
   for (;;) {
-    const mine = (await deliveredEmails()).filter((body) => parseMessage(body)?.to === to);
-    if (mine.length >= atLeast || Date.now() > deadline) return mine.map((b) => parseMessage(b)!);
+    const mine = (await deliveredEmails())
+      .map(parseMessage)
+      .filter((email): email is EmailMessage => email?.to === to);
+    if (mine.length >= atLeast || Date.now() > deadline) return mine;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
 }

@@ -1,19 +1,15 @@
+// The `email` queue's contract lives with its consumer. A type-only import: nothing
+// of apps/mailer is bundled into this Worker.
+import type { EmailMessage } from "../../mailer/src/message";
+
 /** The web Worker's bindings, from wrangler.jsonc. */
 export interface Env {
   /** Neon Postgres. */
   HYPERDRIVE: Hyperdrive;
   /** The queue apps/mailer sends from. */
-  EMAIL: Queue<SignInEmail>;
+  EMAIL: Queue<EmailMessage>;
   TURNSTILE_SITE_KEY: string;
   TURNSTILE_SECRET_KEY: string;
   /** Signs Better Auth's session cookies. */
   BETTER_AUTH_SECRET: string;
-}
-
-// A copy of the `email` queue's contract, which lives with its consumer in
-// apps/mailer/src/message.ts (an app this one can't import). Keep the two in step.
-export interface SignInEmail {
-  kind: "sign-in";
-  to: string;
-  url: string;
 }

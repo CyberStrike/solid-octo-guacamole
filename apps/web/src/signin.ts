@@ -4,6 +4,9 @@
 /** The one origin sign-in forms are served from, and the base of every sign-in link. */
 export const SITE = "https://rarepair.fans";
 
+/** How long a sign-in link works (ARCHITECTURE, Auth). The pages say it too. */
+export const LINK_LIFETIME_MINUTES = 15;
+
 /**
  * Reduces a `next` value to a same-site path and query. Anything else, an
  * absent value included, becomes "/": root-relative only, no `//`, no `\`, no

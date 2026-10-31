@@ -3,7 +3,7 @@ import { betterAuth } from "better-auth";
 import { magicLink } from "better-auth/plugins";
 import type { Kysely } from "kysely";
 import type { Env } from "./env";
-import { SITE } from "./signin";
+import { LINK_LIFETIME_MINUTES, SITE } from "./signin";
 
 /**
  * Better Auth, built per request: bindings only exist inside one, and a
@@ -31,8 +31,7 @@ export function makeAuth(env: Env, db: Kysely<Database>) {
     plugins: [
       magicLink({
         storeToken: "hashed",
-        // 15 minutes.
-        expiresIn: 900,
+        expiresIn: LINK_LIFETIME_MINUTES * 60,
         // Never logs its arguments: they hold the address and the link.
         sendMagicLink: async ({ email, token, metadata }) => {
           const link = new URL("/login/confirm", SITE);
