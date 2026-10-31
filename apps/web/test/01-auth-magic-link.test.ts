@@ -60,7 +60,9 @@ describe("01-auth-magic-link", () => {
 
     const form = formTag(html);
     expect(form).toContain('method="post"');
-    expect(html).toMatch(/<input\b[^>]*type="email"[^>]*name="email"[^>]*required/);
+    expect(html).toMatch(
+      /<input\b[^>]*type="email"[^>]*name="email"[^>]*maxlength="254"[^>]*required/,
+    );
     // The page it was opened from comes back after sign-in.
     expect(html).toMatch(/<input\b[^>]*type="hidden"[^>]*name="next"[^>]*value="\/works\/1"/);
     // Turnstile alongside: the widget, with the site key from wrangler.jsonc, and its script.

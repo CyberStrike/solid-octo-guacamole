@@ -15,7 +15,7 @@ export type TurnstileResult = "passed" | "failed" | "unavailable";
 export interface TurnstileCheck {
   /** The widget's secret key. */
   secret: string;
-  /** The host the form was served on. A token solved on any other host fails. */
+  /** The host the request came in on. A token solved on any other host fails. */
   hostname: string;
   /** The visitor's address (`cf-connecting-ip`), when known. */
   remoteIp?: string | null;
