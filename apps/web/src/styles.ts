@@ -18,10 +18,12 @@ export const STYLESHEET = `:root {
   --accent: #0b5cad;
   --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --reading: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif;
+  --reading-size: 18px;
 }
 
+/* The system's preference holds only until the reader chooses a theme (R5). */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --ink: #e8e8e3;
     --paper: #151515;
     --muted: #a3a39d;
@@ -150,6 +152,7 @@ footer {
    its edge, so the padding keeps focus rings inside it. */
 article.chapter {
   font-family: var(--reading);
+  font-size: var(--reading-size);
   line-height: 1.6;
   max-width: 66ch;
   contain: content;
@@ -320,6 +323,87 @@ main {
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+/* Reader settings (R5): attributes on <html> from the settings cookie or the settings
+   script. Themes set the colours; size, spacing and face change only the chapter. */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #e8e8e3;
+  --paper: #151515;
+  --muted: #a3a39d;
+  --rule: #3a3a36;
+  --accent: #7ab4f0;
+}
+
+/* Draft palette for the operator to proof; each colour passes AA on the paper. */
+:root[data-theme="sepia"] {
+  color-scheme: light;
+  --ink: #433422;
+  --paper: #f4ecd8;
+  --muted: #6b5a43;
+  --rule: #d9cdb3;
+  --accent: #8a4b12;
+}
+
+html[data-size="s"] {
+  --reading-size: 16px;
+}
+
+html[data-size="m"] {
+  --reading-size: 18px;
+}
+
+html[data-size="l"] {
+  --reading-size: 20px;
+}
+
+html[data-size="xl"] {
+  --reading-size: 23px;
+}
+
+html[data-leading="compact"] article.chapter {
+  line-height: 1.45;
+}
+
+html[data-leading="normal"] article.chapter {
+  line-height: 1.6;
+}
+
+html[data-leading="relaxed"] article.chapter {
+  line-height: 1.8;
+}
+
+html[data-face="sans"] {
+  --reading: var(--ui);
+}
+
+/* The settings controls: in the reader bar only once the script shows them. */
+.reader-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) * 2) calc(var(--space) * 4);
+  align-items: center;
+}
+
+.reader-settings[hidden] {
+  display: none;
+}
+
+.reader-settings select {
+  font: inherit;
+}
+
+.flash {
+  margin: 0;
+  padding: calc(var(--space) * 2) calc(var(--space) * 4);
+  border-bottom: 1px solid var(--rule);
+  text-align: center;
 }
 `;
 

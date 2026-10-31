@@ -6,6 +6,7 @@ import { showTagListing } from "./listing";
 import { requestSignIn, showSignIn } from "./login";
 import { jumpToChapter, showChapter } from "./reader";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
+import { pageState } from "./page-state";
 import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
 import {
   contentSecurityPolicy,
@@ -27,6 +28,8 @@ app.use(strictTransportSecurity);
 app.use(wwwToBareDomain);
 app.use(closedBeforeLaunch);
 app.use(contentSecurityPolicy);
+// The reader's settings, on every page. Inside the CSP, which keys on what it returns.
+app.use(pageState);
 
 // The wait list pages' fonts and stylesheet. S1 serves its own stylesheet elsewhere under /assets/.
 app.get("/assets/waitlist/*", assetRoute);

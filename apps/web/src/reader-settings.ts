@@ -64,14 +64,20 @@ export const settingsCookie = (settings: Settings) =>
   `${SETTINGS_COOKIE}=${serializeSettings(settings)}${SETTINGS_COOKIE_ATTRIBUTES}`;
 
 /**
- * The attributes for <html>, each with a leading space: only values from the lists,
- * so the cookie's own text is never echoed.
+ * The attributes for <html>, as name and value: only values from the lists, so the
+ * cookie's own text is never echoed.
  */
-export const htmlAttributes = (settings: Settings) =>
-  SETTING_NAMES.map((name) => {
+export const dataAttributes = (settings: Settings): [string, string][] =>
+  SETTING_NAMES.flatMap((name) => {
     const value = settings[name];
-    return isSettingValue(name, value) ? ` data-${name}="${value}"` : "";
-  }).join("");
+    return isSettingValue(name, value) ? [[`data-${name}`, value]] : [];
+  });
+
+/** The same attributes as markup, each with a leading space. */
+export const htmlAttributes = (settings: Settings) =>
+  dataAttributes(settings)
+    .map(([name, value]) => ` ${name}="${value}"`)
+    .join("");
 
 /**
  * The one-shot flash cookie: a code from FLASHES, never copy or markup, so a forged
