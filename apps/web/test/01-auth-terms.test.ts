@@ -282,6 +282,30 @@ describe("01-auth-magic-link", () => {
     expect(await termsAcceptedAt(moderator)).toBeNull();
   });
 
+  it("Before accepting, a report form post goes to the terms page and stores nothing", async () => {
+    const email = "terms-report@example.test";
+    const cookie = await signIn(email);
+    const report = (headers: Record<string, string> = {}) =>
+      postLogin(
+        { kind: "wrong_version", body: "" },
+        { url: `${WORK_PAGE}/report`, headers: { cookie, ...headers } },
+      );
+
+    const res = await report();
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/welcome/terms");
+    // Cross-site is refused first, before the session and the gate.
+    expect((await report({ origin: "https://evil.example" })).status).toBe(403);
+
+    const reports = await db
+      .selectFrom("reports")
+      .innerJoin("user", "user.id", "reports.reporter_id")
+      .select("reports.id")
+      .where("user.email", "=", email)
+      .execute();
+    expect(reports).toEqual([]);
+  });
+
   it("Before accepting, an upload request gets no row and no URL", async () => {
     const email = "terms-upload@example.test";
     const cookie = await signIn(email);

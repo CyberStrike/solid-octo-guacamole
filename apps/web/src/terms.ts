@@ -35,18 +35,22 @@ export const TERMS_EXEMPT = [
 ] as const;
 
 /**
- * The endpoints a page's script calls, which answer JSON: a script can't follow a
+ * The endpoints a page's script calls, whatever the method, which answer JSON: the
+ * upload handshake and the polling and completion below it. A script can't follow a
  * redirect, so these get a 401 instead (ARCHITECTURE, Surge controls, Status codes).
  */
-const SCRIPT_ENDPOINTS = new Set(["/uploads"]);
+const SCRIPT_ENDPOINTS = ["/uploads/*"] as const;
+
+/** Whether `path` is one of `paths`, written as `TERMS_EXEMPT` is. */
+const isIn = (paths: readonly string[], path: string) =>
+  paths.some((entry) =>
+    entry.endsWith("/*")
+      ? path === entry.slice(0, -2) || path.startsWith(entry.slice(0, -1))
+      : path === entry,
+  );
 
 /** Whether `path` is open to an account that hasn't accepted the terms. */
-export const isTermsExempt = (path: string) =>
-  TERMS_EXEMPT.some((exempt) =>
-    exempt.endsWith("/*")
-      ? path === exempt.slice(0, -2) || path.startsWith(exempt.slice(0, -1))
-      : path === exempt,
-  );
+export const isTermsExempt = (path: string) => isIn(TERMS_EXEMPT, path);
 
 /**
  * Sends a signed-in account whose `terms_accepted_at` is empty to the terms page,
@@ -61,7 +65,7 @@ export const termsGate: MiddlewareHandler<{ Variables: SessionVariables }> = asy
   }
   // Signed in: never cached shared (#108).
   c.header("Cache-Control", "no-store");
-  if (SCRIPT_ENDPOINTS.has(c.req.path)) {
+  if (isIn(SCRIPT_ENDPOINTS, c.req.path)) {
     return c.json({ error: "Accept the terms first, at /welcome/terms." }, 401);
   }
   // A form post isn't a page to come back to after accepting.

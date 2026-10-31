@@ -9,6 +9,7 @@ import {
   nonceOf,
   PASSING_TOKEN,
   postLogin,
+  signIn as signInAs,
   STRICT,
   withoutNonce,
 } from "./helpers";
@@ -45,25 +46,8 @@ beforeAll(async () => {
 });
 afterAll(() => db.destroy());
 
-/**
- * Signs `email` in through the Worker and returns the `name=value` of its session
- * cookie. The terms are marked accepted, so the account passes A4's terms gate
- * (#24) whether or not that has merged. A copy of session.test.ts's helper until
- * A4's shared one lands.
- */
-async function signIn(email: string): Promise<string> {
-  expect((await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN })).status).toBe(200);
-  const [sent] = await emailsTo(email);
-  const token = new URL(sent!.url).searchParams.get("token")!;
-  const res = await postLogin({ token, next: "/" }, { url: "/login/confirm" });
-  expect(res.status).toBe(303);
-  await db
-    .updateTable("user")
-    .set({ terms_accepted_at: new Date() })
-    .where("email", "=", email)
-    .execute();
-  return res.headers.getSetCookie()[0]!.split(";")[0]!;
-}
+/** Signs `email` in through the Worker, accepting the terms, and returns its session cookie. */
+const signIn = (email: string) => signInAs(email, { acceptTerms: true });
 
 /** The headers a browser on rarepair.fans sends with the report form. */
 const FORM_HEADERS = {
