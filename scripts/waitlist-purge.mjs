@@ -67,7 +67,14 @@ export async function waitlistPurge({
   try {
     await client.connect();
     await client.query("begin");
-    await client.query(`set local lock_timeout = ${Math.max(1, Math.floor(lockTimeoutMs))}`);
+    const lockMs = Number.isFinite(lockTimeoutMs)
+      ? Math.max(1, Math.floor(lockTimeoutMs))
+      : LOCK_TIMEOUT_MS;
+    // The lock is held to the commit: if the connection stalls, the server ends the
+    // transaction instead of leaving every join, confirm and unsubscribe write queued behind it.
+    await client.query(
+      `set local lock_timeout = ${lockMs}; set local statement_timeout = 60000; set local idle_in_transaction_session_timeout = 60000`,
+    );
     // Waits for any open claim (a row write) and holds off new ones until this commits or
     // rolls back. Plain reads are not blocked.
     await client.query("lock table waitlist in exclusive mode");
@@ -82,7 +89,7 @@ export async function waitlistPurge({
     if (force) {
       log("forced: skipping the refusal checks");
     } else if (unsent > 0) {
-      const refused = `${unsent} confirmed addresses are still waiting for the launch send`;
+      const refused = `${unsent} confirmed ${unsent === 1 ? "address is" : "addresses are"} still waiting for the launch send`;
       log(`refused: ${refused}`);
       log("rerun with --force to purge anyway");
       return { deleted: 0, refused, error: null };

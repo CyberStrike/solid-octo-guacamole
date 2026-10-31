@@ -106,6 +106,16 @@ describe("22-waitlist purge script", () => {
     expect(await count()).toBe(4);
   });
 
+  it("The wait list is deleted after the launch send: one waiting address is refused in the singular, and a bad lock timeout falls back", async () => {
+    await seed({ email: "waiting@example.test" });
+
+    const result = await run({ lockTimeoutMs: Number.NaN });
+
+    expect(result.error).toBeNull();
+    expect(result.refused).toBe("1 confirmed address is still waiting for the launch send");
+    expect(await count()).toBe(1);
+  });
+
   it("The wait list is deleted after the launch send: refuses while the last batch is under a day old", async () => {
     // The newest notified_at decides, not the oldest.
     await seed(
