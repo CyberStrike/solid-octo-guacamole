@@ -44,14 +44,17 @@ create table "requests" (
   constraint "requests_remove_work_has_work"
     check ("kind" <> 'remove_work' or "work_id" is not null),
   constraint "requests_opt_out_has_pseud"
-    check ("kind" <> 'opt_out' or "pseud_norm" is not null)
+    check ("kind" <> 'opt_out' or "pseud_norm" is not null),
+  -- normalizePseud gives "" for a blank pseud, which would match every blank byline.
+  constraint "requests_pseud_norm_not_blank" check ("pseud_norm" <> '')
 );
 
 -- No unique on pseud_norm: two requests can opt one pseud out, and a reversed
 -- opt-out stays as an inactive row. No default on active: every writer says.
 create table "optouts" (
   "id" text not null primary key default gen_random_uuid()::text,
-  "pseud_norm" text not null,
+  "pseud_norm" text not null
+    constraint "optouts_pseud_norm_not_blank" check ("pseud_norm" <> ''),
   "ao3_user" text,
   "request_id" text not null references "requests" ("id"),
   "active" boolean not null,

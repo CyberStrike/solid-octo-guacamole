@@ -128,23 +128,40 @@ describe("17 reports and DMCA", () => {
   });
 
   it("Pending DMCA notice does not block an upload", async () => {
-    const removed = await seedWork(t.db, { status: "removed" });
+    const moderator = await addUser();
+    const takenDown = await seedWork(t.db, { status: "removed" });
     const pending = await seedWork(t.db);
-    for (const { workId } of [removed, pending]) {
+    // Removed for another reason, such as an author's request, with a notice no one acted on.
+    const removedOtherwise = await seedWork(t.db, { status: "removed" });
+    for (const [{ workId }, resolved_by] of [
+      [takenDown, moderator],
+      [pending, null],
+      [removedOtherwise, null],
+    ] as const) {
       await t.db
         .insertInto("takedowns")
-        .values({ work_id: workId, requester: "A rights holder", basis: "A stated basis" })
+        .values({
+          work_id: workId,
+          requester: "A rights holder",
+          basis: "A stated basis",
+          resolved_by,
+        })
         .execute();
     }
-    // The takedown list: notices whose work a moderator removed.
+    // The takedown list: works a moderator removed after a notice.
     const listed = await t.db
       .selectFrom("takedowns")
       .innerJoin("works", "works.id", "takedowns.work_id")
       .select("works.ao3_work_id")
+      .where("takedowns.resolved_by", "is not", null)
       .where("works.status", "=", "removed")
-      .where("works.ao3_work_id", "in", [removed.ao3WorkId, pending.ao3WorkId])
+      .where("works.ao3_work_id", "in", [
+        takenDown.ao3WorkId,
+        pending.ao3WorkId,
+        removedOtherwise.ao3WorkId,
+      ])
       .execute();
-    expect(listed).toEqual([{ ao3_work_id: removed.ao3WorkId }]);
+    expect(listed).toEqual([{ ao3_work_id: takenDown.ao3WorkId }]);
   });
 });
 
@@ -204,6 +221,19 @@ describe("packages/db moderation constraints", () => {
 
   it("An opt-out request without its pseud is refused", async () => {
     await expect(addRequest({ kind: "opt_out" })).rejects.toThrow(/check constraint/i);
+  });
+
+  it("An opt-out for a blank pseud is refused", async () => {
+    await expect(addRequest({ kind: "opt_out", pseud_norm: "" })).rejects.toThrow(
+      /check constraint/i,
+    );
+    const request = await addRequest({ kind: "opt_out", pseud_norm: "p" });
+    await expect(
+      t.db
+        .insertInto("optouts")
+        .values({ pseud_norm: "", request_id: request.id, active: true })
+        .execute(),
+    ).rejects.toThrow(/check constraint/i);
   });
 
   it("A requester block with neither email nor IP hash is refused", async () => {

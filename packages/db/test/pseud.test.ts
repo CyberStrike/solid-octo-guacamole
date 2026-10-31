@@ -27,6 +27,8 @@ describe("normalizePseud", () => {
     // A tab, and an ideographic space (U+3000).
     expect(normalizePseud("Moon\tChild")).toBe("moon child");
     expect(normalizePseud("Moon　Child")).toBe("moon child");
+    // Next line (U+0085) is Unicode whitespace, though not in JavaScript's `\s`.
+    expect(normalizePseud("\u0085Moon\u0085Child\u0085")).toBe("moon child");
   });
 
   it("Punctuation is kept, unlike in a tag's name_norm", () => {

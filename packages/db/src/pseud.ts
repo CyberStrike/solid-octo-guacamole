@@ -3,6 +3,9 @@
 // the web Worker and ingest can both load it. Deliberately not the tag rule in
 // `./tags`: punctuation is kept here.
 
+/** Unicode White_Space, which, unlike `\s`, includes next line (U+0085). */
+const WHITESPACE = /[\p{White_Space}﻿]+/gu;
+
 /**
  * A pseud's `pseud_norm`: NFKC, lowercased, inner runs of whitespace collapsed
  * to one space, then trimmed. NFKC comes first, so a no-break or ideographic
@@ -11,5 +14,5 @@
  * folding (`ß` stays `ß`, not `ss`). The pseud itself is stored as written.
  */
 export function normalizePseud(pseud: string): string {
-  return pseud.normalize("NFKC").toLowerCase().replace(/\s+/gu, " ").trim();
+  return pseud.normalize("NFKC").toLowerCase().replace(WHITESPACE, " ").trim();
 }
