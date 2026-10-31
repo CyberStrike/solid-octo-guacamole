@@ -12,9 +12,11 @@ const WHITESPACE = /[\p{White_Space}\u{FEFF}]+/gu;
 /**
  * A pseud's `pseud_norm`: NFKC, lowercased, inner runs of whitespace collapsed
  * to one space, then trimmed. NFKC comes first, so a no-break or ideographic
- * space becomes a plain one before the collapse. Punctuation is never folded:
- * `a_b` and `a b` are different pseuds. `toLowerCase` is not full Unicode case
- * folding (`ß` stays `ß`, not `ss`). The pseud itself is stored as written.
+ * space becomes a plain one before the collapse. Punctuation is never folded
+ * into whitespace, so `a_b` and `a b` are different pseuds, though NFKC still
+ * rewrites compatibility forms (`…` becomes `...`). `toLowerCase` is not full
+ * Unicode case folding (`ß` stays `ß`, not `ss`). A byline's pseud is stored
+ * as written, in `work_authors.pseud`.
  */
 export function normalizePseud(pseud: string): string {
   return pseud.normalize("NFKC").toLowerCase().replace(WHITESPACE, " ").trim();

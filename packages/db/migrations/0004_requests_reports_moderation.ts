@@ -45,11 +45,12 @@ create table "requests" (
     check ("kind" <> 'remove_work' or "work_id" is not null),
   constraint "requests_opt_out_has_pseud"
     check ("kind" <> 'opt_out' or "pseud_norm" is not null),
-  -- normalizePseud gives "" for a blank pseud, which would match every blank byline.
-  constraint "requests_pseud_norm_not_blank" check ("pseud_norm" <> ''),
-  -- A blank email or hash would match every other blank one, or nothing.
-  constraint "requests_contact_email_not_blank" check ("contact_email" <> ''),
-  constraint "requests_ip_hash_not_blank" check ("ip_hash" <> '')
+  -- Blank means empty or only whitespace. normalizePseud gives "" for a blank
+  -- pseud, which would match every blank byline, and a blank email or hash
+  -- would match every other blank one, or nothing.
+  constraint "requests_pseud_norm_not_blank" check ("pseud_norm" ~ '[^[:space:]]'),
+  constraint "requests_contact_email_not_blank" check ("contact_email" ~ '[^[:space:]]'),
+  constraint "requests_ip_hash_not_blank" check ("ip_hash" ~ '[^[:space:]]')
 );
 
 -- No unique on pseud_norm: two requests can opt one pseud out, and a reversed
@@ -57,7 +58,7 @@ create table "requests" (
 create table "optouts" (
   "id" text not null primary key default gen_random_uuid()::text,
   "pseud_norm" text not null
-    constraint "optouts_pseud_norm_not_blank" check ("pseud_norm" <> ''),
+    constraint "optouts_pseud_norm_not_blank" check ("pseud_norm" ~ '[^[:space:]]'),
   "ao3_user" text,
   "request_id" text not null references "requests" ("id"),
   "active" boolean not null,
@@ -72,8 +73,9 @@ create table "requester_blocks" (
   "created_at" timestamptz not null default current_timestamp,
   constraint "requester_blocks_email_or_ip_hash"
     check ("contact_email" is not null or "ip_hash" is not null),
-  constraint "requester_blocks_contact_email_not_blank" check ("contact_email" <> ''),
-  constraint "requester_blocks_ip_hash_not_blank" check ("ip_hash" <> '')
+  constraint "requester_blocks_contact_email_not_blank"
+    check ("contact_email" ~ '[^[:space:]]'),
+  constraint "requester_blocks_ip_hash_not_blank" check ("ip_hash" ~ '[^[:space:]]')
 );
 
 create index "reports_work_id_idx" on "reports" ("work_id");

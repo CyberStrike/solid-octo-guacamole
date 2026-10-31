@@ -128,15 +128,19 @@ describe("17 reports and DMCA", () => {
   });
 
   it("Pending DMCA notice does not block an upload", async () => {
+    // The notice's own outcome says whether it removed the work. The docs name
+    // no status values, so these two stand in for the ones X8 and MOD1 choose.
+    const REMOVED = "removed";
+    const REJECTED = "rejected";
     const moderator = await addUser();
     const takenDown = await seedWork(t.db, { status: "removed" });
     const pending = await seedWork(t.db);
-    // Removed for another reason, such as an author's request, with a notice no one acted on.
+    // A rejected notice, on a work later removed for another reason.
     const removedOtherwise = await seedWork(t.db, { status: "removed" });
-    for (const [{ workId }, resolved_by] of [
-      [takenDown, moderator],
-      [pending, null],
-      [removedOtherwise, null],
+    for (const [{ workId }, outcome] of [
+      [takenDown, { status: REMOVED, resolved_by: moderator }],
+      [pending, {}],
+      [removedOtherwise, { status: REJECTED, resolved_by: moderator }],
     ] as const) {
       await t.db
         .insertInto("takedowns")
@@ -144,7 +148,7 @@ describe("17 reports and DMCA", () => {
           work_id: workId,
           requester: "A rights holder",
           basis: "A stated basis",
-          resolved_by,
+          ...outcome,
         })
         .execute();
     }
@@ -153,8 +157,7 @@ describe("17 reports and DMCA", () => {
       .selectFrom("takedowns")
       .innerJoin("works", "works.id", "takedowns.work_id")
       .select("works.ao3_work_id")
-      .where("takedowns.resolved_by", "is not", null)
-      .where("works.status", "=", "removed")
+      .where("takedowns.status", "=", REMOVED)
       .where("works.ao3_work_id", "in", [
         takenDown.ao3WorkId,
         pending.ao3WorkId,
@@ -241,6 +244,8 @@ describe("packages/db moderation constraints", () => {
     for (const values of [
       { contact_email: "", ip_hash: "hash-of-an-ip" },
       { contact_email: "blocked@example.test", ip_hash: "" },
+      { contact_email: " ", ip_hash: "hash-of-an-ip" },
+      { contact_email: "blocked@example.test", ip_hash: "\t" },
     ]) {
       await expect(
         t.db

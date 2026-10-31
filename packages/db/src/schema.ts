@@ -233,7 +233,7 @@ export interface OptoutTable {
   created_at: CreatedTimestamp;
 }
 
-/** Matches a later request or report by email or by IP hash. */
+/** Matches a later request by email or by IP hash, and a report by its account's email. */
 export interface RequesterBlockTable {
   id: Generated<string>;
   /** As given. Match with `lower()` on both sides. */
