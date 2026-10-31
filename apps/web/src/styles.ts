@@ -160,6 +160,12 @@ article.chapter {
     transition: none;
   }
 }
+
+/* The chapter reader (R2). Layout containment makes the chapter the containing block
+   of anything positioned inside it, so no fragment can lay itself over the page. */
+article.chapter {
+  contain: content;
+}
 `;
 
 // FNV-1a, enough to give each version of the stylesheet its own URL.
