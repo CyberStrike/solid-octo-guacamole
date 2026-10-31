@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  // Every other option keeps oxfmt's default: printWidth 100, double quotes, semicolons,
+  // trailing commas, two spaces.
+  // Manifests keep their hand-written key order: a reorder would touch every package.json.
+  "sortPackageJson": false,
+  "ignorePatterns": [
+    // Reference code with its own lockfile, not a workspace.
+    "spikes/**",
+    // Test inputs, specs and prose: not code.
+    "fixtures/**",
+    "specs/**",
+    "docs/**",
+    "**/*.md",
+    "**/*.html",
+    // Accepted output: a snapshot changes only with a reason.
+    "**/__snapshots__/**",
+    // Merged migrations are history and are never edited.
+    "packages/db/migrations/**",
+  ],
+}
