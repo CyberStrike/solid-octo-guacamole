@@ -304,6 +304,29 @@ article.chapter table {
   color: var(--muted);
 }
 
+/* the report form: one reason a line, each a large target, and details as wide as the page */
+
+.report-form fieldset {
+  margin: 0 0 calc(var(--space) * 4);
+}
+
+.report-form fieldset label {
+  display: block;
+  min-height: 24px;
+  padding: var(--space) 0;
+}
+
+.report-form > label {
+  display: block;
+}
+
+.report-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin: var(--space) 0 calc(var(--space) * 4);
+  font: inherit;
+}
+
 /* any page */
 
 /* A word longer than the line, such as a tag or a URL, breaks rather than scrolling sideways. */

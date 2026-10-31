@@ -24,6 +24,7 @@ beforeAll(async () => {
 afterAll(() => db.destroy());
 
 const CHAPTER = `/works/${W}/chapters/2`;
+const FULL = `/works/${W}/full`;
 
 /** A page, as a reader whose settings cookie holds `settings` sees it. */
 const pageWith = async (path: string, settings?: string) =>
@@ -107,6 +108,10 @@ describe("13-reader-settings-and-position", () => {
     expect(htmlTag(hostile)).toBe('<html lang="en">');
     expect(hostile).not.toContain("xxl");
     expect(hostile).not.toContain('"><script>x');
+    // The entire work, which streams, gets them too.
+    expect(htmlTag(await pageWith(FULL, "theme=dark&size=l&leading=relaxed"))).toBe(
+      '<html lang="en" data-theme="dark" data-size="l" data-leading="relaxed">',
+    );
   });
 
   it("Font sizes S, M, L and XL", async () => {
@@ -268,7 +273,7 @@ describe("13-reader-settings-and-position", () => {
     // source in reader-settings.node.test.ts, and in a browser is a live check. Here:
     // both pages load the script with the page's nonce, from a cached, hashed URL.
     let src = "";
-    for (const path of [CHAPTER, "/settings/reader"]) {
+    for (const path of [CHAPTER, FULL, "/settings/reader"]) {
       const res = await fetchW(path, { headers: { cookie: "__Host-reader=size=l" } });
       expect(res.status, path).toBe(200);
       const csp = res.headers.get("content-security-policy");
@@ -283,8 +288,9 @@ describe("13-reader-settings-and-position", () => {
       // script shows it and selects the reader's values, so the bar is the same for every
       // reader; on the settings page, the server selects them, for JS off.
       const form = settingsForm(html);
-      expect(form.selects.size?.selected, path).toBe(path === CHAPTER ? "m" : "l");
-      expect(form.hidden, path).toBe(path === CHAPTER);
+      const reading = path !== "/settings/reader";
+      expect(form.selects.size?.selected, path).toBe(reading ? "m" : "l");
+      expect(form.hidden, path).toBe(reading);
     }
     const script = await fetchW(src);
     expect(script.status).toBe(200);
@@ -312,6 +318,29 @@ describe("13-reader-settings-and-position", () => {
       expect(res.status).toBe(303);
       expect(res.headers.get("location")).toBe("/settings/reader");
     }
+  });
+
+  it("Saving from the entire work comes back to it with the flash", async () => {
+    const saved = await fetchW("/settings/reader", {
+      method: "POST",
+      headers: FORM_HEADERS,
+      body: new URLSearchParams({ size: "xl", next: FULL }),
+    });
+    expect(saved.headers.get("location")).toBe(FULL);
+    const res = await fetchW(FULL, {
+      headers: { cookie: cookieHeader(saved.headers.getSetCookie()) },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.getSetCookie()).toEqual([
+      "__Host-flash=; Max-Age=0; Path=/; SameSite=Lax; Secure; HttpOnly",
+    ]);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const html = await res.text();
+    expect(html.match(/<p class="flash" role="status">[^<]*<\/p>/g)).toEqual([
+      '<p class="flash" role="status">Reader settings saved.</p>',
+    ]);
+    expect(htmlTag(html)).toBe('<html lang="en" data-size="xl">');
+    expect(html).toContain("R5-TWO-TEXT");
   });
 
   it("Settings apply on error pages too", async () => {
