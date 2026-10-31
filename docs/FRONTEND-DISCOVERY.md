@@ -25,6 +25,7 @@ fandoms and pseuds in it are invented placeholders.
 | Home page | Leads with search. Popular fandoms and recently added works go below |
 | Original AO3 link | A live link with a note that it works again once AO3 is back. Nothing changes automatically when AO3 returns; redirecting works to AO3 is part of a later wind-down the operator starts by hand |
 | Discovery output | This doc plus low-fidelity clickable wireframes |
+| Coming-soon typography | The coming-soon page and the other wait list pages are set in Fraunces, with IBM Plex Mono for labels and buttons. Both are self-hosted on `rarepair.fans` as their publishers' own woff2 files, unmodified, with their OFL licences beside them. They aren't subset or renamed by us, because IBM Plex's licence reserves the name "Plex". Never a third-party font host. Every other page keeps the system stacks (*Typographic system*) |
 
 ## Principles
 
@@ -202,6 +203,10 @@ updated to match.
 
 **Faces.** System font stacks only, with no web fonts. That means no font
 download, no flash of unstyled text, and no `font-src` exceptions in the CSP.
+The one exception is the wait list's pages (*Decisions so far*): their fonts are
+served from `rarepair.fans` itself, which `default-src 'self'` already allows,
+with `font-display: swap` so its text shows in the system stacks until they
+load.
 - Interface: `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`
 - Reading: `Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif`
   by default, with sans-serif as a reader setting.
@@ -320,13 +325,6 @@ handful of displaced readers:
 
 ## Open questions
 
-Summary clamping, what the home page leads with, and the AO3 link behaviour
-are settled in *Decisions so far*.
-
-- **Coming-soon typography.** The coming-soon design sets the page in
-  Fraunces with IBM Plex Mono labels, but the *Typographic system* allows
-  system fonts only. Either the coming-soon page is an exception, with both
-  fonts self-hosted on `rarepair.fans` and `font-src 'self'` added to its CSP
-  (never Google Fonts, which would send every visitor to a third party), or
-  it uses the system stacks. Until this is settled, it uses the system
-  stacks.
+None right now. Summary clamping, what the home page leads with, the AO3
+link behaviour and the coming-soon typography are settled in *Decisions so
+far*.
