@@ -67,6 +67,92 @@ describe("04-ingest-job-lifecycle", () => {
     expect(secondResult.explicitAcks).toEqual(["msg-0"]);
   });
 
+  it("Permanent failure goes to the dead-letter queue as parse_failed", async () => {
+    const id = await pendingUpload(ao3Epub());
+    const { handler } = watchedWorker({
+      process: async () => {
+        throw new TypeError("injected failure at the process stage");
+      },
+    });
+
+    // The last delivery: max_retries (3) retries after the first.
+    const result = await deliver([{ upload_id: id }], { attempts: 4, handler });
+
+    const row = await uploadRow(id);
+    expect(row.status).toBe("parse_failed");
+    expect(row.error_stage).toBe("process");
+    expect(row.error).toBe("TypeError");
+    expect(row.lease_until).toBeNull();
+    // Retried, not acked, so the queue moves it to its dead-letter queue (wrangler.jsonc).
+    expect(result.retryMessages.map((m) => m.msgId)).toEqual(["msg-0"]);
+    expect(result.explicitAcks).toEqual([]);
+  });
+
+  it("records the stage that failed for good", async () => {
+    const id = await pendingUpload(ao3Epub());
+    const { handler } = watchedWorker({
+      save: async () => {
+        throw new RangeError("injected failure at the save stage");
+      },
+    });
+
+    await deliver([{ upload_id: id }], { attempts: 4, handler });
+
+    const row = await uploadRow(id);
+    expect(row.status).toBe("parse_failed");
+    expect(row.error_stage).toBe("save");
+    expect(row.error).toBe("RangeError");
+  });
+
+  it("releases the lease and retries a failure with attempts left", async () => {
+    const id = await pendingUpload(ao3Epub());
+    const { handler } = watchedWorker({
+      process: async () => {
+        throw new Error("injected transient failure");
+      },
+    });
+
+    const result = await deliver([{ upload_id: id }], { attempts: 3, handler });
+
+    const row = await uploadRow(id);
+    expect(row.status).toBe("pending");
+    expect(row.lease_until).toBeNull();
+    expect(row.error_stage).toBeNull();
+    expect(result.retryMessages.map((m) => m.msgId)).toEqual(["msg-0"]);
+    expect(result.explicitAcks).toEqual([]);
+  });
+
+  it("Consumer concurrency stays bounded under a flood", async () => {
+    // The platform cap is max_concurrency in wrangler.jsonc (test/queue-config.node.test.ts).
+    // Inside one invocation, a full batch runs one job at a time, and none fails for waiting.
+    // One after another: the test database takes one client's queries at a time.
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i++) ids.push(await pendingUpload(ao3Epub()));
+    const gate = gated();
+    const { handler } = watchedWorker({ process: gate.process });
+
+    const running = deliver(
+      ids.map((id) => ({ upload_id: id })),
+      { handler },
+    );
+    await gate.entered;
+    gate.release();
+    const result = await running;
+
+    expect(gate.counts.most).toBe(1);
+    expect(result.explicitAcks.sort()).toEqual(["msg-0", "msg-1", "msg-2", "msg-3", "msg-4"]);
+    expect(result.retryMessages).toEqual([]);
+  });
+
+  it("acks a message that names no upload, and runs the rest of its batch", async () => {
+    const id = await pendingUpload(ao3Epub());
+
+    const result = await deliver([{ upload: id }, "not an object", { upload_id: id }]);
+
+    expect((await uploadRow(id)).status).toBe("processing");
+    expect(result.explicitAcks.sort()).toEqual(["msg-0", "msg-1", "msg-2"]);
+  });
+
   it("records parse_failed at the read stage, without a retry, when the object is gone", async () => {
     // As for a message redriven after the 7-day expiry of uploads/ (#176).
     const id = await pendingUpload(null);

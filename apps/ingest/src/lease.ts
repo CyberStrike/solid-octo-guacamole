@@ -1,8 +1,6 @@
 import type { Database, UploadStatus } from "@archive/db";
 import { sql, type Kysely } from "kysely";
-
-/** How long a job holds its upload. Under the queue's retry_delay (wrangler.jsonc). */
-export const LEASE_SECONDS = 60;
+import { LEASE_SECONDS } from "./config";
 
 /** A claimed upload: what the job needs to read it, and its lease. */
 export interface Lease {
