@@ -76,16 +76,18 @@ export function showTerms(c: TermsContext) {
 }
 
 /**
- * `POST /welcome/terms`, after `requireSignIn`: sets `terms_accepted_at`, once, and
- * continues to `next` with a 303. As on the sign-in forms, the origin is checked
- * before the body is read, and `next` is reduced whatever the form says.
+ * `POST /welcome/terms`: sets `terms_accepted_at`, once, and continues to `next`
+ * with a 303. As on the sign-in forms, the origin is checked first, before the
+ * session and the body, and `next` is reduced whatever the form says. Signed out,
+ * it is sent to sign in, as `requireSignIn` does.
  */
 export async function acceptTerms(c: TermsContext) {
   if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
+  const user = c.var.session?.user;
+  if (user === undefined) return redirectCarryingNext(c, "/login");
   // A body too large to be our form is not read; accepting needs nothing from it.
   const next = (await readForm(c.req.raw))?.get("next") ?? null;
-  const user = c.var.session?.user;
-  if (user !== undefined && user.termsAcceptedAt == null) {
+  if (user.termsAcceptedAt == null) {
     const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
     try {
       // Only while still empty: accepting again keeps the first time.

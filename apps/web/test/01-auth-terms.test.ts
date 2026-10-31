@@ -232,6 +232,12 @@ describe("01-auth-magic-link", () => {
     const post = await postLogin({ next: WORK_PAGE }, { url: "/welcome/terms" });
     expect(post.status).toBe(303);
     expect(post.headers.get("location")).toBe("/login?next=%2Fwelcome%2Fterms");
+    // The origin is checked first, signed in or not, as on the sign-in forms.
+    const crossSite = await postLogin(
+      { next: WORK_PAGE },
+      { url: "/welcome/terms", headers: { origin: "https://evil.example" } },
+    );
+    expect(crossSite.status).toBe(403);
   });
 
   it("Once accepted, the terms page goes straight to next", async () => {
