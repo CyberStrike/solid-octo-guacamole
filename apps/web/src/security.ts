@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from "hono";
-import { isPrelaunch, type Bindings } from "./prelaunch";
+import type { Bindings } from "./env";
+import { isPrelaunch } from "./prelaunch";
 
 export type SecurityVariables = { nonce: string };
 

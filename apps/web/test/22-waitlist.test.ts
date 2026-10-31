@@ -1,21 +1,7 @@
-import { exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
+import { fetchW, STRICT, withoutNonce } from "./helpers";
 
 // Runs in the "open" project: wrangler.jsonc with PRELAUNCH "off", the archive open.
-
-const BASE = "https://rarepair.fans";
-// SAFETY: the default export is the Worker under test, loaded from wrangler.jsonc's main.
-const worker = (exports as any).default as Fetcher;
-
-const fetchW = (input: string, init: RequestInit = {}) =>
-  worker.fetch(new URL(input, BASE).toString(), { redirect: "manual", ...init });
-
-// ARCHITECTURE, Reading: the strict policy, with the nonce left as {n}.
-const STRICT =
-  "default-src 'self'; script-src 'nonce-{n}' 'strict-dynamic'; style-src 'self'; img-src 'self' https://content.rarepair.fans; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
-
-/** The header with its nonce swapped back to {n}, for whole-string comparison. */
-const withoutNonce = (csp: string | null) => csp?.replace(/'nonce-[^']*'/, "'nonce-{n}'") ?? null;
 
 describe("22-waitlist", () => {
   it("With PRELAUNCH off, / gets no frame-src allowance and no page redirects", async () => {

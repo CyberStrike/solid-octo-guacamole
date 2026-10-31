@@ -1,5 +1,5 @@
 import type { Handler } from "hono";
-import type { Bindings } from "./prelaunch";
+import type { Bindings } from "./env";
 
 // A name with the first 16 hex of the file's SHA-256 never changes content.
 const CONTENT_HASHED = /\.[0-9a-f]{16}\.[a-z0-9]+$/;
@@ -11,7 +11,10 @@ const CONTENT_HASHED = /\.[0-9a-f]{16}\.[a-z0-9]+$/;
  */
 export const assetRoute: Handler<{ Bindings: Bindings }> = async (c) => {
   const res = await c.env.ASSETS.fetch(c.req.raw);
-  if (res.status === 404) return c.notFound();
+  if (res.status === 404) {
+    await res.body?.cancel();
+    return c.notFound();
+  }
   // A copy, as the binding's response headers may be immutable.
   const headers = new Headers(res.headers);
   if (res.ok && CONTENT_HASHED.test(c.req.path)) {

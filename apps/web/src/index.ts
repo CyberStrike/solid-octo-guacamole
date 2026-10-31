@@ -1,7 +1,8 @@
 import { Hono } from "hono";
 import { assetRoute } from "./assets";
 import { notFoundPage, turnstilePage } from "./pages";
-import { closedBeforeLaunch, isPrelaunch, type Bindings } from "./prelaunch";
+import type { Bindings } from "./env";
+import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
 import {
   contentSecurityPolicy,
   strictTransportSecurity,

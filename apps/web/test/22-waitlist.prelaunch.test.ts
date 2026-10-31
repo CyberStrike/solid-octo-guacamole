@@ -1,23 +1,12 @@
 import { createExecutionContext } from "cloudflare:test";
-import { env, exports } from "cloudflare:workers";
+import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import app from "../src/index";
+import { BASE, fetchW, nonceOf, TURNSTILE, withoutNonce } from "./helpers";
 
 // Runs in the "prelaunch" project: wrangler.jsonc exactly as it deploys, PRELAUNCH on.
 
-const BASE = "https://rarepair.fans";
-// SAFETY: the default export is the Worker under test, loaded from wrangler.jsonc's main.
-const worker = (exports as any).default as Fetcher;
-
-const fetchW = (input: string, init: RequestInit = {}) =>
-  worker.fetch(new URL(input, BASE).toString(), { redirect: "manual", ...init });
-
 const TURNSTILE_API = "https://challenges.cloudflare.com/turnstile/v0/api.js";
-
-// The policies from ARCHITECTURE, Reading, with the nonce left as {n}.
-const STRICT =
-  "default-src 'self'; script-src 'nonce-{n}' 'strict-dynamic'; style-src 'self'; img-src 'self' https://content.rarepair.fans; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
-const TURNSTILE = `${STRICT}; frame-src https://challenges.cloudflare.com`;
 
 const HSTS = "max-age=31536000; includeSubDomains";
 const IMMUTABLE = "public, max-age=31536000, immutable";
@@ -43,12 +32,6 @@ const sha256 = async (bytes: Uint8Array) =>
   [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-
-/** The nonce in a CSP header, or null when there is none. */
-const nonceOf = (csp: string | null) => csp?.match(/'nonce-([^']*)'/)?.[1] ?? null;
-
-/** The header with its nonce swapped back to {n}, for whole-string comparison. */
-const withoutNonce = (csp: string | null) => csp?.replace(/'nonce-[^']*'/, "'nonce-{n}'") ?? null;
 
 /** Every opening tag of one element in some HTML. */
 const tags = (html: string, name: string) => html.match(new RegExp(`<${name}\\b[^>]*>`, "g")) ?? [];
