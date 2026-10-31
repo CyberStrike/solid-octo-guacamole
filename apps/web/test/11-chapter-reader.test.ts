@@ -192,6 +192,45 @@ describe("11-reader-and-csp", () => {
     expect(rulesFor(css, ".reader-bar").join("\n")).not.toMatch(/position:\s*(sticky|fixed)/);
   });
 
+  it("Chapter number out of range", async () => {
+    const paths = [
+      chapterUrl(W, 6),
+      // Not chapter numbers at all.
+      ...["0", "-1", "abc", "1.5", "007", "5%20", "%205", "99999", "2147483648"].map((n) =>
+        chapterUrl(W, n),
+      ),
+      // No such work, and work IDs that can't be one.
+      chapterUrl(20999, 1),
+      ...["0", "020001", "2147483648", "1e3", "%2B20001"].map((id) => `/works/${id}/chapters/1`),
+    ];
+    for (const path of paths) {
+      const res = await fetchW(path);
+      expect(res.status, path).toBe(404);
+      const html = await res.text();
+      // The not-found page, and no chapter.
+      expect(html, path).toContain("<h1>Page not found</h1>");
+      expect(html, path).toMatch(/<form role="search"/);
+      expect(html, path).not.toContain('<article class="chapter">');
+      expect(html, path).not.toContain("W-");
+    }
+  });
+
+  it("Browser features keep working", async () => {
+    // Find, print, select and screen readers are live checks. What the page controls:
+    // the text is ordinary markup in the document, and nothing hides it or blocks selection.
+    const html = await htmlOf(chapterUrl(W, 3));
+    expect(html).toMatch(/<article class="chapter"><p>W-THREE-TEXT<\/p><\/article>/);
+    expect(html).not.toMatch(/aria-hidden|inert\b|hidden\b[^>]*class="chapter"/);
+    const css = await stylesheetOf(html);
+    expect(css).not.toMatch(/user-select:\s*none/);
+    expect(css).not.toMatch(/@media print/);
+    for (const selector of ["article.chapter", ".chapter", "article"]) {
+      expect(rulesFor(css, selector).join("\n"), selector).not.toMatch(
+        /display:\s*none|visibility:\s*hidden|content-visibility/,
+      );
+    }
+  });
+
   it("First chapter has no previous link", async () => {
     const html = await htmlOf(chapterUrl(W, 1));
     expect(html).not.toMatch(/rel="prev"|>Previous/i);
@@ -206,5 +245,31 @@ describe("11-reader-and-csp", () => {
     expect(linksTo(html, chapterUrl(W, 6))).toEqual([]);
     expect(linksTo(html, chapterUrl(W, 4))).toHaveLength(2);
     expect(html.match(/<select\b/g)).toHaveLength(2);
+  });
+});
+
+describe("09-content-origin", () => {
+  it("Images are served from the content origin", async () => {
+    const res = await fetchW(chapterUrl(W, 5));
+    const html = await res.text();
+    // The fragment's absolute URL as ingest wrote it: not rewritten, proxied or dropped.
+    const sources = [...html.matchAll(/<img\b[^>]*\bsrc="([^"]*)"/g)].map(([, src]) => src);
+    expect(sources).toEqual([IMAGE]);
+    expect(new URL(sources[0]).origin).toBe("https://content.rarepair.fans");
+    expect(res.headers.get("content-security-policy")).toContain(
+      "img-src 'self' https://content.rarepair.fans;",
+    );
+  });
+});
+
+describe("21-accessibility-and-no-js", () => {
+  it("Headings inside chapter content are not counted", async () => {
+    const html = await htmlOf(chapterUrl(W, 4));
+    const article = articleOf(html) ?? "";
+    expect(article).toContain(
+      "<h1>W-FOUR-HEADING-A</h1><p>W-FOUR-TEXT</p><script>window.INJECTED = 1</script><h1>W-FOUR-HEADING-B</h1>",
+    );
+    const chrome = html.replace(article, "");
+    expect(chrome.match(/<h1\b[^>]*>[\s\S]*?<\/h1>/g)).toEqual([`<h1>${TITLE_ESCAPED}</h1>`]);
   });
 });
