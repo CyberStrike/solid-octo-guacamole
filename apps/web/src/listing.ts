@@ -16,8 +16,7 @@ import {
 import type { Context } from "hono";
 import type { Bindings } from "./env";
 import { escapeHtml, layout } from "./pages";
-import { tagHref } from "./tag-links";
-import { TAG_LABELS } from "./work-page";
+import { TAG_LABELS, tagHref } from "./tag-links";
 
 const WORDS = new Intl.NumberFormat("en-US");
 

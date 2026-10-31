@@ -278,9 +278,22 @@ export async function listLiveWorksByTag(
   // A page below the first, or not a whole number, is the first.
   const offset = page >= 1 ? (Math.floor(page) - 1) * pageSize : 0;
   if (offset >= total) return { works: [], total };
-  const rows = await db
+  const byKey =
+    sort === "words" ? sql`works.words` : sql`coalesce(works.updated_at, works.published_at)`;
+  // The page is cut first, so the bylines and tags are built for its rows alone,
+  // not for every row an offset skips.
+  const pageRows = db
     .selectFrom("works")
     .select(SUMMARY)
+    .where(listed)
+    .orderBy(byKey, (ob) => ob.desc().nullsLast())
+    // AO3 work ID last, so a page never repeats or skips a work.
+    .orderBy("works.ao3_work_id")
+    .limit(pageSize)
+    .offset(offset);
+  const rows = await db
+    .selectFrom(pageRows.as("works"))
+    .selectAll("works")
     .select((eb) => [
       jsonArrayFrom(
         eb
@@ -296,15 +309,9 @@ export async function listLiveWorksByTag(
           .whereRef("work_tags.work_id", "=", "works.id"),
       ).as("tags"),
     ])
-    .where(listed)
-    .orderBy(
-      sort === "words" ? sql`works.words` : sql`coalesce(works.updated_at, works.published_at)`,
-      (ob) => ob.desc().nullsLast(),
-    )
-    // AO3 work ID last, so a page never repeats or skips a work.
+    // A subquery's order isn't kept, so the page is put in order again.
+    .orderBy(byKey, (ob) => ob.desc().nullsLast())
     .orderBy("works.ao3_work_id")
-    .limit(pageSize)
-    .offset(offset)
     .execute();
   // As in getLiveWork, json_agg's order isn't promised, so the lists are sorted here.
   const works = rows.map(({ authors, tags, ...work }) => ({
