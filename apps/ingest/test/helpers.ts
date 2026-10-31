@@ -4,6 +4,8 @@ import { processEpub } from "@archive/epub";
 import { createExecutionContext, createMessageBatch, getQueueResult } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { sql, type Kysely } from "kysely";
+import { expect } from "vitest";
+import { ao3Epub } from "../../../packages/epub/test/helpers";
 import worker, { ingestWorker, type Steps } from "../src/worker";
 
 // Shared by the workerd tests. One database serves every test file (test/global-setup.ts),
@@ -131,10 +133,7 @@ export function watchedWorker(steps: Partial<Steps> = {}) {
  * An opt-out with `pseudNorm` as given, and the `opt_out` request it comes from. Returns the
  * opt-out's id. The text is synthetic.
  */
-export function addOptOut(
-  pseudNorm: string,
-  { active = true }: { active?: boolean } = {},
-): Promise<string> {
+export function addOptOut(pseudNorm: string): Promise<string> {
   return withDb(async (db) => {
     const request = await db
       .insertInto("requests")
@@ -149,7 +148,7 @@ export function addOptOut(
       .executeTakeFirstOrThrow();
     const optOut = await db
       .insertInto("optouts")
-      .values({ pseud_norm: pseudNorm, request_id: request.id, active })
+      .values({ pseud_norm: pseudNorm, request_id: request.id, active: true })
       .returning("id")
       .executeTakeFirstOrThrow();
     return optOut.id;
@@ -160,7 +159,7 @@ export function addOptOut(
 export const deactivateOptOut = (id: string) =>
   withDb((db) => db.updateTable("optouts").set({ active: false }).where("id", "=", id).execute());
 
-/** A DMCA notice on the work, in the notice's `status`. */
+/** A DMCA notice on the work, in the notice's `status`: `TAKEDOWN_REMOVED` once acted on. */
 export const addTakedown = (workId: string, status: string) =>
   withDb((db) =>
     db
@@ -190,11 +189,13 @@ export const token = () => crypto.randomUUID().slice(0, 8);
 export const freshAo3WorkId = () => 100_000_000 + Math.floor(Math.random() * 2_000_000_000);
 
 /**
- * The queue handler with the byline `pseuds` over the epub's own (the synthetic epubs all carry
- * one byline), or the epub's own when none are given. `saved` gets the id of each upload the
- * job saves.
+ * Uploads a synthetic epub of AO3 work `workId` and ingests it, with the byline `pseuds` over
+ * the epub's own (the synthetic epubs all carry one byline), or the epub's own when none are
+ * given. Returns the upload's id and row, the queue's result, and `saved`: the id of each
+ * upload the job saved.
  */
-export function savingWorker(...pseuds: string[]) {
+export async function ingestEpub(workId: number, ...pseuds: string[]) {
+  const id = await pendingUpload(ao3Epub({ workId }));
   const saved: string[] = [];
   const process: Steps["process"] = async (bytes) => {
     const work = await processEpub(bytes);
@@ -206,5 +207,27 @@ export function savingWorker(...pseuds: string[]) {
     process,
     save: async (upload) => void saved.push(upload.id),
   });
-  return { handler, saved };
+  const result = await deliver([{ upload_id: id }], { handler });
+  return { id, row: await uploadRow(id), saved, result };
+}
+
+type Ingested = Awaited<ReturnType<typeof ingestEpub>>;
+
+/** Expects the upload rejected as `opted_out`: final and acked, with no work, never saved. */
+export function expectOptedOut({ row, saved, result }: Ingested) {
+  expect(row.status).toBe("opted_out");
+  expect(row.error_stage).toBe("process");
+  expect(row.error).toBe("opted_out");
+  expect(row.work_id).toBeNull();
+  expect(row.lease_until).toBeNull();
+  // Before anything is written: the save step never ran.
+  expect(saved).toEqual([]);
+  expect(result.explicitAcks).toEqual(["msg-0"]);
+  expect(result.retryMessages).toEqual([]);
+}
+
+/** Expects the upload not rejected as `opted_out`: the job went on to save it. */
+export function expectNotOptedOut({ id, row, saved }: Ingested) {
+  expect(row.status).not.toBe("opted_out");
+  expect(saved).toEqual([id]);
 }
