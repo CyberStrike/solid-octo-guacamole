@@ -54,6 +54,15 @@ const tagLinks = (tags: ListedWork["tags"]) =>
     .map((t) => `<a href="${escapeHtml(tagHref(t.type, t.name_norm))}">${escapeHtml(t.name)}</a>`)
     .join(", ");
 
+/**
+ * The summary as the sanitizer left it, whole: the stylesheet clamps it to three
+ * lines. The server can't tell how many lines it takes, so "more" always follows.
+ */
+const summary = (html: string | null, href: string) =>
+  html
+    ? `<div class="card-summary">${html}</div>\n<p class="card-more"><a href="${href}">more</a></p>`
+    : "";
+
 /** The six lines, in order: title and author, rating and warnings, fandoms, summary, tags, stats. */
 function workCard({ work, authors, tags }: ListedWork): string {
   const href = `/works/${work.ao3_work_id}`;
@@ -66,7 +75,7 @@ function workCard({ work, authors, tags }: ListedWork): string {
 <p class="card-byline">by ${escapeHtml(authors.map((a) => a.pseud).join(", "))}</p>
 <p class="card-rating"><strong>${escapeHtml(rating.join(" · "))}</strong></p>
 <p class="card-fandoms">${tagLinks(ofType("fandom"))}</p>
-<div class="card-summary">${work.summary_html ?? ""}</div>
+${summary(work.summary_html, href)}
 <p class="card-tags">${tagLinks([...ofType("relationship"), ...ofType("character")])}</p>
 <p class="card-stats">${work.words?.toLocaleString("en-US") ?? "?"} words</p>
 </li>`;

@@ -190,6 +190,19 @@ article.chapter {
 .card-rating strong {
   font-weight: 600;
 }
+
+/* The whole summary stays in the HTML; only three lines show. */
+.card-summary {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+
+.card-summary > * {
+  margin: 0;
+}
 `;
 
 // FNV-1a, enough to give each version of the stylesheet its own URL.

@@ -157,4 +157,32 @@ describe("14-browse-and-home", () => {
       /line-clamp|overflow:\s*hidden|text-overflow|white-space:\s*nowrap|max-height|\bheight/,
     );
   });
+
+  it("Summary is clamped with a more link", async () => {
+    const summary = Array.from(
+      { length: 12 },
+      (_, i) => `<p>Clamped summary paragraph ${i + 1}, long enough to fill a line.</p>`,
+    ).join("");
+    await seedWork(db, {
+      ao3WorkId: 30040,
+      summary,
+      tags: [{ type: "fandom", name: "Clamped Summary Fandom" }],
+    });
+    await seedWork(db, {
+      ao3WorkId: 30041,
+      summary: null,
+      tags: [{ type: "fandom", name: "Clamped Summary Fandom" }],
+    });
+
+    const html = await htmlOf("/tags/fandom/clamped%20summary%20fandom");
+
+    const card = cardOf(html, 30040);
+    expect(lineOf(card, "card-summary")).toBe(summary);
+    const more = card.indexOf('<a href="/works/30040">more</a>');
+    expect(more).toBeGreaterThan(card.indexOf("Clamped summary paragraph 12"));
+    expect(cardOf(html, 30041)).not.toContain(">more</a>");
+    const rules = rulesFor(await stylesheetOf(html), "card-summary");
+    expect(rules).toMatch(/(^|[^-])line-clamp:\s*3/);
+    expect(rules).toMatch(/-webkit-line-clamp:\s*3/);
+  });
 });
