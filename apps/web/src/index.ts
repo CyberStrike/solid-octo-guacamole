@@ -6,6 +6,7 @@ import type { Bindings } from "./env";
 import { showTagListing } from "./listing";
 import { requestSignIn, showSignIn } from "./login";
 import { jumpToChapter, showChapter } from "./reader";
+import { sameOriginOnly, showReportForm, submitReport } from "./report";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
 import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
 import {
@@ -50,7 +51,7 @@ app.post("/login/confirm", confirmSignIn);
 app.post("/waitlist", joinWaitlist);
 // After launch, a stale link to the form goes home. Before it, nothing is at GET /waitlist.
 app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));
-// The session middleware runs on these two routes only, until A4 mounts it on every page.
+// The session middleware runs on the upload and report routes only, until A4 mounts it on every page.
 app.get("/upload", sessionMiddleware, showUpload);
 app.post("/uploads", sameOriginUpload, sessionMiddleware, requestUpload);
 app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce"))));
@@ -64,6 +65,9 @@ app.get("/terms", (c) => c.html(termsPage()));
 app.get("/privacy", (c) => c.html(privacyPage()));
 
 app.get("/works/:id", showWork);
+// Signed in only.
+app.get("/works/:id/report", sessionMiddleware, showReportForm);
+app.post("/works/:id/report", sameOriginOnly, sessionMiddleware, submitReport);
 app.get("/tags/:type/:name", showTagListing);
 
 // The URL carries a hash of the content, so the response never changes under it.
