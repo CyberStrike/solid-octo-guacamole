@@ -171,6 +171,52 @@ describe("04-ingest-job-lifecycle", () => {
     expect(result.explicitAcks).toEqual(["msg-0"]);
   });
 
+  it("acks without writing when another job takes the upload over during the save", async () => {
+    const workId = newWorkId();
+    const id = await pendingUpload(ao3Epub({ workId }));
+    // SAFETY: the bucket's put below assigns it; null until then.
+    let takenOver = null as Date | null;
+    const { handler } = watchedWorker({
+      // Another job claims the upload while this one writes R2, as after a lease ran out.
+      bucket: (real) => ({
+        get: real.get.bind(real),
+        put: async (key, value, options) => {
+          if (key.startsWith("originals/")) takenOver = await setLease(id, "1 hour");
+          return real.put(key, value, options);
+        },
+      }),
+    });
+
+    const result = await deliver([{ upload_id: id }], { handler });
+
+    expect((await savedRows(workId, id)).works).toEqual([]);
+    const row = await uploadRow(id);
+    expect(row.status).toBe("processing");
+    expect(row.lease_until).toEqual(takenOver);
+    expect(row.error).toBeNull();
+    expect(result.explicitAcks).toEqual(["msg-0"]);
+    expect(result.retryMessages).toEqual([]);
+  });
+
+  it("records a work ID that doesn't fit, or a work with no chapters, at once", async () => {
+    for (const [work, code] of [
+      [parsedWork({ ao3WorkId: "2147483648" }), "bad_work_id"],
+      [parsedWork({ chapters: [] }), "no_chapters"],
+    ] as const) {
+      const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
+      const { handler } = watchedWorker({ process: async () => work });
+
+      const result = await deliver([{ upload_id: id }], { handler });
+
+      const row = await uploadRow(id);
+      expect(row.status).toBe("parse_failed");
+      expect(row.error_stage).toBe("save");
+      expect(row.error).toBe(code);
+      expect(result.explicitAcks).toEqual(["msg-0"]);
+      expect(await bucketKeys(`originals/${id}`)).toEqual([]);
+    }
+  });
+
   it("Original file is kept", async () => {
     const epub = ao3Epub({ workId: newWorkId() });
     const id = await pendingUpload(epub);

@@ -118,6 +118,78 @@ describe("06-ao3-preface-and-chapters", () => {
     ]);
   });
 
+  it("stores the Stats line's counts and dates, with unknown or impossible ones as NULL", async () => {
+    const cases = [
+      {
+        stats: {
+          published: "2020-01-02",
+          updated: "2020-03-04",
+          completed: null,
+          words: 7,
+          chapters: { posted: 2, total: null },
+        },
+        expected: {
+          words: 7,
+          chapters_total: null,
+          complete: false,
+          published_at: new Date("2020-01-02T00:00:00Z"),
+          updated_at: new Date("2020-03-04T00:00:00Z"),
+        },
+      },
+      {
+        // Words from the chapters when Stats has none; Completed when there is no Updated.
+        stats: {
+          published: "2020-02-31",
+          updated: null,
+          completed: "2021-05-06",
+          words: null,
+          chapters: { posted: 2, total: 2_147_483_648 },
+        },
+        expected: {
+          words: 2,
+          chapters_total: null,
+          complete: true,
+          published_at: null,
+          updated_at: new Date("2021-05-06T00:00:00Z"),
+        },
+      },
+      {
+        stats: {
+          published: "not a date",
+          updated: null,
+          completed: null,
+          words: 2,
+          chapters: { posted: 2, total: 2 },
+        },
+        expected: {
+          words: 2,
+          chapters_total: 2,
+          complete: true,
+          published_at: null,
+          updated_at: null,
+        },
+      },
+    ];
+    for (const { stats, expected } of cases) {
+      const work = parsedWork({
+        stats,
+        chapters: [
+          { n: 1, title: "One", html: "<p>one</p>", words: 1 },
+          { n: 2, title: "Two", html: "<p>two</p>", words: 1 },
+        ],
+      });
+      const workId = Number(work.ao3WorkId);
+      const id = await pendingUpload(ao3Epub({ workId }));
+      const { handler } = watchedWorker({ process: async () => work });
+
+      await deliver([{ upload_id: id }], { handler });
+
+      const live = await liveWork(workId);
+      expect(live?.work).toMatchObject({ ...expected, chapters_count: 2 });
+      expect(live?.version.chapter_total).toBe(expected.chapters_total);
+    }
+  });
+
   it("Anonymous works stay anonymous", async () => {
     const work = parsedWork({ authors: [{ pseud: "Anonymous", user: null }] });
     const workId = Number(work.ao3WorkId);
