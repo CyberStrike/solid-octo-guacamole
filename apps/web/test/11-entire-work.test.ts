@@ -38,6 +38,9 @@ const MISSING_FIRST = 21004;
 const MISSING_LATER = 21005;
 /** Live, but its version's chapter rows are gone: a corrupt row ingest never writes. */
 const NO_CHAPTERS = 21008;
+/** Chapter 3's row points outside the version's fragments, at an object that exists. */
+const BAD_KEY = 21009;
+const BAD_KEY_TARGET = `originals/${BAD_KEY}.epub`;
 /** 60 chapters. */
 const LONG = 21006;
 /** One chapter of several MB, multi-byte characters throughout. */
@@ -69,6 +72,18 @@ beforeAll(async () => {
   await seedWork(db, { ao3WorkId: MISSING_FIRST, tags: TAGS, chapters: 2 });
   const empty = await seedWork(db, { ao3WorkId: NO_CHAPTERS, tags: TAGS, chapters: 1 });
   await db.deleteFrom("chapters").where("version_id", "=", empty.versionId).execute();
+  const bad = await seedWork(db, {
+    ao3WorkId: BAD_KEY,
+    tags: TAGS,
+    chapters: [1, 2, 3].map((n) => ({ html: `<p>R4-BAD-${n}-TEXT</p>` })),
+  });
+  await putFragments(env.BUCKET, [...bad.fragments, { key: BAD_KEY_TARGET, body: "R4-ORIGINAL" }]);
+  await db
+    .updateTable("chapters")
+    .set({ r2_key: BAD_KEY_TARGET })
+    .where("version_id", "=", bad.versionId)
+    .where("n", "=", 3)
+    .execute();
   const later = await seedWork(db, {
     ao3WorkId: MISSING_LATER,
     tags: TAGS,
@@ -89,6 +104,18 @@ afterAll(() => db.destroy());
 
 const fullUrl = (id: number | string) => `/works/${id}/full`;
 const chapterUrl = (id: number, n: number) => `/works/${id}/chapters/${n}`;
+
+const HSTS = "max-age=31536000; includeSubDomains";
+
+/** An empty, uncached 503 with HSTS and no page: no HTML, so no policy either. */
+const expectUnavailable = async (path: string) => {
+  const res = await fetchW(path);
+  expect(res.status, path).toBe(503);
+  expect(res.headers.get("cache-control"), path).toBe("no-store");
+  expect(res.headers.get("strict-transport-security"), path).toBe(HSTS);
+  expect(res.headers.get("content-type"), path).toBeNull();
+  expect(await res.text(), path).toBe("");
+};
 
 const NOTICE = `<p class="review-notice">Chapters may be imperfect; a moderator will check.</p>`;
 
@@ -117,6 +144,8 @@ describe("11-reader-and-csp", () => {
     const res = await fetchW(fullUrl(W));
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/^text\/html/);
+    // Set after the handler, on a body that is still streaming.
+    expect(res.headers.get("strict-transport-security")).toBe(HSTS);
     const html = await res.text();
     // Every chapter, each in its own article, in order.
     const articles = articlesOf(html);
@@ -207,17 +236,17 @@ describe("entire work", () => {
   });
 
   it("A first chapter whose fragment is missing is an empty, uncached 503", async () => {
-    const res = await fetchW(fullUrl(MISSING_FIRST));
-    expect(res.status).toBe(503);
-    expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(await res.text()).toBe("");
+    await expectUnavailable(fullUrl(MISSING_FIRST));
   });
 
   it("A live work with no chapters is an empty, uncached 503", async () => {
-    const res = await fetchW(fullUrl(NO_CHAPTERS));
-    expect(res.status).toBe(503);
-    expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(await res.text()).toBe("");
+    await expectUnavailable(fullUrl(NO_CHAPTERS));
+  });
+
+  it("A chapter key outside the version's fragments is a 503 before any chapter is sent", async () => {
+    // Chapters 1 and 2 are readable, but chapter 3's row names an original: every key is
+    // checked before the page starts, so nothing of the work goes out.
+    await expectUnavailable(fullUrl(BAD_KEY));
   });
 
   it("HEAD answers with the page's headers and no body", async () => {

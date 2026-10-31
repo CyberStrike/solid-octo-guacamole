@@ -31,6 +31,11 @@ export type Part =
   | ReadableStream<Uint8Array>
   | (() => Promise<ReadableStream<Uint8Array> | null>);
 
+/** A chapter row whose fragment isn't in R2: logged by this name, apart from R2 failing. */
+export class MissingFragment extends Error {
+  override name = "MissingFragment";
+}
+
 /**
  * The parts as one byte stream, opened one at a time and only as the reader pulls, so a
  * reader who leaves stops the R2 reads. Fragment bytes pass through as they are; only
@@ -77,7 +82,7 @@ export function streamParts(parts: Part[]): ReadableStream<Uint8Array> {
             await body?.cancel();
             return;
           }
-          if (!body) throw new Error("A fragment is missing");
+          if (!body) throw new MissingFragment();
           reader = body.getReader();
         }
       } catch (error) {

@@ -81,14 +81,25 @@ describe("streamParts", () => {
     expect(first.state.cancelled).toBe(true);
   });
 
-  it("ends in an error when a fragment is missing or fails", async () => {
-    for (const failing of [
-      () => Promise.resolve(null),
-      () => Promise.reject(new Error("R2 down")),
-    ] satisfies Part[]) {
-      const stream = streamParts(["<a>", failing, "</a>"]);
-      await expect(readAll(stream)).rejects.toThrow();
+  it("ends in an error when a fragment is missing or fails, logging only its kind", async () => {
+    const logged: unknown[][] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args) => logged.push(args));
+    try {
+      for (const failing of [
+        () => Promise.resolve(null),
+        () => Promise.reject(new TypeError("works/21001/x/3.html unreadable")),
+      ] satisfies Part[]) {
+        const stream = streamParts(["<a>", failing, "</a>"]);
+        await expect(readAll(stream)).rejects.toThrow();
+      }
+    } finally {
+      spy.mockRestore();
     }
+    // A missing fragment and R2 failing are told apart, and neither names the work.
+    expect(logged).toEqual([
+      ["Entire work stream: MissingFragment"],
+      ["Entire work stream: TypeError"],
+    ]);
   });
 
   it("cancels a fragment whose read was still on its way when the reader left", async () => {
