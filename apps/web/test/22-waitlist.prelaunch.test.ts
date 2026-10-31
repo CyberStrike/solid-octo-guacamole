@@ -250,6 +250,8 @@ describe("22-waitlist", () => {
       ["/login", "GET"],
       ["/login", "POST"],
       ["/login/confirm?token=x", "GET"],
+      // Where the first admin signs in before launch.
+      ["/login/confirm", "POST"],
       ["/welcome/terms", "GET"],
       ["/admin", "GET"],
       ["/admin/launch", "GET"],

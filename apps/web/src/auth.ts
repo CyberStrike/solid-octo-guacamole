@@ -28,11 +28,12 @@ export function makeAuth(env: Bindings, db: Kysely<Database>) {
     telemetry: { enabled: false },
     // Its logger prints a caught error whole, and one from Postgres can quote the row,
     // an address included. Our routes log what failed themselves: app.onError the
-    // name of a thrown error, the confirm route a refused sign-in's code.
+    // name of a thrown error, the confirm route the code of a sign-in that failed on our side.
     logger: { disabled: true },
     // Counters in Postgres, not in this isolate's memory. Only `auth.handler`
-    // requests are counted, so `auth.api` calls from our routes never are: their
-    // own per-IP and per-email limits use the Workers rate-limiting binding (A3, #23).
+    // requests are counted, so `auth.api` calls from our routes never are. POST /login
+    // has its own per-IP and per-email limits on the Workers rate-limiting binding
+    // (A3, #23). POST /login/confirm and the session lookup have none yet (#242).
     rateLimit: { ...authSchema.rateLimit, enabled: true, storage: "database" },
     advanced: {
       // __Secure- cookies. No crossSubDomainCookies: no Domain, so never content.rarepair.fans.

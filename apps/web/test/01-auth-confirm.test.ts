@@ -263,12 +263,16 @@ describe("01-auth-magic-link", () => {
     }
   });
 
-  it("A link with no token goes to the sign-in page", async () => {
+  it("A link with no token, or an overlong one, goes to the sign-in page", async () => {
+    // Up to 256 characters, eight times a real token's 32, is put in the form.
+    const longest = await fetchW(`/login/confirm?token=${"x".repeat(256)}`);
+    expect(longest.status).toBe(200);
+    expect(await longest.text()).toContain(`name="token" value="${"x".repeat(256)}"`);
     for (const path of [
       "/login/confirm",
       "/login/confirm?token=",
       "/login/confirm?next=/works/1",
-      // Longer than any token, which is 32 characters: never put back into the page.
+      // One past it: never put back into the page.
       `/login/confirm?token=${"x".repeat(257)}`,
     ]) {
       const res = await fetchW(path);

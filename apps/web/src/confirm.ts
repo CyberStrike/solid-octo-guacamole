@@ -9,7 +9,7 @@ import { isSameOrigin, safeNext } from "./signin";
 
 // Better Auth's tokens are 32 characters. Anything far longer was never issued, and
 // isn't put back into the page.
-const MAX_TOKEN = 256;
+const MAX_LINK_TOKEN = 256;
 
 type ConfirmContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
 
@@ -20,7 +20,7 @@ type ConfirmContext = Context<{ Bindings: Bindings; Variables: SecurityVariables
  */
 export function showConfirm(c: ConfirmContext) {
   const token = c.req.query("token") ?? "";
-  if (token === "" || token.length > MAX_TOKEN) return c.redirect(REFUSED, 302);
+  if (token === "" || token.length > MAX_LINK_TOKEN) return c.redirect(REFUSED, 302);
   return c.html(confirmPage(token, safeNext(c.req.query("next") ?? null)), 200, {
     // The token is in the URL: keep it out of caches, and let a Referer carry only
     // the origin. Not no-referrer: under it the browser sends the page's own POST with
@@ -32,8 +32,9 @@ export function showConfirm(c: ConfirmContext) {
 
 /**
  * `POST /login/confirm`: spends the token and signs in. As on `POST /login`, our
- * route makes the checks `auth.api` calls skip: the origin, before the body is
- * read, and `next`, reduced to a same-site path whatever the form says.
+ * route makes two of the checks `auth.api` calls skip: the origin, before the body
+ * is read, and `next`, reduced to a same-site path whatever the form says. It has
+ * no rate limit of its own yet (#242).
  */
 export async function confirmSignIn(c: ConfirmContext) {
   if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);

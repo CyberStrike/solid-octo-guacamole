@@ -32,8 +32,9 @@ export const showSignIn = (c: LoginContext) =>
 
 // The sign-in form at its largest, every character percent-encoded at its widest:
 // a 254-character address and a 512-character next (up to 9 bytes each, as
-// UTF-8) and a 2048-character token (3 each) come to about 13 KB. The wait list
-// form, the same without `next`, is smaller.
+// UTF-8) and a 2048-character Turnstile token (3 each) come to about 13 KB. The
+// wait list form, the same without `next`, is smaller, and so is the confirm form
+// (a sign-in token of at most 256 characters and `next`: about 7 KB).
 const MAX_BODY = 16 * 1024;
 
 /**
