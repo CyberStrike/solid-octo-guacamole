@@ -1,19 +1,11 @@
 import { createDb } from "@archive/db";
-import { createExecutionContext } from "cloudflare:test";
-import { env, exports } from "cloudflare:workers";
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
+import { env } from "cloudflare:workers";
+import { inspect } from "node:util";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { parseMessage, type EmailMessage } from "../../mailer/src/message";
+import type { EmailMessage } from "../../mailer/src/message";
 import app from "../src/index";
-
-const BASE = "https://rarepair.fans";
-// SAFETY: the default export is the Worker under test, loaded from wrangler.jsonc's main.
-const worker = (exports as any).default as Fetcher;
-
-const fetchW = (input: string, init: RequestInit = {}) =>
-  worker.fetch(new URL(input, BASE).toString(), { redirect: "manual", ...init });
-
-/** The nonce in a CSP header, or null when there is none. */
-const nonceOf = (csp: string | null) => csp?.match(/'nonce-([^']*)'/)?.[1] ?? null;
+import { BASE, deliveredEmails, emailsTo, fetchW, nonceOf } from "./helpers";
 
 /** The opening tag of the sign-in form, or null. */
 const formTag = (html: string) => html.match(/<form\b[^>]*action="\/login"[^>]*>/)?.[0] ?? null;
@@ -43,30 +35,12 @@ function postLogin(
 }
 
 // The Postgres the Worker uses, through the same Hyperdrive binding. One database
-// serves every test file, so each test uses its own email address.
+// serves every test file of a project, so each test uses its own email address.
 const db = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 });
 afterAll(() => db.destroy());
 
 const verificationIds = async () =>
   new Set((await db.selectFrom("verification").select("id").execute()).map((r) => r.id));
-
-/** Every message the `email` queue has delivered so far, from the test's sink. */
-async function deliveredEmails(): Promise<unknown[]> {
-  // SAFETY: the sink answers with the JSON array of message bodies it was delivered.
-  return (await (await env.EMAIL_SINK.fetch("https://email-sink/")).json()) as unknown[];
-}
-
-/** Waits for the queue to deliver a message to `to`, and returns every one it has. */
-async function emailsTo(to: string, { atLeast = 1 } = {}) {
-  const deadline = Date.now() + 10_000;
-  for (;;) {
-    const mine = (await deliveredEmails())
-      .map(parseMessage)
-      .filter((email): email is EmailMessage => email?.to === to);
-    if (mine.length >= atLeast || Date.now() > deadline) return mine;
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}
 
 // 254 characters: a 64-character local part and labels of at most 63.
 const LONGEST_EMAIL = `${"a".repeat(64)}@${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(56)}.test`;
@@ -332,14 +306,22 @@ describe("19-surge-controls-and-quotas", () => {
 
 describe("Sign-in failures", () => {
   it("A failing sign-in request logs no address", async () => {
-    // The same app with a database nothing listens on: Better Auth's insert fails.
-    const unreachable = {
-      ...env,
-      HYPERDRIVE: { ...env.HYPERDRIVE, connectionString: "postgresql://u:p@127.0.0.1:9/none" },
+    // The same app, with a queue that refuses the email with an error naming the
+    // address. Miniflare's queue can't be made to fail, so this one stands in for it.
+    const queue: Queue<EmailMessage> = {
+      send: async (message) => {
+        throw new Error(`queue refused the email to ${message.to}`);
+      },
+      sendBatch: async () => {
+        throw new Error("queue refused the batch");
+      },
+      metrics: async () => ({ backlogCount: 0, backlogBytes: 0 }),
     };
-    const logged: unknown[][] = [];
+    const refusing = { ...env, EMAIL: queue };
+    // Each line as a log would show it: inspect prints an error's stack and own fields.
+    const logged: string[] = [];
     const spy = vi.spyOn(console, "error").mockImplementation((...args) => {
-      logged.push(args);
+      logged.push(args.map((arg) => inspect(arg)).join(" "));
     });
     try {
       const request = new Request(`${BASE}/login`, {
@@ -354,12 +336,12 @@ describe("Sign-in failures", () => {
           "cf-turnstile-response": PASSING_TOKEN,
         }).toString(),
       });
-      const res = await app.fetch(request, unreachable, createExecutionContext());
+      const ctx = createExecutionContext();
+      const res = await app.fetch(request, refusing, ctx);
+      await waitOnExecutionContext(ctx);
       expect(res.status).toBe(500);
       expect(logged.length).toBeGreaterThan(0);
-      expect(JSON.stringify(logged.map((args) => args.map(String)))).not.toContain(
-        "logged-nowhere",
-      );
+      expect(logged.join("\n")).not.toContain("logged-nowhere");
     } finally {
       spy.mockRestore();
     }

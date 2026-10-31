@@ -112,7 +112,8 @@ export default defineConfig({
         },
       },
       {
-        // Before launch: wrangler.jsonc exactly as it deploys.
+        // Before launch: wrangler.jsonc as it deploys, PRELAUNCH on. As in `open`, the
+        // database, secrets, outbound network and email sink are the test stand-ins.
         plugins: [worker()],
         test: {
           name: "prelaunch",
