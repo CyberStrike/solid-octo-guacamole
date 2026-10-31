@@ -1,5 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { getLiveWork, insertUpload, listLiveWorksByTag, normalizeTagName } from "../src/index";
+import {
+  getLiveWork,
+  getTagName,
+  insertUpload,
+  listLiveWorksByTag,
+  normalizeTagName,
+} from "../src/index";
 import { seedWork } from "../src/seed";
 import { createTestDb, type TestDb } from "../src/testing";
 
@@ -25,7 +31,7 @@ describe("14 browse and home", () => {
 
     const works = await listLiveWorksByTag(t.db, "fandom", "Harry Potter");
 
-    expect(works.map((w) => w.id).sort()).toEqual([a.workId, b.workId].sort());
+    expect(works.map((w) => w.work.id).sort()).toEqual([a.workId, b.workId].sort());
     const names = await Promise.all(
       [a, b].map(async (s) => (await getLiveWork(t.db, s.ao3WorkId))?.tags[0]?.name),
     );
@@ -41,7 +47,52 @@ describe("packages/db tag listing", () => {
     const works = await listLiveWorksByTag(t.db, "fandom", "listing sherlock");
 
     expect(normalizeTagName("character", "Listing Sherlock")).toBe("listing sherlock");
-    expect(works.map((w) => w.id)).toEqual([fandom.workId]);
+    expect(works.map((w) => w.work.id)).toEqual([fandom.workId]);
+  });
+
+  it("A listed work carries its byline and tags in order", async () => {
+    const s = await seedWork(t.db, {
+      authors: [
+        { pseud: "Zed", ao3_user: "zed" },
+        { pseud: "Amy", ao3_user: null },
+      ],
+      tags: [
+        { type: "relationship", name: "Listing B/C" },
+        { type: "fandom", name: "Listing Byline" },
+        { type: "character", name: "Listing A" },
+      ],
+    });
+    const anon = await seedWork(t.db, {
+      anonymous: true,
+      tags: [{ type: "fandom", name: "Listing Byline" }],
+    });
+
+    const works = await listLiveWorksByTag(t.db, "fandom", "Listing Byline");
+
+    const byId = [s, anon].sort((x, y) => x.ao3WorkId - y.ao3WorkId);
+    expect(works.map((w) => w.work.id)).toEqual(byId.map((x) => x.workId));
+    const mine = works.find((w) => w.work.id === s.workId);
+    expect(mine?.authors).toEqual([
+      { pseud: "Zed", ao3_user: "zed" },
+      { pseud: "Amy", ao3_user: null },
+    ]);
+    expect(mine?.tags.map((x) => [x.type, x.name, x.name_norm])).toEqual([
+      ["relationship", "Listing B/C", "listing b/c"],
+      ["fandom", "Listing Byline", "listing byline"],
+      ["character", "Listing A", "listing a"],
+    ]);
+    const anonymous = works.find((w) => w.work.id === anon.workId);
+    expect(anonymous?.authors).toEqual([{ pseud: "Anonymous", ao3_user: null }]);
+  });
+
+  it("A tag's name is the first of its spellings by code unit", async () => {
+    await seedWork(t.db, { tags: [{ type: "fandom", name: "listing heading" }] });
+    await seedWork(t.db, { tags: [{ type: "fandom", name: "Listing  Heading!" }] });
+    await seedWork(t.db, { tags: [{ type: "character", name: "A Listing Heading" }] });
+
+    expect(await getTagName(t.db, "fandom", "listing heading")).toBe("Listing  Heading!");
+    expect(await getTagName(t.db, "character", "listing heading")).toBeNull();
+    expect(await getTagName(t.db, "fandom", "!!!")).toBeNull();
   });
 
   it("A name with nothing left once folded lists no works", async () => {

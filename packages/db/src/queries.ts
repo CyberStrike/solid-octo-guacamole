@@ -10,7 +10,7 @@ import type {
   WorkTable,
   WorkVersionTable,
 } from "./schema";
-import { normalizeTagName } from "./tags";
+import { compareCodeUnits, normalizeTagName } from "./tags";
 
 /** A work's own fields, as a page shows them. */
 export type WorkSummary = Pick<
@@ -154,21 +154,46 @@ export async function getLiveWork(
   };
 }
 
+/** A work as a listing's card shows it. */
+export interface ListedWork {
+  work: WorkSummary;
+  /** In byline order. */
+  authors: { pseud: string; ao3_user: string | null }[];
+  /** In the author's order. */
+  tags: Selectable<TagTable>[];
+}
+
 /**
  * The `live` works carrying a tag of this type that matches `name` under the
- * tag rule, however each work spelled it.
+ * tag rule, however each work spelled it, with their bylines and tags. By AO3
+ * work ID, and every one of them: B2 adds paging and sorting.
  */
 export async function listLiveWorksByTag(
   db: Kysely<Database>,
   type: TagType,
   name: string,
-): Promise<WorkSummary[]> {
+): Promise<ListedWork[]> {
   const nameNorm = normalizeTagName(type, name);
   // A name of only punctuation folds to nothing, which names no tag.
   if (nameNorm === "") return [];
-  return db
+  const rows = await db
     .selectFrom("works")
     .select(SUMMARY)
+    .select((eb) => [
+      jsonArrayFrom(
+        eb
+          .selectFrom("work_authors")
+          .select(["work_authors.pseud", "work_authors.ao3_user", "work_authors.position"])
+          .whereRef("work_authors.work_id", "=", "works.id"),
+      ).as("authors"),
+      jsonArrayFrom(
+        eb
+          .selectFrom("work_tags")
+          .innerJoin("tags", "tags.id", "work_tags.tag_id")
+          .select(["tags.id", "tags.type", "tags.name", "tags.name_norm", "work_tags.position"])
+          .whereRef("work_tags.work_id", "=", "works.id"),
+      ).as("tags"),
+    ])
     .where("works.status", "=", "live")
     .where((eb) =>
       eb.exists(
@@ -183,6 +208,37 @@ export async function listLiveWorksByTag(
     )
     .orderBy("works.ao3_work_id")
     .execute();
+  // As in getLiveWork, json_agg's order isn't promised, so the lists are sorted here.
+  return rows.map(({ authors, tags, ...work }) => ({
+    work,
+    authors: authors
+      .sort((a, b) => a.position - b.position)
+      .map(({ pseud, ao3_user }) => ({ pseud, ao3_user })),
+    tags: tags
+      .sort((a, b) => a.position - b.position)
+      .map(({ id, type, name, name_norm }) => ({ id, type, name, name_norm })),
+  }));
+}
+
+/**
+ * The name a listing of this tag goes by: of the stored spellings of this type
+ * that match `name` under the tag rule, the first by code unit. Null when none do.
+ */
+export async function getTagName(
+  db: Kysely<Database>,
+  type: TagType,
+  name: string,
+): Promise<string | null> {
+  const nameNorm = normalizeTagName(type, name);
+  if (nameNorm === "") return null;
+  const rows = await db
+    .selectFrom("tags")
+    .select("name")
+    .where("type", "=", type)
+    .where("name_norm", "=", nameNorm)
+    .execute();
+  // Sorted here: Postgres orders by collation, not by code unit.
+  return rows.map((r) => r.name).sort(compareCodeUnits)[0] ?? null;
 }
 
 /**

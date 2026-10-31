@@ -5,8 +5,10 @@ export { normalizeTagName, compareTagKeys, compareCodeUnits } from "./tags";
 export { normalizePseud } from "./pseud";
 export {
   getLiveWork,
+  getTagName,
   listLiveWorksByTag,
   insertUpload,
+  type ListedWork,
   type LiveWork,
   type WorkSummary,
 } from "./queries";
