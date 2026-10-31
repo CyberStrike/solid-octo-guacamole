@@ -93,7 +93,8 @@ create table "work_tags" (
   "work_id" text not null references "works" ("id") on delete cascade,
   "tag_id" text not null references "tags" ("id"),
   "position" integer not null,
-  primary key ("work_id", "tag_id")
+  primary key ("work_id", "tag_id"),
+  unique ("work_id", "position")
 );
 
 create table "work_authors" (
@@ -104,6 +105,8 @@ create table "work_authors" (
 
 create index "uploads_user_id_idx" on "uploads" ("user_id");
 create index "uploads_sha256_idx" on "uploads" ("sha256");
+create index "uploads_work_id_idx" on "uploads" ("work_id");
+create index "works_current_version_id_idx" on "works" ("current_version_id");
 create index "work_versions_work_id_idx" on "work_versions" ("work_id");
 create index "tags_name_norm_idx" on "tags" ("name_norm");
 create index "work_tags_tag_id_idx" on "work_tags" ("tag_id");

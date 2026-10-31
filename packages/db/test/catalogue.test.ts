@@ -255,6 +255,22 @@ describe("packages/db catalogue constraints", () => {
     ).rejects.toThrow(/unique|duplicate key/i);
   });
 
+  it("Two of a work's tags can't share a position", async () => {
+    const work = await addWork(208);
+    const a = await addTag("freeform", "Position A");
+    const b = await addTag("freeform", "Position B");
+    await t.db
+      .insertInto("work_tags")
+      .values({ work_id: work.id, tag_id: a.id, position: 0 })
+      .execute();
+    await expect(
+      t.db
+        .insertInto("work_tags")
+        .values({ work_id: work.id, tag_id: b.id, position: 0 })
+        .execute(),
+    ).rejects.toThrow(/unique|duplicate key/i);
+  });
+
   it("Deleting a work deletes its authors, versions, chapters and tag links", async () => {
     const work = await addWork(207);
     const version = await addVersion(work.id);

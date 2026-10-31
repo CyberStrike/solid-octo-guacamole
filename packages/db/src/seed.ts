@@ -33,7 +33,7 @@ export interface SeedWorkOptions extends SeedVersionOptions {
   anonymous?: boolean;
   /** In the author's order. */
   tags?: { type: TagType; name: string }[];
-  /** Default `live`. A hidden work needs `hiddenCause`. */
+  /** Default `live`. A hidden work needs `hiddenCause`, or the schema refuses it. */
   status?: "live" | "hidden" | "removed";
   hiddenCause?: HiddenCause;
 }
@@ -83,7 +83,6 @@ export async function seedWork(
   options: SeedWorkOptions = {},
 ): Promise<SeededWork> {
   const ao3WorkId = options.ao3WorkId ?? randomAo3WorkId();
-  const chapters = planChapters(options.chapters);
   const status = options.status ?? "live";
   return db.transaction().execute(async (trx) => {
     const userId = options.userId ?? (await addUser(trx));
@@ -95,11 +94,11 @@ export async function seedWork(
         summary_html: "<p>A seeded summary.</p>",
         rating: options.rating === undefined ? "Not Rated" : options.rating,
         language: "English",
-        words: sum(chapters.map((c) => c.words)),
-        chapters_count: chapters.length,
+        // The version below sets the counts as it becomes current.
+        chapters_count: 0,
         complete: options.complete ?? true,
         status,
-        hidden_cause: status === "hidden" ? (options.hiddenCause ?? "moderator") : null,
+        hidden_cause: options.hiddenCause ?? null,
       })
       .returning("id")
       .executeTakeFirstOrThrow();
@@ -112,7 +111,7 @@ export async function seedWork(
       .execute();
     await addTags(trx, work.id, options.tags ?? DEFAULT_TAGS);
     const seeded = { workId: work.id, ao3WorkId, userId };
-    const version = await addVersion(trx, seeded, chapters, options.reviewReasons, true);
+    const version = await addVersion(trx, seeded, { ...options, current: true });
     return { ...seeded, ...version };
   });
 }
@@ -127,17 +126,14 @@ export async function seedVersion(
   work: { workId: string; ao3WorkId: number; userId: string },
   options: SeedVersionOptions & { current?: boolean } = {},
 ): Promise<SeededVersion> {
-  const chapters = planChapters(options.chapters);
   return db
     .transaction()
-    .execute((trx) =>
-      addVersion(trx, work, chapters, options.reviewReasons, options.current ?? true),
-    );
+    .execute((trx) => addVersion(trx, work, { ...options, current: options.current ?? true }));
 }
 
 /** Puts each fragment in the bucket. Call it before reading the seeded work. */
 export async function putFragments(bucket: FragmentBucket, fragments: Fragment[]): Promise<void> {
-  for (const f of fragments) await bucket.put(f.key, f.body);
+  await Promise.all(fragments.map((f) => bucket.put(f.key, f.body)));
 }
 
 type Planned = Required<SeedChapter>;
@@ -185,10 +181,10 @@ async function addTags(
 async function addVersion(
   trx: Transaction<Database>,
   work: { workId: string; ao3WorkId: number; userId: string },
-  chapters: Planned[],
-  reviewReasons: string[] = [],
-  current: boolean,
+  options: SeedVersionOptions & { current: boolean },
 ): Promise<SeededVersion> {
+  const { current, reviewReasons = [] } = options;
+  const chapters = planChapters(options.chapters);
   // Chosen here rather than by the database, because the R2 keys name it.
   const uploadId = crypto.randomUUID();
   const r2Prefix = `works/${work.ao3WorkId}/${uploadId}/`;
@@ -215,20 +211,21 @@ async function addVersion(
     })
     .returning("id")
     .executeTakeFirstOrThrow();
-  const fragments = chapters.map((c, i) => ({ key: `${r2Prefix}${i + 1}.html`, body: c.html }));
+  const keyed = chapters.map((c, i) => ({ ...c, n: i + 1, key: `${r2Prefix}${i + 1}.html` }));
   await trx
     .insertInto("chapters")
     .values(
-      chapters.map((c, i) => ({
+      keyed.map((c) => ({
         work_id: work.workId,
         version_id: version.id,
-        n: i + 1,
+        n: c.n,
         title: c.title,
         words: c.words,
-        r2_key: `${r2Prefix}${i + 1}.html`,
+        r2_key: c.key,
       })),
     )
     .execute();
+  const fragments = keyed.map((c) => ({ key: c.key, body: c.html }));
   if (current) {
     await trx
       .updateTable("works")
