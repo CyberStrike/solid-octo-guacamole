@@ -62,18 +62,33 @@ const sha256 = async (text: string) =>
 let sentinels = 0;
 
 /**
- * How many messages were queued for `to`. The queue delivers in order, one message
- * a batch, so once a later request's email has arrived, an earlier one's would have.
+ * How many messages were queued for each address, in order. The queue delivers in
+ * order, one message a batch, so once a later request's email has arrived, an earlier
+ * one's would have.
  */
-async function queuedFor(to: string): Promise<number> {
+async function queuedForEach(addresses: string[]): Promise<number[]> {
   const sentinel = `waitlist-sentinel-${++sentinels}-${crypto.randomUUID().slice(0, 8)}@example.test`;
   const res = await postLogin({ email: sentinel, "cf-turnstile-response": PASSING_TOKEN });
   expect(res.status).toBe(200);
   await emailsTo(sentinel);
-  // Any body addressed to `to`, even one the mailer would refuse.
-  const field = `"to":${JSON.stringify(to)}`;
-  return (await deliveredEmails()).filter((body) => JSON.stringify(body).includes(field)).length;
+  const bodies = (await deliveredEmails()).map((body) => JSON.stringify(body));
+  // Any body addressed to it, even one the mailer would refuse.
+  return addresses.map((to) => {
+    const field = `"to":${JSON.stringify(to)}`;
+    return bodies.filter((body) => body.includes(field)).length;
+  });
 }
+
+/** How many messages were queued for `to`. */
+const queuedFor = async (to: string) => (await queuedForEach([to]))[0];
+
+/** Moves an address's last email time back 61 minutes, past the one-hour rule. */
+const anHourPasses = (email: string) =>
+  db
+    .updateTable("waitlist")
+    .set({ confirm_sent_at: sql<Date>`confirm_sent_at - interval '61 minutes'` })
+    .where("email", "=", email)
+    .execute();
 
 describe("22-waitlist", () => {
   it("Joining queues one confirmation email", async () => {
@@ -117,13 +132,6 @@ describe("22-waitlist", () => {
 
   it("Joining twice tells nobody anything", async () => {
     const email = fresh("twice");
-    /** Moves the last email's time back 61 minutes, past the one-hour rule. */
-    const anHourPasses = () =>
-      db
-        .updateTable("waitlist")
-        .set({ confirm_sent_at: sql<Date>`confirm_sent_at - interval '61 minutes'` })
-        .where("email", "=", email)
-        .execute();
 
     const first = await join(email);
     const page = { status: first.status, body: await first.text() };
@@ -138,7 +146,7 @@ describe("22-waitlist", () => {
     expect((await rowOf(email))!.confirm_token_hash).toBe(firstHash);
 
     // After an hour: a fresh email, whose token replaces the old one.
-    await anHourPasses();
+    await anHourPasses(email);
     const second = await join(email);
     expect({ status: second.status, body: await second.text() }).toEqual(page);
     const twoEmails = await emailsTo(email, { atLeast: 2 });
@@ -148,11 +156,11 @@ describe("22-waitlist", () => {
     expect(afterSecond.confirm_token_hash).toBe(await sha256(secondToken));
 
     // A third after another hour, then no more, whatever is submitted.
-    await anHourPasses();
+    await anHourPasses(email);
     await join(email);
     await emailsTo(email, { atLeast: 3 });
     const thirdHash = (await rowOf(email))!.confirm_token_hash;
-    await anHourPasses();
+    await anHourPasses(email);
     for (const typed of [email, ` ${email.toUpperCase()} `]) {
       const more = await join(typed);
       expect({ status: more.status, body: await more.text() }).toEqual(page);
@@ -201,8 +209,10 @@ describe("22-waitlist", () => {
       ["unavailable", { "cf-turnstile-response": "siteverify-down" }, 503],
     ];
     const nonces = new Set<string>();
+    const addresses: string[] = [];
     for (const [name, fields, status] of refusals) {
       const email = fresh(`no-turnstile-${name}`);
+      addresses.push(email);
       const res = await postWaitlist({ email, ...fields });
       expect(res.status, name).toBe(status);
       const html = await res.text();
@@ -211,8 +221,8 @@ describe("22-waitlist", () => {
       // What was typed comes back.
       expect(html).toContain(`value="${email}"`);
       expect(await rowOf(email)).toBeUndefined();
-      expect(await queuedFor(email)).toBe(0);
     }
+    expect(await queuedForEach(addresses)).toEqual([0, 0, 0]);
     // A fresh nonce on each form.
     expect(nonces.size).toBe(3);
 
@@ -273,8 +283,10 @@ describe("22-waitlist", () => {
       { "sec-fetch-site": "cross-site" },
       { "sec-fetch-site": "none" },
     ];
+    const addresses: string[] = [];
     for (const headers of refused) {
       const email = fresh("cross-site");
+      addresses.push(email);
       const res = await join(email, headers);
       expect(res.status, JSON.stringify(headers)).toBe(403);
       expect(res.headers.get("strict-transport-security")).toBe(HSTS);
@@ -283,8 +295,8 @@ describe("22-waitlist", () => {
       expect(html).toContain('<a href="/">');
       expect(html).not.toContain('href="/login"');
       expect(await rowOf(email)).toBeUndefined();
-      expect(await queuedFor(email)).toBe(0);
     }
+    expect(await queuedForEach(addresses)).toEqual(refused.map(() => 0));
 
     // Neither header, as no browser sends a form: refused as POST /login refuses it.
     const email = fresh("no-headers");
@@ -361,11 +373,7 @@ describe("22-waitlist privacy", () => {
     expect(joined.res.status).toBe(200);
     const refused = await runLogged(joinRequest({ email, "cf-turnstile-response": "x" }, request));
     expect(refused.res.status).toBe(400);
-    await db
-      .updateTable("waitlist")
-      .set({ confirm_sent_at: sql<Date>`confirm_sent_at - interval '61 minutes'` })
-      .where("email", "=", email)
-      .execute();
+    await anHourPasses(email);
     const resent = await runLogged(
       joinRequest({ email, "cf-turnstile-response": PASSING_TOKEN }, request),
     );
@@ -430,11 +438,7 @@ describe("22-waitlist privacy", () => {
     const email = fresh("unqueued-resend");
     expect((await join(email)).status).toBe(200);
     await emailsTo(email);
-    await db
-      .updateTable("waitlist")
-      .set({ confirm_sent_at: sql<Date>`confirm_sent_at - interval '61 minutes'` })
-      .where("email", "=", email)
-      .execute();
+    await anHourPasses(email);
     const before = (await rowOf(email))!;
     const { queue, sent } = refusingQueue();
 
