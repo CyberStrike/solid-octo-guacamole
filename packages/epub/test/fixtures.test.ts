@@ -3,82 +3,19 @@ import { processEpub, type ParsedWork } from "../src";
 import { fromBase64 } from "./helpers";
 
 // Real AO3 epubs live in fixtures/epubs/ locally and are git-ignored (the repo is
-// public). The repo holds no real text, not even titles or names: each real string
-// is compared by the SHA-256 of its UTF-8 bytes, and the rest by count or length.
+// public). The repo holds no real text and no expected values: they live in the
+// git-ignored fixtures/epubs/expected.json (see expected.example.json), keyed by epub
+// file name. Each real string is compared by the SHA-256 of its UTF-8 bytes. A fixture
+// with no entry there gets the generic checks only.
 
 const fixtures = inject("epubFixtures");
+const EXPECTED = inject("epubExpected");
 const names = Object.keys(fixtures);
 
 async function sha256(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
-
-interface Expected {
-  workIdSha: string;
-  titleSha: string;
-  authors: { pseudSha: string; userSha: string | null }[];
-  rating: string;
-  fandomShas: string[];
-  relationships: number;
-  relationshipIncludesSha?: string;
-  characters: number;
-  freeforms: number;
-  words: number;
-  published: string;
-  // Where the chapter's first words sit in its whitespace-collapsed HTML.
-  opening: { offset: number; length: number; sha: string };
-}
-
-// oxlint-disable-next-line deslop/no-known-value-widening -- each entry read as an Expected, by file name
-const EXPECTED: Record<string, Expected> = {
-  "***REMOVED***": {
-    workIdSha: "***REMOVED***",
-    titleSha: "***REMOVED***",
-    authors: [
-      {
-        pseudSha: "***REMOVED***",
-        userSha: "***REMOVED***",
-      },
-    ],
-    rating: "Teen And Up Audiences",
-    fandomShas: ["***REMOVED***"],
-    relationships: 1,
-    characters: 4,
-    freeforms: 4,
-    words: 5850,
-    published: "2017-10-03",
-    opening: {
-      offset: 27,
-      length: 28,
-      sha: "***REMOVED***",
-    },
-  },
-  "***REMOVED***": {
-    workIdSha: "***REMOVED***",
-    titleSha: "***REMOVED***",
-    authors: [
-      {
-        pseudSha: "***REMOVED***",
-        userSha: "***REMOVED***",
-      },
-    ],
-    rating: "General Audiences",
-    fandomShas: ["***REMOVED***"],
-    relationships: 2,
-    relationshipIncludesSha: "***REMOVED***",
-    characters: 3,
-    freeforms: 6,
-    words: 3877,
-    published: "2018-12-15",
-    opening: {
-      offset: 38,
-      length: 21,
-      sha: "***REMOVED***",
-    },
-  },
-};
-
 async function shas(values: string[]): Promise<string[]> {
   return Promise.all(values.map(sha256));
 }
