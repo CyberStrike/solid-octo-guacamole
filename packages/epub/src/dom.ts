@@ -291,7 +291,7 @@ export function localName(tag: string): string {
   return tag.slice(tag.lastIndexOf(":") + 1);
 }
 
-const isScriptOrStyle = (el: ElementNode): boolean => {
+export const isScriptOrStyle = (el: ElementNode): boolean => {
   const name = localName(el.tag);
   return name === "script" || name === "style";
 };
