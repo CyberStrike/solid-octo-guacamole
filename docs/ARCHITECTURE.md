@@ -649,10 +649,15 @@ pages, sign-in, `/welcome/terms`, sign-out and `/admin`, so an admin can sign
 in for the first time and run the launch send. Turning `PRELAUNCH` off opens the archive: `/`
 becomes the home page and `POST /waitlist` answers 404.
 
-The coming-soon page is the one page with web fonts: Fraunces and IBM Plex
-Mono, self-hosted as woff2 on `rarepair.fans` (FRONTEND-DISCOVERY, *Decisions
-so far*). `default-src 'self'` already covers them, so its CSP gains only the
-Turnstile frame.
+The wait list's pages are the only ones with web fonts: Fraunces and IBM Plex
+Mono, the publishers' own woff2 files, unmodified (FRONTEND-DISCOVERY,
+*Decisions so far*). The web Worker serves them as static assets at
+content-hashed paths with `Cache-Control: public, max-age=31536000,
+immutable`, so a visitor fetches them once and the edge serves them after
+that. `default-src 'self'` already covers them, so the CSP gains only the
+Turnstile frame. The coming-soon design canvas sets the look, not the
+markup: its inline `style` attributes become stylesheet rules, because
+`style-src 'self'` refuses inline styles.
 
 - **Joining.** `POST /waitlist` is a plain form with Turnstile, with the same
   `Origin` / `Sec-Fetch-Site` check as `POST /login` (403) and rate limits
