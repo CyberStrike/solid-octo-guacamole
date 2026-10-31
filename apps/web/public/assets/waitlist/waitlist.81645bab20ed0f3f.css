@@ -1,5 +1,7 @@
-/* The wait list pages' stylesheet, loaded after the site's (src/styles.ts): it sets
-   the web fonts and the form, and keeps the site's palette, column and chrome.
+/* The wait list pages' stylesheet, loaded after the site's (src/styles.ts). It sets
+   the web fonts: text and headings in Fraunces, the form's labels and button in
+   IBM Plex Mono. The site's palette, type scale, column and chrome stay as they are,
+   and the form rules apply only inside .waitlist.
    Draft look, drafted from the spec without a canvas.
    Its name carries the first 16 hex of its SHA-256: rename it after every edit. */
 
@@ -31,69 +33,56 @@
 
 body {
   font-family: "Fraunces", Georgia, serif;
-  font-size: 1.125rem;
-  line-height: 1.55;
 }
 
 h1,
 h2 {
   font-family: "Fraunces", Georgia, serif;
   font-weight: 600;
-  line-height: 1.1;
 }
 
-h1 {
-  font-size: clamp(2.25rem, 8vw, 3.5rem);
-}
-
-form {
+.waitlist {
   display: grid;
-  gap: 0.75rem;
+  gap: calc(var(--space) * 3);
   max-width: 34rem;
-  margin: 2rem 0;
+  margin: calc(var(--space) * 8) 0;
 }
 
-label,
-button {
+.waitlist label,
+.waitlist button {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.875rem;
   letter-spacing: 0.02em;
 }
 
-label {
+.waitlist label {
   font-weight: 500;
   text-transform: uppercase;
 }
 
-input {
+.waitlist input {
   font: inherit;
-  padding: 0.6rem 0.75rem;
+  padding: calc(var(--space) * 2) calc(var(--space) * 3);
   border: 1px solid var(--muted);
-  border-radius: 0.25rem;
+  border-radius: var(--space);
   background: transparent;
   color: inherit;
 }
 
-button {
+.waitlist button {
   justify-self: start;
   font-weight: 500;
-  padding: 0.6rem 1.25rem;
   border: 0;
-  border-radius: 0.25rem;
+  border-radius: var(--space);
   background: var(--accent);
   color: var(--paper);
   cursor: pointer;
 }
 
-button:disabled {
+.waitlist button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 .note {
   color: var(--muted);
-}
-
-footer {
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
 }

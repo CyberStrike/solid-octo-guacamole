@@ -7,14 +7,15 @@
 import { escapeHtml, layout, TURNSTILE_API } from "./pages";
 
 // Served from public/ by assetRoute. The names carry each file's content hash.
-const WAITLIST_STYLESHEET_PATH = "/assets/waitlist/waitlist.67d02b6b023b2b09.css";
+const WAITLIST_STYLESHEET_PATH = "/assets/waitlist/waitlist.81645bab20ed0f3f.css";
 const FRAUNCES_LICENCE = "/assets/waitlist/fonts/fraunces/OFL.txt";
 const PLEX_LICENCE = "/assets/waitlist/fonts/ibm-plex-mono/license.txt";
 
 /**
  * A whole wait list page: the shared layout, set in the wait list's web fonts, with
- * their licences linked. The layout escapes the title; the body and head are trusted
- * markup from this file, never escaped: escape any other value first.
+ * their licences linked. Put a wait list form in a .waitlist form for its styles. The
+ * layout escapes the title; the body and head are trusted markup, never escaped:
+ * escape any value first.
  */
 export const waitlistPage = (title: string, body: string, head = "") =>
   layout(
@@ -34,7 +35,7 @@ export const comingSoonPage = (nonce: string, siteKey: string) => {
   return waitlistPage(
     "rarepair is coming soon",
     `<p>A temporary, community-run reading archive for fanworks. Upload the epub files you downloaded, and anyone can browse, search and read them in the browser.</p>
-<form method="post" action="/waitlist">
+<form class="waitlist" method="post" action="/waitlist">
 <label for="email">Email address</label>
 <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required>
 <div class="cf-turnstile" data-sitekey="${escapeHtml(siteKey)}" data-callback="waitlistReady" data-expired-callback="waitlistExpired"></div>

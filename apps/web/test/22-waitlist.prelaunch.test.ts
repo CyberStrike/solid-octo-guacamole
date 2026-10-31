@@ -68,6 +68,7 @@ describe("22-waitlist", () => {
 
     // It goes through the shared layout, temporary banner and footer included.
     expect(html).toContain('<aside class="banner"');
+    expect(tags(html, "h1")).toHaveLength(1);
     expect(html).toContain('<a href="/privacy">Privacy</a>');
   });
 
@@ -137,7 +138,9 @@ describe("22-waitlist", () => {
       css.match(new RegExp(`(^|\\n)${selector}\\s*{([^}]*)}`))?.[2];
     expect(rule("body")).toMatch(/font-family:\s*"Fraunces"/);
     expect(rule("h1,\\s*h2")).toMatch(/font-family:\s*"Fraunces"/);
-    expect(rule("label,\\s*button")).toMatch(/font-family:\s*"IBM Plex Mono"/);
+    expect(rule("\\.waitlist label,\\s*\\.waitlist button")).toMatch(
+      /font-family:\s*"IBM Plex Mono"/,
+    );
 
     // The publishers' own files, unmodified, at content-hashed immutable paths.
     const fonts = [...css.matchAll(/url\("([^"]+\.woff2)"\)/g)].map((m) => m[1] ?? "");
@@ -194,7 +197,7 @@ describe("22-waitlist", () => {
 
     // No other app page loads a web font. (WL2 and WL3 build the other wait list pages
     // on waitlistPage, which links the same stylesheet.)
-    for (const path of ["/login", "/login/confirm"]) {
+    for (const path of ["/login", "/login/confirm", "/about", "/terms", "/privacy"]) {
       const other = await (await fetchW(path)).text();
       expect(other).not.toMatch(/\/assets\/waitlist\/|woff2|@font-face/);
     }

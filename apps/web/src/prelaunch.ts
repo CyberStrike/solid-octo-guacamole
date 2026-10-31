@@ -23,7 +23,8 @@ const OPEN_PATHS = new Set([
 ]);
 // Open with everything below them, by whole segment: /admin/launch, never /administrator.
 // Not /api/auth: nothing serves it yet, and opening it before launch would be a way
-// around POST /login's checks. The ticket that mounts Better Auth's handler adds it.
+// around POST /login's checks. The ticket that mounts Better Auth's handler opens only
+// the routes it must (sign-out at most), never the whole section.
 const OPEN_SECTIONS = ["/waitlist", "/admin", "/assets"];
 
 const isOpenBeforeLaunch = (path: string) =>
