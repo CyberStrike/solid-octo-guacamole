@@ -32,10 +32,11 @@ function rejectedIndexes(body: unknown, count: number): number[] {
   if (!Array.isArray(errors)) return [];
   const entries: unknown[] = errors;
   const indexes = entries.flatMap((e) => {
-    // SAFETY: the same for each entry's `index`, which the next line checks.
+    // SAFETY: the same for each entry's `index`, which the next lines check.
     const index = (e as { index?: unknown } | null)?.index;
-    return Number.isInteger(index) && (index as number) >= 0 && (index as number) < count
-      ? [index as number]
+    // oxlint-disable-next-line deslop/no-runtime-typeof -- how an untrusted index is checked before it is used
+    return typeof index === "number" && Number.isInteger(index) && index >= 0 && index < count
+      ? [index]
       : [];
   });
   return [...new Set(indexes)];
