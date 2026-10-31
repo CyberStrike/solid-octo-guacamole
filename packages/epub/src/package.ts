@@ -209,8 +209,9 @@ export function resolveHref(
       parts.push(seg);
     }
   }
-  // A path such as `.` or `a/..` names the root directory, which is no file.
-  if (parts.length === 0) return null;
+  // A path ending in `/`, `.` or `..` names a directory, which is no file.
+  const last = decoded.slice(decoded.lastIndexOf("/") + 1);
+  if (last === "" || last === "." || last === "..") return null;
   return { path: parts.join("/"), anchor };
 }
 

@@ -545,12 +545,12 @@ describe("chapter links", () => {
   it("tabs and newlines in an href are ignored, as browsers do, and . names no file", async () => {
     const work = await processEpub(
       threeChapters({
-        c1: `<a href="Three%20Parts_split_001.x&#10;html&#9;#c3">ws-three</a> <a href=".#c2">dot-two</a> <a href="./#c2">dot-slash-two</a>`,
+        c1: `<a href="Three%20Parts_split_001.x&#10;html&#9;#c3">ws-three</a> <a href=".#c2">dot-two</a> <a href="./#c2">dot-slash-two</a> <a href="Three%20Parts_split_001.xhtml/#c3">slash-three</a>`,
       }),
     );
     const c1 = work.chapters[0]!.html;
     expect(c1).toContain(`<a href="/works/1000001/chapters/3">ws-three</a>`);
-    expect(c1).toContain("dot-two dot-slash-two");
+    expect(c1).toContain("dot-two dot-slash-two slash-three");
     expect(c1.match(/<a /g)).toHaveLength(1);
   });
 
@@ -565,6 +565,16 @@ describe("chapter links", () => {
     expect(work.ao3WorkId).toBe("2147483648");
     expect(work.chapters[0]!.html).not.toContain("<a");
     expect(work.chapters[0]!.html).toContain("go-three");
+  });
+
+  it("the largest work ID the reader takes still gives chapter links", async () => {
+    const work = await processEpub(
+      threeChapters({
+        workId: 2147483647,
+        c1: `<a href="Three%20Parts_split_001.xhtml#c3">go-three</a>`,
+      }),
+    );
+    expect(work.chapters[0]!.html).toContain(`<a href="/works/2147483647/chapters/3">go-three</a>`);
   });
 
   it("hostile hrefs give only a reader URL, an external link with rel, or text", async () => {

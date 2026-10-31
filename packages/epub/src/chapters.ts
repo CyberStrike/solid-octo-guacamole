@@ -40,8 +40,10 @@ export interface ChapterSplit {
   /** Content the split could not place with confidence. */
   reviewReasons: string[];
   /**
-   * The number (from 1) of the chapter holding the element with id `anchor`
-   * in spine file `path`, or null when no chapter holds it.
+   * The number (from 1) of the chapter a link into spine file `path` lands in:
+   * the chapter holding the first content of the element with id `anchor`
+   * (the element itself when it holds none), or with no anchor the chapter
+   * holding the file's first content. Null when no chapter holds it.
    */
   chapterFor(path: string, anchor: string | null): number | null;
 }
@@ -225,19 +227,31 @@ function* perFile(files: ElementNode[][]): Generator<RawChapter> {
   }
 }
 
-/** Position of the first text or image under `scopes`, or null if they hold none. */
-function firstContent(scopes: readonly Node[]): number | null {
-  for (const n of scopes) {
-    if (n.type === "text") {
-      if (!isBlankText(n)) return n.pos;
-    } else if (n.tag === "img") {
-      return n.pos;
-    } else if (!isScriptOrStyle(n)) {
-      const inner = firstContent(n.children);
-      if (inner !== null) return inner;
+/**
+ * Returns a function giving the position of the first text or image among
+ * `nodes` and their descendants, or null if they hold none. Each element's
+ * answer is remembered, so however many links ask, every node is visited at
+ * most once.
+ */
+function firstContentFinder(): (nodes: readonly Node[]) => number | null {
+  const memo = new Map<ElementNode, number | null>();
+  const ofElement = (el: ElementNode): number | null => {
+    if (el.tag === "img") return el.pos;
+    if (isScriptOrStyle(el)) return null;
+    const known = memo.get(el);
+    if (known !== undefined) return known;
+    const found = first(el.children);
+    memo.set(el, found);
+    return found;
+  };
+  const first = (nodes: readonly Node[]): number | null => {
+    for (const n of nodes) {
+      const found = n.type === "text" ? (isBlankText(n) ? null : n.pos) : ofElement(n);
+      if (found !== null) return found;
     }
-  }
-  return null;
+    return null;
+  };
+  return first;
 }
 
 /** Where a link lands: the spine file, and a position inside that file's chapter scopes. */
@@ -258,25 +272,20 @@ function linkTargets(
   index: SpineIndex,
   scopes: Map<SpineDoc, ElementNode[]>,
 ): (path: string, anchor: string | null) => Target | null {
-  // Cached, so many links to one place cost one scan.
-  const first = new Map<SpineDoc | ElementNode, number | null>();
-  const firstOf = (key: SpineDoc | ElementNode, nodes: readonly Node[]) => {
-    if (!first.has(key)) first.set(key, firstContent(nodes));
-    return first.get(key) ?? null;
-  };
+  const firstContent = firstContentFinder();
   return (path, anchor) => {
     const doc = index.doc(path);
     if (!doc) return null;
     const own = scopes.get(doc)!;
     if (anchor === null) {
-      const pos = firstOf(doc, own);
+      const pos = firstContent(own);
       return pos === null ? null : { doc, pos };
     }
     const el = index.element(doc, anchor);
     if (!el) return null;
     const scope = own[firstReaching(own, el.pos)];
     if (!scope || scope.pos > el.pos) return null;
-    return { doc, pos: firstOf(el, [el]) ?? el.pos };
+    return { doc, pos: firstContent([el]) ?? el.pos };
   };
 }
 
