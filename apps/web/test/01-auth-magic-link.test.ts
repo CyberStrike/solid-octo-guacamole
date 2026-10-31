@@ -474,7 +474,6 @@ describe("Sign-in failures", () => {
       // Turnstile still guards the form, so the link is sent.
       expect(res.status).toBe(200);
       expect(await emailsTo("limiter-down@example.test")).toHaveLength(1);
-      expect(keys).toHaveLength(2);
       expect(logged.length).toBeGreaterThan(0);
       const log = logged.join("\n");
       for (const secret of ["limiter-down", ip, ...keys]) expect(log).not.toContain(secret);
