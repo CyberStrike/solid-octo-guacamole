@@ -508,4 +508,17 @@ describe("chapter links", () => {
     expect(work.notesHtml).toContain(`<a href="/works/1000001/chapters/2">notes-two</a>`);
     expect(work.endNotesHtml).toContain(`<a href="/works/1000001/chapters/1">end-one</a>`);
   });
+
+  it("a work ID the reader would refuse gives no chapter links", async () => {
+    // One above Postgres int4: the reader 404s on it, so a link would be dead.
+    const work = await processEpub(
+      threeChapters({
+        workId: 2147483648,
+        c1: `<a href="Three%20Parts_split_001.xhtml#c3">go-three</a>`,
+      }),
+    );
+    expect(work.ao3WorkId).toBe("2147483648");
+    expect(work.chapters[0]!.html).not.toContain("<a");
+    expect(work.chapters[0]!.html).toContain("go-three");
+  });
 });

@@ -116,6 +116,9 @@ async function run(
   const imageBase = options.imageBase ?? "";
   // Before anything is serialized, so links in the summary and notes resolve too.
   const split = splitChapters(docs, pkg.navPoints);
+  // The reader takes only digits with no leading zero, within Postgres's int4:
+  // for any other ID a chapter link would be dead, so links stay text.
+  const readerId = /^[1-9]\d{0,9}$/.test(ao3WorkId) && Number(ao3WorkId) <= 2_147_483_647;
   // The chapter being serialized, so a link to it stays plain text; null outside chapters.
   // SAFETY: widens the initial null, so TS doesn't read it as null inside the resolver.
   let current = null as number | null;
@@ -128,6 +131,7 @@ async function run(
       return imageBase + candidate.ref.key;
     },
     resolveChapterLink(href, fromFile) {
+      if (!readerId) return null;
       const target = resolveHref(dirOf(fromFile), href);
       // `#` and an empty href name no target: only a file or an anchor does.
       if (!target || (target.path === "" && target.anchor === null)) return null;
