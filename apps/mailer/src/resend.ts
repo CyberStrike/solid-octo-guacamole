@@ -9,8 +9,10 @@ const TIMEOUT_MS = 10_000;
 // The provider message IDs from an accepted batch's answer. These are logged, so anything that
 // doesn't look like an ID (Resend's are UUIDs) is left out rather than trusted.
 function messageIds(body: unknown): string[] {
+  // SAFETY: the optional chain reads `data` off any value, and the next line checks it.
   const data = (body as { data?: unknown } | null)?.data;
   if (!Array.isArray(data)) return [];
+  // SAFETY: the same for each entry's `id`, which the filter checks.
   return data
     .map((d) => (d as { id?: unknown } | null)?.id)
     .filter((id): id is string => typeof id === "string" && /^[\w-]{1,64}$/.test(id));

@@ -18,7 +18,7 @@ describe("Resend batch sender", () => {
   it("posts the emails as one JSON array with the API key", async () => {
     let seen: { url: string; init?: RequestInit } | undefined;
     const fetcher: typeof fetch = async (input, init) => {
-      seen = { url: String(input), init };
+      seen = { url: input instanceof Request ? input.url : input.toString(), init };
       return Response.json({ data: [{ id: "resend-1" }] });
     };
 
@@ -28,7 +28,8 @@ describe("Resend batch sender", () => {
     expect(seen?.url).toBe("https://api.resend.com/emails/batch");
     expect(seen?.init?.method).toBe("POST");
     expect(new Headers(seen?.init?.headers).get("authorization")).toBe("Bearer re_test_key");
-    expect(JSON.parse(String(seen?.init?.body))).toEqual([email]);
+    // SAFETY: the sender posts its batch as a JSON string.
+    expect(JSON.parse(seen?.init?.body as string)).toEqual([email]);
   });
 
   // Rate limit, quota or outage (Resend's error codes: 429 for rate and quota, 5xx).

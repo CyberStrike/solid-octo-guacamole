@@ -9,6 +9,7 @@ beforeAll(async () => {
   t = await createTestDb();
 });
 afterAll(async () => {
+  // oxlint-disable-next-line typescript/no-unnecessary-condition -- unset if beforeAll failed
   await t?.close();
 });
 

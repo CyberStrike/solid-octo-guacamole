@@ -6,6 +6,7 @@ export interface SignInEmail {
   url: string;
 }
 
+// oxlint-disable-next-line deslop/no-pass-through-type-alias -- the union of message kinds, one so far
 export type EmailMessage = SignInEmail;
 
 const SITE = "https://rarepair.fans";
@@ -15,6 +16,7 @@ const MAX_URL = 2048;
 // be sent, so retrying it would only keep an address in the queue longer.
 export function parseMessage(body: unknown): EmailMessage | null {
   if (typeof body !== "object" || body === null) return null;
+  // SAFETY: body is a non-null object, so its keys are strings; each value is checked below.
   const { kind, to, url } = body as Record<string, unknown>;
   if (kind !== "sign-in") return null;
   // A bare address only: no display name, no list, at most 254 characters.

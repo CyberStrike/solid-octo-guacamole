@@ -95,6 +95,7 @@ export interface SanitizeContext {
 export function safeHref(raw: string): string | null {
   const decoded = decodeEntities(raw);
   if (hasNamedEntity(decoded)) return null;
+  // oxlint-disable-next-line no-control-regex -- strips control characters on purpose, so none can hide a scheme
   const cleaned = decoded.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").trim();
   if (!/^https?:\/\//i.test(cleaned)) return null;
   let url: URL;

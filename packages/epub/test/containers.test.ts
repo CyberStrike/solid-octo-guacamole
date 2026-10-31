@@ -11,7 +11,7 @@ import { ao3Epub, expectEpubError, MiB, zipEntries } from "./helpers";
 function patchHeaders(
   zip: Uint8Array,
   name: string,
-  patch: (view: DataView, local: boolean, sizeAt: number, nameAt: number) => unknown,
+  patch: (view: DataView, local: boolean, sizeAt: number, nameAt: number) => void,
 ): number {
   const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
   const want = strToU8(name);

@@ -247,6 +247,7 @@ function findWorkId(prefaces: ElementNode[]): string | null {
       }
       return true;
     });
+    // oxlint-disable-next-line typescript/no-unnecessary-condition -- the walk callback sets id, unseen by TS
     if (id !== null) return id;
   }
   return null;

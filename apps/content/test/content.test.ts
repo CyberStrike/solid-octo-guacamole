@@ -1,9 +1,10 @@
-import { env } from "cloudflare:test";
-import { exports } from "cloudflare:workers";
+import { env, exports } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import handler, { type Env } from "../src/index";
 
-const E = env as unknown as Env;
+// SAFETY: the test env is the bindings wrangler.jsonc declares, which Env describes.
+const E = env as Env;
+// SAFETY: the default export is the Worker under test, loaded from wrangler.jsonc's main.
 const worker = (exports as any).default as Fetcher;
 const ORIGIN = "https://content.rarepair.fans";
 
@@ -206,9 +207,11 @@ describe("content Worker", () => {
   it("A failed R2 read is an empty 503 with the common headers", async () => {
     // Miniflare's bucket can't be made to fail, so this one case hands the Worker's
     // fetch entry a bucket whose read rejects.
-    const failing = {
-      BUCKET: { get: () => Promise.reject(new Error("R2 unavailable")) } as unknown as R2Bucket,
+    const bucket: Pick<R2Bucket, "get"> = {
+      get: () => Promise.reject(new Error("R2 unavailable")),
     };
+    // SAFETY: the Worker calls only BUCKET.get on this path.
+    const failing = { BUCKET: bucket as R2Bucket };
     for (const method of ["GET", "HEAD"]) {
       const res = await handler.fetch(new Request(`${ORIGIN}/${IMAGE_KEY}`, { method }), failing);
       expect(res.status, method).toBe(503);
