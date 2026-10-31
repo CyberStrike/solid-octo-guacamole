@@ -18,7 +18,11 @@ export function parseMessage(body: unknown): EmailMessage | null {
   const { kind, to, url } = body as Record<string, unknown>;
   if (kind !== "sign-in") return null;
   // A bare address only: no display name, no list, at most 254 characters.
-  if (typeof to !== "string" || to.length > 254 || !/^[^\s@<>()",;:\\[\]]+@[^\s@<>()",;:\\[\]]+$/.test(to)) {
+  if (
+    typeof to !== "string" ||
+    to.length > 254 ||
+    !/^[^\s@<>()",;:\\[\]]+@[^\s@<>()",;:\\[\]]+$/.test(to)
+  ) {
     return null;
   }
   if (typeof url !== "string" || url.length > MAX_URL) return null;

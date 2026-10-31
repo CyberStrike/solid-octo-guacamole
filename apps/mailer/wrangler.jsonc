@@ -23,11 +23,11 @@
         "retry_delay": 60,
         // Retention must be one day at most, set outside this file:
         // wrangler queues update email-dlq --message-retention-period-secs 86400
-        "dead_letter_queue": "email-dlq"
-      }
-    ]
+        "dead_letter_queue": "email-dlq",
+      },
+    ],
   },
   // Set with `wrangler secret put`. MAIL_FROM stays here until the sending subdomain is chosen.
   "secrets": { "required": ["RESEND_API_KEY", "MAIL_FROM"] },
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
 }

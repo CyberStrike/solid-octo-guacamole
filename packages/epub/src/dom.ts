@@ -32,15 +32,57 @@ export interface TextNode {
 export type Node = ElementNode | TextNode;
 
 const VOID = new Set([
-  "area", "base", "basefont", "bgsound", "br", "col", "embed", "frame", "hr", "img",
-  "input", "keygen", "link", "meta", "param", "source", "track", "wbr",
+  "area",
+  "base",
+  "basefont",
+  "bgsound",
+  "br",
+  "col",
+  "embed",
+  "frame",
+  "hr",
+  "img",
+  "input",
+  "keygen",
+  "link",
+  "meta",
+  "param",
+  "source",
+  "track",
+  "wbr",
 ]);
 
 // Opening one of these implicitly closes an open <p>, as in an HTML parser.
 const CLOSES_P = new Set([
-  "address", "article", "aside", "blockquote", "center", "details", "div", "dl",
-  "fieldset", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6",
-  "header", "hr", "main", "menu", "nav", "ol", "p", "pre", "section", "table", "ul",
+  "address",
+  "article",
+  "aside",
+  "blockquote",
+  "center",
+  "details",
+  "div",
+  "dl",
+  "fieldset",
+  "figure",
+  "footer",
+  "form",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "header",
+  "hr",
+  "main",
+  "menu",
+  "nav",
+  "ol",
+  "p",
+  "pre",
+  "section",
+  "table",
+  "ul",
 ]);
 
 /**
@@ -58,7 +100,18 @@ const CLOSES_P = new Set([
 const SELF_CLOSING =
   /<([a-zA-Z][a-zA-Z0-9:-]*)((?:\s+[^\s"'<>/=]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>=`/]+))?)*)\s*\/>/g;
 
-const RAW_TEXT = new Set(["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes", "noscript", "plaintext"]);
+const RAW_TEXT = new Set([
+  "script",
+  "style",
+  "textarea",
+  "title",
+  "xmp",
+  "iframe",
+  "noembed",
+  "noframes",
+  "noscript",
+  "plaintext",
+]);
 
 export function expandSelfClosing(html: string): string {
   return html.replace(SELF_CLOSING, (whole, tag: string, attrs: string) => {
@@ -69,7 +122,16 @@ export function expandSelfClosing(html: string): string {
 }
 
 function element(tag: string, file: string, parent: ElementNode | null): ElementNode {
-  return { type: "element", tag, attrs: Object.create(null), children: [], parent, file, pos: 0, end: 0 };
+  return {
+    type: "element",
+    tag,
+    attrs: Object.create(null),
+    children: [],
+    parent,
+    file,
+    pos: 0,
+    end: 0,
+  };
 }
 
 // Deeper documents are rejected. Flattening them instead would move the
@@ -85,7 +147,11 @@ export interface NodeBudget {
 export const nodeBudget = (): NodeBudget => ({ remaining: LIMITS.maxNodes });
 
 /** Parses an HTML/XHTML string into a tree under a synthetic `#root` element. */
-export async function parseHtml(html: string, file = "", budget: NodeBudget = nodeBudget()): Promise<ElementNode> {
+export async function parseHtml(
+  html: string,
+  file = "",
+  budget: NodeBudget = nodeBudget(),
+): Promise<ElementNode> {
   const root = element("#root", file, null);
   const stack: ElementNode[] = [root];
   const top = (): ElementNode => stack[stack.length - 1]!;
@@ -131,7 +197,10 @@ export async function parseHtml(html: string, file = "", budget: NodeBudget = no
           return; // lol-html refuses end-tag handlers on elements that cannot have one.
         }
         if (stack.length >= MAX_DEPTH) {
-          failure = new EpubError("parse_failed", `Elements nested more than ${MAX_DEPTH} deep in ${file}`);
+          failure = new EpubError(
+            "parse_failed",
+            `Elements nested more than ${MAX_DEPTH} deep in ${file}`,
+          );
           return;
         }
         stack.push(node);
@@ -144,7 +213,9 @@ export async function parseHtml(html: string, file = "", budget: NodeBudget = no
     });
 
   // Drain and discard the rewriter's output instead of buffering a copy of it.
-  await rewriter.transform(new Response(expandSelfClosing(html))).body?.pipeTo(new WritableStream());
+  await rewriter
+    .transform(new Response(expandSelfClosing(html)))
+    .body?.pipeTo(new WritableStream());
   if (failure) throw failure;
   return root;
 }

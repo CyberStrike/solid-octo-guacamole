@@ -17,7 +17,10 @@ import { countWords } from "./words";
  * caller's `onImage` runs only after the parse has succeeded, and is the only
  * I/O: a retry runs it again.
  */
-export async function processEpub(input: Uint8Array | ArrayBuffer, options: ProcessOptions = {}): Promise<ParsedWork> {
+export async function processEpub(
+  input: Uint8Array | ArrayBuffer,
+  options: ProcessOptions = {},
+): Promise<ParsedWork> {
   const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
   if (bytes.byteLength > LIMITS.maxInputBytes) {
     throw new EpubError("too_large", `File is larger than ${LIMITS.maxInputBytes} bytes`);
@@ -34,7 +37,10 @@ export async function processEpub(input: Uint8Array | ArrayBuffer, options: Proc
   return result.work;
 }
 
-async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: ParsedWork; images: ImageCandidate[] }> {
+async function run(
+  bytes: Uint8Array,
+  options: ProcessOptions,
+): Promise<{ work: ParsedWork; images: ImageCandidate[] }> {
   const files = unzipEpub(bytes);
 
   const mimetype = files.get("mimetype");
@@ -49,13 +55,17 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
   const reviewReasons: string[] = [];
   // A missing spine item is held for review like a missing spine file: the
   // chapter count check alone would not notice if the rest still match Stats.
-  for (const idref of pkg.unknownSpineRefs) reviewReasons.push(`unknown_spine_item: ${JSON.stringify(idref)}`);
+  for (const idref of pkg.unknownSpineRefs)
+    reviewReasons.push(`unknown_spine_item: ${JSON.stringify(idref)}`);
   // unzipEpub reads entries by extension, before the manifest is known. Flag a
   // document or raster image it skipped, rather than lose it silently.
   for (const item of pkg.manifest.values()) {
-    const wanted = item.mediaType === "application/xhtml+xml" || item.mediaType === "text/html" ||
+    const wanted =
+      item.mediaType === "application/xhtml+xml" ||
+      item.mediaType === "text/html" ||
       (item.mediaType.startsWith("image/") && item.mediaType !== "image/svg+xml");
-    if (wanted && !READABLE.test(item.path)) reviewReasons.push(`unread_manifest_item: ${item.path}`);
+    if (wanted && !READABLE.test(item.path))
+      reviewReasons.push(`unread_manifest_item: ${item.path}`);
   }
 
   const docs: SpineDoc[] = [];
@@ -86,7 +96,8 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
   // similar) is not enough; the OPF is a cross-check.
   const ao3WorkId = preface.workId;
   if (!ao3WorkId) throw new EpubError("not_ao3", "No AO3 preface with a work URL");
-  const opfWorkId = [...opf.identifiers, ...opf.sources].map(workIdFromUrl).find((id) => id !== null) ?? null;
+  const opfWorkId =
+    [...opf.identifiers, ...opf.sources].map(workIdFromUrl).find((id) => id !== null) ?? null;
   if (opfWorkId && opfWorkId !== ao3WorkId) {
     reviewReasons.push(`work_id_mismatch: preface ${preface.workId}, OPF ${opfWorkId}`);
   }
@@ -126,7 +137,8 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
   const notesHtml = html(preface.notes);
 
   const split = splitChapters(docs, pkg.navPoints);
-  if (split.method === "files") reviewReasons.push("chapters_one_per_file: no usable table of contents or chapter headings");
+  if (split.method === "files")
+    reviewReasons.push("chapters_one_per_file: no usable table of contents or chapter headings");
   reviewReasons.push(...split.reviewReasons);
   const chapters: Chapter[] = [];
   for (const c of split.chapters) {
@@ -142,7 +154,9 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
 
   const stats = preface.stats;
   if (chapters.length !== stats.chapters.posted) {
-    reviewReasons.push(`chapter_count_mismatch: parsed ${chapters.length}, Stats says ${stats.chapters.posted}`);
+    reviewReasons.push(
+      `chapter_count_mismatch: parsed ${chapters.length}, Stats says ${stats.chapters.posted}`,
+    );
   }
 
   const images = [...used.values()];
@@ -150,7 +164,10 @@ async function run(bytes: Uint8Array, options: ProcessOptions): Promise<{ work: 
   const work: ParsedWork = {
     ao3WorkId,
     title,
-    authors: preface.authors.length > 0 ? preface.authors : opf.creators.map((pseud) => ({ pseud, user: null })),
+    authors:
+      preface.authors.length > 0
+        ? preface.authors
+        : opf.creators.map((pseud) => ({ pseud, user: null })),
     rating: preface.rating,
     warnings: preface.warnings,
     categories: preface.categories,

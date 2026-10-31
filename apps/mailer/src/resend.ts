@@ -47,7 +47,8 @@ export function resendSender(
       await res.body?.cancel().catch(() => {});
       // A refusal is a rate limit, a quota (both 429) or an outage (5xx).
       // https://resend.com/docs/api-reference/errors
-      if (res.status === 429 || res.status >= 500) return { outcome: "refused", status: res.status };
+      if (res.status === 429 || res.status >= 500)
+        return { outcome: "refused", status: res.status };
       return { outcome: "failed", status: res.status };
     },
   };

@@ -90,7 +90,10 @@ describe("mailer logs", () => {
     stubResend(respond());
     const logs = captureLogs();
 
-    await consume([signIn(1), { kind: "sign-in", to: "reader9@example.test", url: "http://x.test/" }]);
+    await consume([
+      signIn(1),
+      { kind: "sign-in", to: "reader9@example.test", url: "http://x.test/" },
+    ]);
 
     const text = logs.join("\n");
     expect(logs.length).toBeGreaterThan(0);
@@ -101,7 +104,9 @@ describe("mailer logs", () => {
 
   it("never logs an address or a link when the provider cannot be reached", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(
-      new TypeError("could not reach reader1@example.test for https://rarepair.fans/login/confirm?token=link-1"),
+      new TypeError(
+        "could not reach reader1@example.test for https://rarepair.fans/login/confirm?token=link-1",
+      ),
     );
     const logs = captureLogs();
 
@@ -143,9 +148,17 @@ describe("mailer failures", () => {
       { kind: "newsletter", to: "reader3@example.test", url: "https://rarepair.fans/" },
       { kind: "sign-in", to: "reader4@example.test", url: "javascript:alert(1)" },
       "not an object",
-      { kind: "sign-in", to: "reader5@example.test", url: "https://evil.example/login/confirm?token=x" },
+      {
+        kind: "sign-in",
+        to: "reader5@example.test",
+        url: "https://evil.example/login/confirm?token=x",
+      },
       { kind: "sign-in", to: "reader6@example.test", url: "https://rarepair.fans/upload" },
-      { kind: "sign-in", to: "reader7@example.test", url: "https://evil.example@rarepair.fans/login/confirm?token=x" },
+      {
+        kind: "sign-in",
+        to: "reader7@example.test",
+        url: "https://evil.example@rarepair.fans/login/confirm?token=x",
+      },
       { kind: "sign-in", to: "Support<reader8@example.test>", url: signIn(8).url },
       { kind: "sign-in", to: "reader9@example.test,other@example.test", url: signIn(9).url },
       { kind: "sign-in", to: `${"a".repeat(250)}@example.test`, url: signIn(10).url },
@@ -164,7 +177,11 @@ describe("mailer failures", () => {
     const calls = stubResend(accepted);
 
     await consume([
-      { kind: "sign-in", to: "reader1@example.test", url: "https://rarepair.fans/login/confirm?token=x\n\nInjected line\n" },
+      {
+        kind: "sign-in",
+        to: "reader1@example.test",
+        url: "https://rarepair.fans/login/confirm?token=x\n\nInjected line\n",
+      },
     ]);
 
     const [sent] = calls[0]!.emails as { text: string }[];

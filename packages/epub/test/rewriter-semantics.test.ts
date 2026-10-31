@@ -52,13 +52,20 @@ describe("HTMLRewriter as a tokenizer", () => {
 
   it("pairs an end tag with the innermost open element of that name, HTML style", async () => {
     // The self-closing inner div takes the outer div's end tag.
-    expect(await events("<div><div/>inner</div>")).toEqual([`<div []>`, `<div []>`, "inner", "</div>"]);
+    expect(await events("<div><div/>inner</div>")).toEqual([
+      `<div []>`,
+      `<div []>`,
+      "inner",
+      "</div>",
+    ]);
   });
 });
 
 describe("parseHtml", () => {
   it("treats XHTML self-closing tags as empty elements", async () => {
-    expect(expandSelfClosing(`<div a="1"/><br/><a id='x' />`)).toBe(`<div a="1"></div><br/><a id='x'></a>`);
+    expect(expandSelfClosing(`<div a="1"/><br/><a id='x' />`)).toBe(
+      `<div a="1"></div><br/><a id='x'></a>`,
+    );
     const root = await parseHtml("<div><div/>inner</div>after");
     expect(shape(root)).toBe(`#root(div(div(),"inner"),"after")`);
   });
@@ -79,7 +86,8 @@ describe("parseHtml", () => {
     await expectEpubError(parseHtml(html), "parse_failed");
     const root = await parseHtml("<div>".repeat(250) + "fine" + "</div>".repeat(250));
     let depth = 0;
-    for (let n: Node = root; n.type === "element" && n.children.length > 0; n = n.children[0]!) depth++;
+    for (let n: Node = root; n.type === "element" && n.children.length > 0; n = n.children[0]!)
+      depth++;
     expect(depth).toBe(251);
   });
 
@@ -95,7 +103,9 @@ describe("parseHtml", () => {
       `<script>var s = ""; alert(1)</script><div></div>`,
     );
     const root = await parseHtml(`<style>p { x: "<style/>" } <p>inside</p></style><p>after</p>`);
-    expect(shape(root)).toBe(`#root(style(${JSON.stringify(`p { x: "" } <p>inside</p>`)}),p("after"))`);
+    expect(shape(root)).toBe(
+      `#root(style(${JSON.stringify(`p { x: "" } <p>inside</p>`)}),p("after"))`,
+    );
   });
 
   // workerd freezes clocks during synchronous code, so there is no timing

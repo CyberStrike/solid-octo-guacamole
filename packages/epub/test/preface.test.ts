@@ -71,9 +71,13 @@ describe("06-ao3-preface-and-chapters", () => {
     const original = ao3Epub({ extraDl, stats: "Published: 2020-01-02 Chapters: 1/1 Words: 12" });
     // Every class value in the preface file becomes a Calibre-style name; ids and rel stay.
     let n = 0;
-    const renamed = patchEntry(original, "Synthetic_preface.xhtml", (x) => x.replace(/class="[^"]*"/g, () => `class="calibre_x${n++}"`));
+    const renamed = patchEntry(original, "Synthetic_preface.xhtml", (x) =>
+      x.replace(/class="[^"]*"/g, () => `class="calibre_x${n++}"`),
+    );
     expect(n).toBeGreaterThan(10);
-    expect(strFromU8(unzipSync(renamed)["Synthetic_preface.xhtml"]!)).not.toMatch(/class="(tags|byline|userstuff|endnote-link)"/);
+    expect(strFromU8(unzipSync(renamed)["Synthetic_preface.xhtml"]!)).not.toMatch(
+      /class="(tags|byline|userstuff|endnote-link)"/,
+    );
 
     const before = await processEpub(original);
     const after = await processEpub(renamed);
@@ -84,7 +88,8 @@ describe("06-ao3-preface-and-chapters", () => {
 
   it("Summary, notes and end notes come from headed blocks", async () => {
     // Blockquotes under other labels sit before the Summary label and after the Notes block.
-    const decoy = (id: string) => `<p>Aside ${id}</p><blockquote><p>marker-decoy-${id}</p></blockquote>`;
+    const decoy = (id: string) =>
+      `<p>Aside ${id}</p><blockquote><p>marker-decoy-${id}</p></blockquote>`;
     const epub = patchEntry(
       ao3Epub({
         summary: `<p>marker-summary</p><blockquote><p>marker-decoy-nested</p></blockquote>`,
@@ -94,7 +99,10 @@ describe("06-ao3-preface-and-chapters", () => {
       "Synthetic_preface.xhtml",
       (x) => {
         const patched = x
-          .replace(`<p class="calibre7">Summary</p>`, `${decoy("before")}<p class="calibre7">Summary</p>`)
+          .replace(
+            `<p class="calibre7">Summary</p>`,
+            `${decoy("before")}<p class="calibre7">Summary</p>`,
+          )
           .replace(`<div class="endnote-link">`, `${decoy("after")}<div class="endnote-link">`);
         if (patched === x) throw new Error("decoys not inserted");
         return patched;
@@ -113,7 +121,9 @@ describe("06-ao3-preface-and-chapters", () => {
   it("Parser output is deterministic", async () => {
     // The baseline's stored snapshot is in snapshots.test.ts; the rest are stored here.
     const epubs = [
-      ao3Epub({ extraDl: `<dt>Series:</dt><dd>Part 1 of <a href="http://archiveofourown.org/series/9">S</a></dd><dt>Odd:</dt><dd>x</dd>` }),
+      ao3Epub({
+        extraDl: `<dt>Series:</dt><dd>Part 1 of <a href="http://archiveofourown.org/series/9">S</a></dd><dt>Odd:</dt><dd>x</dd>`,
+      }),
       ao3Epub({ stats: "Chapters: 1/1" }),
       ao3Epub({
         files: [

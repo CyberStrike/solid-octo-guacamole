@@ -72,9 +72,7 @@ function epub3(nav: string, opts: Epub3Options = {}): Uint8Array {
   if (opts.keepNcx) {
     opf = opf.replace("<manifest>", `<manifest>\n    ${navItem}`);
   } else {
-    opf = opf
-      .replace(/<item id="ncx"[^>]*\/>/, navItem)
-      .replace('<spine toc="ncx">', "<spine>");
+    opf = opf.replace(/<item id="ncx"[^>]*\/>/, navItem).replace('<spine toc="ncx">', "<spine>");
     delete entries["toc.ncx"];
   }
   return zipEntries({ ...entries, "content.opf": opf, [navPath]: nav });
@@ -91,7 +89,11 @@ describe("06 AO3 preface and chapters", () => {
         [2, "Nav second"],
         [3, "Nav third"],
       ]);
-      expect(work.chapters.map((c) => markers(c.html))).toEqual([["c1-a"], ["c2-a", "c2-b"], ["c3-a"]]);
+      expect(work.chapters.map((c) => markers(c.html))).toEqual([
+        ["c1-a"],
+        ["c2-a", "c2-b"],
+        ["c3-a"],
+      ]);
       expect(work.reviewReasons).toEqual([]);
     });
 
@@ -126,7 +128,9 @@ describe("06 AO3 preface and chapters", () => {
     });
 
     it("resolves nav hrefs against the nav document's directory", async () => {
-      const work = await processEpub(epub3(navDoc(tocNav(flatItems("../"))), { navPath: "text/nav.xhtml" }));
+      const work = await processEpub(
+        epub3(navDoc(tocNav(flatItems("../"))), { navPath: "text/nav.xhtml" }),
+      );
       expect(work.chapters.map((c) => [c.n, c.title])).toEqual([
         [1, "Nav first"],
         [2, "Nav second"],
@@ -165,7 +169,10 @@ describe("06 AO3 preface and chapters", () => {
 
     it("takes the table of contents from the nav when the NCX lists nothing", async () => {
       const entries = unzipSync(epub3(navDoc(tocNav(flatItems())), { keepNcx: true }));
-      const ncx = strFromU8(entries["toc.ncx"]!).replace(/<navMap>[\s\S]*<\/navMap>/, "<navMap></navMap>");
+      const ncx = strFromU8(entries["toc.ncx"]!).replace(
+        /<navMap>[\s\S]*<\/navMap>/,
+        "<navMap></navMap>",
+      );
       const { mimetype: _, ...rest } = entries;
       const work = await processEpub(zipEntries({ ...rest, "toc.ncx": ncx }));
       expect(work.chapters.map((c) => [c.n, c.title])).toEqual([
@@ -186,7 +193,10 @@ describe("06 AO3 preface and chapters", () => {
 
     it("reads the nav when it is also in the spine", async () => {
       const entries = unzipSync(epub3(navDoc(tocNav(flatItems()))));
-      const opf = strFromU8(entries["content.opf"]!).replace("<spine>", '<spine>\n    <itemref idref="nav" linear="no"/>');
+      const opf = strFromU8(entries["content.opf"]!).replace(
+        "<spine>",
+        '<spine>\n    <itemref idref="nav" linear="no"/>',
+      );
       const { mimetype: _, ...rest } = entries;
       const work = await processEpub(zipEntries({ ...rest, "content.opf": opf }));
       expect(work.chapters.map((c) => [c.n, c.title])).toEqual([
@@ -201,8 +211,13 @@ describe("06 AO3 preface and chapters", () => {
       const nav = navDoc(`${tocNav(`<li><a href="#n0">Nav zero</a></li>\n${flatItems()}`)}
 <div id="chapters"><div class="meta"><h2 class="toc-heading" id="n0">Zero</h2></div>
 <div class="userstuff2"><p>marker-c0-a</p></div></div>`);
-      const entries = unzipSync(epub3(nav, { stats: "Published: 2020-01-01 Chapters: 4/4 Words: 5" }));
-      const opf = strFromU8(entries["content.opf"]!).replace("<spine>", '<spine>\n    <itemref idref="nav"/>');
+      const entries = unzipSync(
+        epub3(nav, { stats: "Published: 2020-01-01 Chapters: 4/4 Words: 5" }),
+      );
+      const opf = strFromU8(entries["content.opf"]!).replace(
+        "<spine>",
+        '<spine>\n    <itemref idref="nav"/>',
+      );
       const { mimetype: _, ...rest } = entries;
       const work = await processEpub(zipEntries({ ...rest, "content.opf": opf }));
       expect(work.chapters.map((c) => [c.n, c.title])).toEqual([
@@ -211,7 +226,12 @@ describe("06 AO3 preface and chapters", () => {
         [3, "Nav second"],
         [4, "Nav third"],
       ]);
-      expect(work.chapters.map((c) => markers(c.html))).toEqual([["c0-a"], ["c1-a"], ["c2-a", "c2-b"], ["c3-a"]]);
+      expect(work.chapters.map((c) => markers(c.html))).toEqual([
+        ["c0-a"],
+        ["c1-a"],
+        ["c2-a", "c2-b"],
+        ["c3-a"],
+      ]);
       expect(work.reviewReasons).toEqual([]);
     });
   });
@@ -236,7 +256,9 @@ describe("hostile nav documents", () => {
     ["CDATA sections", "<p><![CDATA[x]]></p>"],
   ])("counts %s against the node budget", async (_, unit) => {
     // Two nodes per unit: 300,002 in all, past the budget on their own.
-    const nav = bareNav(`<nav epub:type="toc"><ol>${flatItems()}</ol></nav>${unit.repeat(150_001)}`);
+    const nav = bareNav(
+      `<nav epub:type="toc"><ol>${flatItems()}</ol></nav>${unit.repeat(150_001)}`,
+    );
     await expectEpubError(processEpub(epub3(nav)), "too_large");
   });
 
@@ -259,7 +281,12 @@ describe("hostile nav documents", () => {
   });
 
   it("ignores nav links that leave the epub", async () => {
-    const hostile = ["../../../etc/x.xhtml", "/abs.xhtml", "http://evil.example/x.xhtml", "javascript:alert(1)"]
+    const hostile = [
+      "../../../etc/x.xhtml",
+      "/abs.xhtml",
+      "http://evil.example/x.xhtml",
+      "javascript:alert(1)",
+    ]
       .map((href) => `<li><a href="${href}">Hostile</a></li>`)
       .join("\n");
     const work = await processEpub(epub3(navDoc(tocNav(`${hostile}\n${flatItems()}`))));

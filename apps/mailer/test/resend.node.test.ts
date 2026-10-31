@@ -9,7 +9,10 @@ const email: OutgoingEmail = {
   text: "https://rarepair.fans/login/confirm?token=link-1",
 };
 
-const answering = (res: () => Response): typeof fetch => async () => res();
+const answering =
+  (res: () => Response): typeof fetch =>
+  async () =>
+    res();
 
 describe("Resend batch sender", () => {
   it("posts the emails as one JSON array with the API key", async () => {
@@ -30,7 +33,10 @@ describe("Resend batch sender", () => {
 
   // Rate limit, quota or outage (Resend's error codes: 429 for rate and quota, 5xx).
   it.each([429, 500, 503])("a %i is a refusal", async (status) => {
-    const sender = resendSender("re_test_key", answering(() => new Response("{}", { status })));
+    const sender = resendSender(
+      "re_test_key",
+      answering(() => new Response("{}", { status })),
+    );
     expect(await sender.sendBatch([email])).toEqual({ outcome: "refused", status });
   });
 
@@ -44,27 +50,41 @@ describe("Resend batch sender", () => {
   it("a call that never answers times out as a refusal", async () => {
     // Answers only by rejecting when the sender aborts the request.
     const hanging: typeof fetch = (_input, init) =>
-      new Promise((_, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)));
+      new Promise((_, reject) =>
+        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)),
+      );
     const sender = resendSender("re_test_key", hanging, 10);
     expect(await sender.sendBatch([email])).toEqual({ outcome: "refused", status: 0 });
   });
 
   it("an accepted batch whose answer can't be read is still sent", async () => {
-    const sender = resendSender("re_test_key", answering(() => new Response("<html>", { status: 200 })));
+    const sender = resendSender(
+      "re_test_key",
+      answering(() => new Response("<html>", { status: 200 })),
+    );
     expect(await sender.sendBatch([email])).toEqual({ outcome: "sent", ids: [] });
   });
 
   it.each([
     ["null", []],
     ['{"data":null}', []],
-    ['{"data":[null,{"id":"resend-2"},{"id":"reader@example.test"},{"id":{"to":"x"}}]}', ["resend-2"]],
+    [
+      '{"data":[null,{"id":"resend-2"},{"id":"reader@example.test"},{"id":{"to":"x"}}]}',
+      ["resend-2"],
+    ],
   ])("an accepted batch answered with %s keeps only well-formed IDs", async (body, ids) => {
-    const sender = resendSender("re_test_key", answering(() => new Response(body, { status: 200 })));
+    const sender = resendSender(
+      "re_test_key",
+      answering(() => new Response(body, { status: 200 })),
+    );
     expect(await sender.sendBatch([email])).toEqual({ outcome: "sent", ids });
   });
 
   it.each([400, 401, 403, 422])("a %i is a failure, not a refusal", async (status) => {
-    const sender = resendSender("re_test_key", answering(() => new Response("{}", { status })));
+    const sender = resendSender(
+      "re_test_key",
+      answering(() => new Response("{}", { status })),
+    );
     expect(await sender.sendBatch([email])).toEqual({ outcome: "failed", status });
   });
 });

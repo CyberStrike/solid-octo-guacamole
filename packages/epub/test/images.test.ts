@@ -3,8 +3,12 @@ import { describe, expect, it } from "vitest";
 import { processEpub, type ImageRef } from "../src";
 import { ao3Epub, fromBase64, MiB } from "./helpers";
 
-const PNG = fromBase64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=");
-const SVG = strToU8(`<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><circle r="1"/></svg>`);
+const PNG = fromBase64(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+);
+const SVG = strToU8(
+  `<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><circle r="1"/></svg>`,
+);
 const FAKE_PNG = strToU8("<html><script>alert(1)</script></html>");
 const HUGE_PNG = new Uint8Array(5 * MiB + 1);
 HUGE_PNG.set(PNG.subarray(0, 8));
@@ -37,11 +41,16 @@ describe("images", () => {
           { href: "images/huge.png", mediaType: "image/png", data: HUGE_PNG },
         ],
       }),
-      { imageBase: "https://content.example/img/", onImage: (ref, bytes) => received.push([ref, bytes]) },
+      {
+        imageBase: "https://content.example/img/",
+        onImage: (ref, bytes) => received.push([ref, bytes]),
+      },
     );
 
     const key = await sha256Hex(PNG);
-    expect(work.images).toEqual([{ key, mediaType: "image/png", size: PNG.length, sourcePath: "images/ok one.png" }]);
+    expect(work.images).toEqual([
+      { key, mediaType: "image/png", size: PNG.length, sourcePath: "images/ok one.png" },
+    ]);
     expect(received).toHaveLength(1);
     expect(received[0]![1]).toEqual(PNG);
 
@@ -55,7 +64,12 @@ describe("images", () => {
 
   const withPng = () =>
     ao3Epub({
-      files: [{ name: "pics_split_001.xhtml", body: `<div id="chapters"><p>pic <img src="images/p.png" alt="Ren&eacute;e"/></p></div>` }],
+      files: [
+        {
+          name: "pics_split_001.xhtml",
+          body: `<div id="chapters"><p>pic <img src="images/p.png" alt="Ren&eacute;e"/></p></div>`,
+        },
+      ],
       extraManifest: [{ href: "images/p.png", mediaType: "image/png", data: PNG }],
     });
 
@@ -73,7 +87,9 @@ describe("images", () => {
 
   it("passes an onImage failure through unchanged, not as a parse failure", async () => {
     const boom = new Error("upload failed");
-    const err = await processEpub(withPng(), { onImage: async () => Promise.reject(boom) }).catch((e: unknown) => e);
+    const err = await processEpub(withPng(), { onImage: async () => Promise.reject(boom) }).catch(
+      (e: unknown) => e,
+    );
     expect(err).toBe(boom);
   });
 });

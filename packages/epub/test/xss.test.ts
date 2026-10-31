@@ -30,9 +30,27 @@ const chapter = `<div id="chapters" class="userstuff1"><h2 class="toc-heading">P
 <div class="userstuff2">${CORPUS}</div></div>`;
 
 const FORBIDDEN = [
-  /<script/i, /alert\(/i, /\son\w+\s*=/i, /javascript/i, /data:/i, /<iframe/i, /<svg/i, /<math/i,
-  /<form/i, /<input/i, /<button/i, /<style/i, /style=/i, /class=/i, /evil\.example/i, /<meta/i,
-  /<base/i, /<object/i, /<embed/i, /<img/i, /hidden-/,
+  /<script/i,
+  /alert\(/i,
+  /\son\w+\s*=/i,
+  /javascript/i,
+  /data:/i,
+  /<iframe/i,
+  /<svg/i,
+  /<math/i,
+  /<form/i,
+  /<input/i,
+  /<button/i,
+  /<style/i,
+  /style=/i,
+  /class=/i,
+  /evil\.example/i,
+  /<meta/i,
+  /<base/i,
+  /<object/i,
+  /<embed/i,
+  /<img/i,
+  /hidden-/,
 ];
 
 function expectBalanced(html: string): void {
@@ -43,14 +61,18 @@ function expectBalanced(html: string): void {
 
 describe("XSS corpus", () => {
   it("strips every payload from a chapter and keeps the text around it", async () => {
-    const work = await processEpub(ao3Epub({ files: [{ name: "x_split_001.xhtml", body: chapter }], title: "Payloads" }));
+    const work = await processEpub(
+      ao3Epub({ files: [{ name: "x_split_001.xhtml", body: chapter }], title: "Payloads" }),
+    );
     expect(work.chapters).toHaveLength(1);
     const html = work.chapters[0]!.html;
     for (const bad of FORBIDDEN) expect(html).not.toMatch(bad);
     for (let i = 1; i <= 19; i++) expect(html).toContain(`alpha-${i}`);
     expect(html).toContain("beta-2");
     expect(html).toContain("beta-17");
-    expect(html).toContain(`<a href="https://ok.example/page?a=1&amp;b=2" rel="nofollow noopener noreferrer ugc">alpha-16</a>`);
+    expect(html).toContain(
+      `<a href="https://ok.example/page?a=1&amp;b=2" rel="nofollow noopener noreferrer ugc">alpha-16</a>`,
+    );
     expectBalanced(html);
   });
 

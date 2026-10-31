@@ -65,11 +65,18 @@ describe.skipIf(names.length === 0)("real AO3 fixtures (all present)", () => {
     expect(b).toEqual(a);
     expect(JSON.stringify(b)).toBe(JSON.stringify(a));
     expect(a.chapters.length).toBeGreaterThan(0);
-    for (const html of [a.summaryHtml, a.notesHtml, a.endNotesHtml, ...a.chapters.map((c) => c.html)]) {
+    for (const html of [
+      a.summaryHtml,
+      a.notesHtml,
+      a.endNotesHtml,
+      ...a.chapters.map((c) => c.html),
+    ]) {
       if (html !== null) expectClean(html);
     }
     // Recorded for the report: our word count vs AO3's.
-    console.log(`${name}: AO3 words ${a.stats.words}, counted ${a.chapters.reduce((n, c) => n + c.words, 0)}`);
+    console.log(
+      `${name}: AO3 words ${a.stats.words}, counted ${a.chapters.reduce((n, c) => n + c.words, 0)}`,
+    );
   });
 });
 

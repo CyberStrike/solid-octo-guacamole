@@ -12,10 +12,7 @@ afterAll(async () => {
 const later = new Date("2030-01-01T00:00:00Z");
 
 async function addUser(id: string, email = `${id}@example.test`) {
-  await t.db
-    .insertInto("user")
-    .values({ id, name: id, email, email_verified: false })
-    .execute();
+  await t.db.insertInto("user").values({ id, name: id, email, email_verified: false }).execute();
 }
 
 async function addSession(id: string, userId: string, token = `token-${id}`) {
@@ -65,17 +62,26 @@ describe("packages/db constraints", () => {
     await t.db
       .insertInto("account")
       .values({
-        id: "leaving-a", user_id: "leaving", account_id: "leaving",
-        provider_id: "magic-link", updated_at: later,
+        id: "leaving-a",
+        user_id: "leaving",
+        account_id: "leaving",
+        provider_id: "magic-link",
+        updated_at: later,
       })
       .execute();
 
     await t.db.deleteFrom("user").where("id", "=", "leaving").execute();
 
-    const sessions = await t.db.selectFrom("session").select("id")
-      .where("user_id", "=", "leaving").execute();
-    const accounts = await t.db.selectFrom("account").select("id")
-      .where("user_id", "=", "leaving").execute();
+    const sessions = await t.db
+      .selectFrom("session")
+      .select("id")
+      .where("user_id", "=", "leaving")
+      .execute();
+    const accounts = await t.db
+      .selectFrom("account")
+      .select("id")
+      .where("user_id", "=", "leaving")
+      .execute();
     expect(sessions).toEqual([]);
     expect(accounts).toEqual([]);
   });
