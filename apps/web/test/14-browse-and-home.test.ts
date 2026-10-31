@@ -580,6 +580,93 @@ describe("14-browse-and-home listing pages", () => {
   });
 });
 
+const SORTED = "/tags/fandom/sorted%20listing%20fandom";
+
+describe("14-browse-and-home listing sort and filters", () => {
+  beforeAll(async () => {
+    const fandom = { type: "fandom" as const, name: "Sorted Listing Fandom" };
+    const slowBurn = (name: string) => [fandom, { type: "freeform" as const, name }];
+    const works = [
+      [31101, "2021-03-01", 1200, "Explicit", true, slowBurn("Listing Slow Burn")],
+      [31102, "2023-05-01", 7000, "Mature", true, slowBurn("listing slow-burn!")],
+      // Never updated: its published date, 2020-01-01, stands in.
+      [31103, null, 5000, null, false, slowBurn("Listing Slow Burn")],
+      [31104, "2022-01-01", 300, "Explicit", false, [fandom]],
+      [31105, "2020-06-01", 2500, "Explicit", true, [fandom]],
+    ] as const;
+    for (const [ao3WorkId, updated, words, rating, complete, tags] of works) {
+      await seedWork(db, {
+        ao3WorkId,
+        updatedAt: updated && `${updated}T00:00:00Z`,
+        chapters: [{ words }],
+        rating,
+        complete,
+        tags: [...tags],
+      });
+    }
+  });
+
+  it("Sort by updated date", async () => {
+    const res = await fetchW(`${SORTED}?sort=updated`);
+
+    expect(res.status).toBe(200);
+    expect(idsOf(await res.text())).toEqual([31102, 31104, 31101, 31105, 31103]);
+    // The default is the same order.
+    expect(idsOf(await htmlOf(SORTED))).toEqual([31102, 31104, 31101, 31105, 31103]);
+    // Page links keep the sort.
+    expect(await htmlOf(`${PAGED}?sort=words&page=2`)).toContain(
+      `<a rel="next" href="${PAGED}?sort=words&amp;page=3">`,
+    );
+  });
+
+  it("Sort by word count", async () => {
+    const html = await htmlOf(`${SORTED}?sort=words`);
+
+    expect(idsOf(html)).toEqual([31102, 31103, 31105, 31101, 31104]);
+    expect(cardsOf(html).map((card) => lineOf(card, "card-stats")?.split(" · ")[0])).toEqual([
+      "7,000 words",
+      "5,000 words",
+      "2,500 words",
+      "1,200 words",
+      "300 words",
+    ]);
+    // A sort the form doesn't offer is the default.
+    expect(idsOf(await htmlOf(`${SORTED}?sort=title`))).toEqual([
+      31102, 31104, 31101, 31105, 31103,
+    ]);
+  });
+
+  it("Filter by rating", async () => {
+    const explicit = await htmlOf(`${SORTED}?rating=Explicit`);
+
+    expect(idsOf(explicit)).toEqual([31104, 31101, 31105]);
+    expect(idsOf(await htmlOf(`${SORTED}?rating=Not+Rated`))).toEqual([31103]);
+    // A rating the form doesn't offer filters nothing.
+    expect(idsOf(await htmlOf(`${SORTED}?rating=Bogus`))).toHaveLength(5);
+  });
+
+  it("Filter by tag and completion", async () => {
+    const narrowed = await htmlOf(`${SORTED}?tag=Listing+Slow+Burn&tag_type=freeform&complete=yes`);
+
+    // Both spellings of the tag, complete only.
+    expect(idsOf(narrowed)).toEqual([31102, 31101]);
+    expect(idsOf(await htmlOf(`${SORTED}?tag=listing+slow+burn&complete=no`))).toEqual([31103]);
+    expect(idsOf(await htmlOf(`${SORTED}?complete=no`))).toEqual([31104, 31103]);
+    // The name as another type is another tag.
+    expect(await htmlOf(`${SORTED}?tag=Listing+Slow+Burn&tag_type=character`)).toContain(
+      "No works match",
+    );
+    // A type the form doesn't offer is its default, freeform.
+    expect(idsOf(await htmlOf(`${SORTED}?tag=Listing+Slow+Burn&tag_type=rating`))).toEqual([
+      31102, 31101, 31103,
+    ]);
+    // A tag that names nothing, and an unknown completion, filter nothing.
+    for (const ignored of ["tag=%21%21%21", "tag=a%00b", "tag=", "complete=maybe"]) {
+      expect(idsOf(await htmlOf(`${SORTED}?${ignored}`)), ignored).toHaveLength(5);
+    }
+  });
+});
+
 /** Every card on the listings with ratings and warnings this file seeded. */
 const allCards = async () => {
   const pages = await Promise.all(

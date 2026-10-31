@@ -9,6 +9,7 @@ import {
   liveTagSpellings,
   tagNameKeys,
   type ListedWork,
+  type ListingSort,
   type TagType,
 } from "@archive/db";
 import type { Context } from "hono";
@@ -31,12 +32,69 @@ const PAGES_AROUND = 2;
 const pageOf = (raw: string | undefined) =>
   raw !== undefined && /^\d+$/.test(raw) ? Math.max(1, Number(raw)) : 1;
 
+/** The sort and filters a listing is shown with: what its URL asks for, less anything unknown. */
+interface ListingQuery {
+  sort: ListingSort;
+  /** Absent for any rating. */
+  rating?: string;
+  /** Absent for complete works and works in progress alike. */
+  complete?: boolean;
+  /** A second tag the works must carry, as typed. Absent for none. */
+  tag?: { type: NarrowingType; name: string };
+}
+
+/** The types a listing can be narrowed by, the first the form's default. */
+const NARROWING_TYPES = ["freeform", "fandom", "relationship", "character"] as const;
+type NarrowingType = (typeof NARROWING_TYPES)[number];
+
+const COMPLETION: Record<string, boolean> = { yes: true, no: false };
+
+const SORTS: Record<ListingSort, string> = { updated: "Updated date", words: "Word count" };
+
+/** The ratings a work card shows; a work with none shows as "Not Rated". */
+const RATINGS = ["General Audiences", "Teen And Up Audiences", "Mature", "Explicit", "Not Rated"];
+
+const isSort = (raw: string | undefined): raw is ListingSort =>
+  raw !== undefined && Object.hasOwn(SORTS, raw);
+
+/** The query string's sort and filters. A value the form can't send falls back to the default. */
+function queryOf(raw: Record<string, string>): ListingQuery {
+  const tagType = NARROWING_TYPES.find((t) => t === raw.tag_type) ?? NARROWING_TYPES[0];
+  const complete = raw.complete === undefined ? undefined : COMPLETION[raw.complete];
+  return {
+    sort: isSort(raw.sort) ? raw.sort : "updated",
+    ...(raw.rating !== undefined && RATINGS.includes(raw.rating) ? { rating: raw.rating } : {}),
+    ...(complete === undefined ? {} : { complete }),
+    // A tag that names nothing (it folds to nothing, or holds a NUL) narrows nothing.
+    ...(raw.tag !== undefined && tagNameKeys(tagType, raw.tag).length > 0
+      ? { tag: { type: tagType, name: raw.tag } }
+      : {}),
+  };
+}
+
+/** The query's parameters that differ from the defaults, in a fixed order, then the page past the first. */
+function paramsOf(query: ListingQuery, page: number): string[][] {
+  return [
+    ...(query.sort === "updated" ? [] : [["sort", query.sort]]),
+    ...(query.rating === undefined ? [] : [["rating", query.rating]]),
+    ...(query.complete === undefined ? [] : [["complete", query.complete ? "yes" : "no"]]),
+    ...(query.tag === undefined
+      ? []
+      : [
+          ["tag", query.tag.name],
+          ["tag_type", query.tag.type],
+        ]),
+    ...(page === 1 ? [] : [["page", String(page)]]),
+  ];
+}
+
 export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
   const type = c.req.param("type");
   const name = c.req.param("name");
   if (type === undefined || name === undefined || !isTagType(type)) return c.notFound();
   if (tagNameKeys(type, name).length === 0) return c.notFound();
   const page = pageOf(c.req.query("page"));
+  const query = queryOf(c.req.query());
   // A few queries, one after another, on one connection.
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   try {
@@ -50,26 +108,26 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
         : c.notFound();
     }
     const { works, total } = await listLiveWorksByTag(db, type, name, {
+      ...query,
       page,
       pageSize: PAGE_SIZE,
     });
     const last = Math.max(1, Math.ceil(total / PAGE_SIZE));
     if (page > last) return c.notFound();
-    const href = (n: number) => listingHref(type, name, n);
-    return c.html(
-      layout(
-        heading,
-        `<ol class="work-list" role="list">\n${works.map(workCard).join("\n")}\n</ol>\n${pager(href, page, last)}`,
-      ),
-    );
+    const href = (n: number) => listingHref(type, name, paramsOf(query, n));
+    const list =
+      works.length === 0
+        ? "<p>No works match these filters.</p>"
+        : `<ol class="work-list" role="list">\n${works.map(workCard).join("\n")}\n</ol>`;
+    return c.html(layout(heading, `${list}\n${pager(href, page, last)}`));
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }
 }
 
-/** The listing's URL for page `n`, escaped for an attribute. Page 1 names no page. */
-function listingHref(type: TagType, name: string, n: number): string {
-  const query = new URLSearchParams(n === 1 ? [] : [["page", String(n)]]).toString();
+/** The listing's URL with these parameters, escaped for an attribute. */
+function listingHref(type: TagType, name: string, params: string[][]): string {
+  const query = new URLSearchParams(params).toString();
   return escapeHtml(tagHref(type, name) + (query ? `?${query}` : ""));
 }
 
