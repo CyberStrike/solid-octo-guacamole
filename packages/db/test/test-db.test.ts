@@ -1,3 +1,4 @@
+import net from "node:net";
 import { sql } from "kysely";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -77,4 +78,129 @@ describe("createTestDb", () => {
       await Promise.all(clients.map((c) => c.end()));
     }
   });
+
+  it("holds other clients until a transaction ends", async () => {
+    const [holder, other] = await Promise.all([client(), client()]);
+    try {
+      await holder.query("begin");
+      await holder.query("insert into client_turns (n) values ($1)", [-1]);
+      let settled = false;
+      const count = other
+        .query<{ count: number }>("select count(*)::int as count from client_turns where n = -1")
+        .finally(() => (settled = true));
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(settled).toBe(false);
+      await holder.query("rollback");
+
+      expect((await count).rows).toEqual([{ count: 0 }]);
+    } finally {
+      await Promise.all([holder.end(), other.end()]);
+    }
+  });
+
+  it("refuses SSL, and still serves the next client", async () => {
+    const ssl = new pg.Client({ connectionString: t.connectionString, ssl: true });
+    await expect(ssl.connect()).rejects.toThrow("The server does not support SSL connections");
+
+    const c = await client();
+    try {
+      expect((await c.query("select 1 as one")).rows).toEqual([{ one: 1 }]);
+    } finally {
+      await c.end();
+    }
+  });
+
+  it("frees the database when a client drops inside a transaction", async () => {
+    const dropped = await rawClient();
+    await dropped.query("begin");
+    await dropped.query("insert into client_turns (n) values (-2)");
+    dropped.socket.destroy();
+
+    const c = await client();
+    try {
+      const { rows } = await c.query(
+        "select count(*)::int as count from client_turns where n = -2",
+      );
+      expect(rows).toEqual([{ count: 0 }]);
+    } finally {
+      await c.end();
+    }
+  });
+
+  it("frees the database when a client drops part-way through a query", async () => {
+    const dropped = await rawClient();
+    // A Parse with no Sync after it: the query's cycle is open when the client goes.
+    await dropped.parseOnly("select 1");
+    // Long enough for the server to take the Parse before the client goes.
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    dropped.socket.destroy();
+
+    const c = await client();
+    try {
+      expect((await c.query("select $1::int as n", [7])).rows).toEqual([{ n: 7 }]);
+    } finally {
+      await c.end();
+    }
+  });
 });
+
+describe("createTestDb's close", () => {
+  it("resolves with clients still connected, and stops listening", async () => {
+    const other = await createTestDb({ migrate: false, maxConnections: 4 });
+    const c = new pg.Client({ connectionString: other.connectionString });
+    await c.connect();
+    c.on("error", () => {});
+
+    await other.close();
+
+    const late = new pg.Client({ connectionString: other.connectionString });
+    await expect(late.connect()).rejects.toThrow("ECONNREFUSED");
+  });
+});
+
+/**
+ * A client that speaks the simple query protocol over a bare socket, so a test can
+ * drop it at any point. Each `query` resolves at the server's ReadyForQuery.
+ */
+async function rawClient() {
+  const { hostname, port } = new URL(t.connectionString);
+  const socket = net.connect(Number(port), hostname);
+  let received = Buffer.alloc(0);
+  let ready = () => {};
+  socket.on("data", (chunk) => {
+    received = Buffer.concat([received, chunk]);
+    // Each server message: a type byte, then an int32 length that counts itself.
+    while (received.length >= 5 && received.length >= 1 + received.readInt32BE(1)) {
+      const type = received[0];
+      received = received.subarray(1 + received.readInt32BE(1));
+      if (type === 0x5a) ready();
+    }
+  });
+  const send = (bytes: Buffer) =>
+    new Promise<void>((resolve) => {
+      ready = resolve;
+      socket.write(bytes);
+    });
+  const message = (type: string, body: Buffer) => {
+    const head = Buffer.alloc(5);
+    head.write(type, 0);
+    head.writeInt32BE(4 + body.length, 1);
+    return Buffer.concat([head, body]);
+  };
+  const params = Buffer.from("user\0postgres\0database\0postgres\0\0");
+  const startup = Buffer.alloc(8);
+  startup.writeInt32BE(8 + params.length, 0);
+  startup.writeInt32BE(196608, 4);
+  await send(Buffer.concat([startup, params]));
+  return {
+    socket,
+    query: (text: string) => send(message("Q", Buffer.from(`${text}\0`))),
+    /** Sends a Parse of `text` on the unnamed statement, with no Sync to end it. */
+    parseOnly: (text: string) =>
+      new Promise<void>((resolve) => {
+        // The server answers nothing before a Sync or Flush, so there is no reply to await.
+        socket.write(message("P", Buffer.from(`\0${text}\0\0\0`)), () => resolve());
+      }),
+  };
+}
