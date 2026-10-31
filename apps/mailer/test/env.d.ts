@@ -3,5 +3,6 @@ declare namespace Cloudflare {
   interface Env {
     RESEND_API_KEY: string;
     MAIL_FROM: string;
+    BULK_INTERVAL_SECONDS: string;
   }
 }

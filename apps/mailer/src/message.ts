@@ -13,7 +13,17 @@ export interface WaitlistConfirmEmail {
   url: string;
 }
 
-export type EmailMessage = SignInEmail | WaitlistConfirmEmail;
+/**
+ * The wait list's launch email, on the email-bulk queue only. `url` is the one-click
+ * unsubscribe link holding the address's token (ARCHITECTURE, Wait list).
+ */
+export interface WaitlistLaunchEmail {
+  kind: "waitlist-launch";
+  to: string;
+  url: string;
+}
+
+export type EmailMessage = SignInEmail | WaitlistConfirmEmail | WaitlistLaunchEmail;
 
 const SITE = "https://rarepair.fans";
 const MAX_URL = 2048;
@@ -23,6 +33,7 @@ const MAX_URL = 2048;
 const LINK_PATHS: Record<EmailMessage["kind"], string> = {
   "sign-in": "/login/confirm",
   "waitlist-confirm": "/waitlist/confirm",
+  "waitlist-launch": "/waitlist/unsubscribe",
 };
 
 /**
@@ -47,15 +58,15 @@ export function parseMessage(body: unknown): EmailMessage | null {
   // SAFETY: body is a non-null object, so reading named properties off it is safe; each value
   // is checked below.
   const { kind, to, url } = body as Record<string, unknown>;
-  if (kind !== "sign-in" && kind !== "waitlist-confirm") return null;
+  if (kind !== "sign-in" && kind !== "waitlist-confirm" && kind !== "waitlist-launch") return null;
   if (typeof to !== "string" || !isSendableAddress(to)) return null;
   if (typeof url !== "string" || url.length > MAX_URL) return null;
   // The kind's own page on the site, with no user info to disguise the host and no fragment.
   const link = URL.parse(url);
   if (link === null || link.origin !== SITE || link.pathname !== LINK_PATHS[kind]) return null;
   if (link.username !== "" || link.password !== "" || link.href.includes("#")) return null;
-  // A wait list link without its token could confirm nothing, and needs nothing more.
-  if (kind === "waitlist-confirm" && !WAITLIST_QUERY.test(link.search)) return null;
+  // A wait list link without its token could act on nothing, and needs nothing more.
+  if (kind !== "sign-in" && !WAITLIST_QUERY.test(link.search)) return null;
   // The parsed href, not the raw string: parsing drops line breaks that would add lines to the email.
   return { kind, to, url: link.href };
 }

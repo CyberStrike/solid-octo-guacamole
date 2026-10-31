@@ -1,5 +1,6 @@
 import { deliver } from "./deliver";
-import { parseMessage } from "./message";
+import { pace, bulkIntervalMs } from "./pace";
+import { BULK_QUEUE, parseForQueue } from "./queues";
 import { render } from "./render";
 import { resendSender } from "./resend";
 import type { OutgoingEmail } from "./sender";
@@ -7,6 +8,8 @@ import type { OutgoingEmail } from "./sender";
 export interface Env {
   RESEND_API_KEY: string;
   MAIL_FROM: string;
+  /** Seconds between email-bulk batches (wrangler.jsonc vars). */
+  BULK_INTERVAL_SECONDS?: string;
 }
 
 export default {
@@ -14,7 +17,7 @@ export default {
     const valid: Message[] = [];
     const emails: OutgoingEmail[] = [];
     for (const message of batch.messages) {
-      const parsed = parseMessage(message.body);
+      const parsed = parseForQueue(batch.queue, message.body);
       if (parsed === null) {
         message.ack();
         continue;
@@ -29,6 +32,7 @@ export default {
     if (invalid > 0) console.warn({ event: "email.invalid", count: invalid });
     if (emails.length === 0) return;
 
+    const startedAt = Date.now();
     // Only Resend for now: the failover provider is still to be chosen.
     const { sender, result } = await deliver(emails, [resendSender(env.RESEND_API_KEY)]);
     const line = { event: "email.send", provider: sender, count: emails.length };
@@ -39,6 +43,17 @@ export default {
     for (const message of valid) {
       if (result.outcome === "sent") message.ack();
       else message.retry();
+    }
+
+    // email-bulk only: hold the invocation until the interval has passed, so the next batch
+    // starts no sooner. A wait on that queue never holds up `email`, a consumer of its own.
+    if (batch.queue === BULK_QUEUE) {
+      await pace(
+        startedAt,
+        bulkIntervalMs(env.BULK_INTERVAL_SECONDS),
+        Date.now,
+        (ms) => new Promise((done) => setTimeout(done, ms)),
+      );
     }
   },
 } satisfies ExportedHandler<Env>;
