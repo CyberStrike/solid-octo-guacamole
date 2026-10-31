@@ -41,6 +41,9 @@ export async function saveWork(
 ): Promise<void> {
   const ao3WorkId = workIdOf(work);
   if (work.chapters.length === 0) throw new SaveRejected("no_chapters");
+  // Refused before anything is written, so no fragments or original copy are left of a
+  // known work's upload. The transaction checks again, for two first uploads at once.
+  if (await workExists(deps.db, ao3WorkId)) throw new SaveRejected("work_exists");
   const prefix = `works/${ao3WorkId}/${lease.id}/`;
   const chapters = work.chapters.map((c) => ({ ...c, key: `${prefix}${c.n}.html` }));
   await inPool(chapters, async (c) => {
@@ -57,11 +60,23 @@ export async function saveWork(
       .execute((trx) => writeRows(trx, lease, work, ao3WorkId, prefix, chapters));
   } catch (error) {
     const state = sqlState(error);
-    // Class 22 (data exception) and 23 (integrity constraint): the file's own data broke a
-    // rule, and will again. Anything else, such as a lost connection, is worth a retry.
-    if (state !== null && /^2[23]/.test(state)) throw new SaveRejected(`save_rejected_${state}`);
+    // Class 22 (data exception), 23 (integrity constraint) and 54 (program limit, such as an
+    // index row too large): the file's own data broke a rule, and will again. Anything else,
+    // such as a lost connection, is worth a retry.
+    if (state !== null && /^(22|23|54)/.test(state)) {
+      throw new SaveRejected(`save_rejected_${state}`);
+    }
     throw error;
   }
+}
+
+async function workExists(db: Kysely<Database>, ao3WorkId: number): Promise<boolean> {
+  const row = await db
+    .selectFrom("works")
+    .select("id")
+    .where("ao3_work_id", "=", ao3WorkId)
+    .executeTakeFirst();
+  return row !== undefined;
 }
 
 /** The work's rows, in one transaction. The upload goes `live` with it, last. */
@@ -75,8 +90,8 @@ async function writeRows(
 ): Promise<void> {
   const total = int4OrNull(work.stats.chapters.total, 1);
   const words = int4OrNull(work.stats.words ?? sum(work.chapters.map((c) => c.words)), 0);
-  // First, so a work someone already uploaded is found before anything is written. Later
-  // uploads of a known work are I4's (#33): until then the upload is refused.
+  // First, so a work another job created since the check above is found before anything else
+  // is written. Later uploads of a known work are I4's (#33): until then they are refused.
   const row = await trx
     .insertInto("works")
     .values({
@@ -255,10 +270,20 @@ function uniqueBy<T>(items: T[], key: (item: T) => string): T[] {
 
 /** Runs `fn` on each item, at most `PUT_POOL` at once. */
 async function inPool<T>(items: T[], fn: (item: T) => Promise<void>): Promise<void> {
-  // One iterator shared by the workers: each takes the next item when it is free.
+  // One iterator shared by the workers: each takes the next item when it is free. After a
+  // failure none takes another, so a job R2 is failing stops sending writes.
   const queue = items.values();
+  let failed = false;
   const worker = async () => {
-    for (const item of queue) await fn(item);
+    for (const item of queue) {
+      if (failed) return;
+      try {
+        await fn(item);
+      } catch (error) {
+        failed = true;
+        throw error;
+      }
+    }
   };
   await Promise.all(Array.from({ length: Math.min(PUT_POOL, items.length) }, worker));
 }

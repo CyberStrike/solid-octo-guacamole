@@ -164,6 +164,9 @@ describe("04-ingest-job-lifecycle", () => {
     const live = await liveWork(existing.ao3WorkId);
     expect(live?.chapters.map((c) => c.r2_key)).toEqual(existing.chapterKeys);
     expect((await savedRows(existing.ao3WorkId, id)).versions).toEqual([]);
+    // Refused before R2: nothing of the upload is kept.
+    expect(await bucketKeys(`works/${existing.ao3WorkId}/${id}/`)).toEqual([]);
+    expect(await bucketKeys(`originals/${id}`)).toEqual([]);
     // Later uploads of a known work are I4's (#33): until then this one is refused.
     const row = await uploadRow(id);
     expect(row.status).toBe("parse_failed");
@@ -212,6 +215,23 @@ describe("04-ingest-job-lifecycle", () => {
       expect(result.explicitAcks).toEqual(["msg-0"]);
       expect(await bucketKeys(`originals/${id}`)).toEqual([]);
     }
+  });
+
+  it("records a value over a database limit at once", async () => {
+    // A tag too long for its index (random hex, so compression can't shrink it under the limit).
+    const huge = Array.from({ length: 250 }, () => crypto.randomUUID()).join("");
+    const work = parsedWork({ freeforms: [huge] });
+    const id = await pendingUpload(ao3Epub({ workId: Number(work.ao3WorkId) }));
+    const { handler } = watchedWorker({ process: async () => work });
+
+    const result = await deliver([{ upload_id: id }], { handler });
+
+    expect(await uploadRow(id)).toMatchObject({
+      status: "parse_failed",
+      error_stage: "save",
+      error: "save_rejected_54000",
+    });
+    expect(result.explicitAcks).toEqual(["msg-0"]);
   });
 
   it("Original file is kept", async () => {
