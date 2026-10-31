@@ -125,6 +125,37 @@ describe("11-reader-and-csp", () => {
     }
   });
 
+  it("Chapter select works without JS", async () => {
+    const html = await htmlOf(chapterUrl(W, 3));
+    const forms = [...html.matchAll(/<form\b([^>]*)>([\s\S]*?)<\/form>/g)].filter(([, , inner]) =>
+      inner.includes("<select"),
+    );
+    expect(forms).toHaveLength(2);
+    for (const [, attrs, inner] of forms) {
+      // What a browser does with JavaScript off: picks option 5 and submits the form.
+      const action = attrs.match(/action="([^"]*)"/)?.[1] ?? "";
+      const method = attrs.match(/method="([^"]*)"/)?.[1] ?? "get";
+      const name = inner.match(/<select\b[^>]*name="([^"]*)"/)?.[1] ?? "";
+      expect(method.toLowerCase()).toBe("get");
+      expect(inner).toMatch(/<button\b[^>]*type="submit"/);
+      const url = new URL(action, new URL(chapterUrl(W, 3), "https://rarepair.fans"));
+      url.search = new URLSearchParams({ [name]: "5" }).toString();
+
+      const res = await fetchW(url.pathname + url.search);
+      expect(res.status).toBeGreaterThanOrEqual(301);
+      expect(res.status).toBeLessThanOrEqual(308);
+      expect(res.headers.get("location")).toBe(chapterUrl(W, 5));
+      const chapter5 = await htmlOf(res.headers.get("location") ?? "");
+      expect(articleOf(chapter5)).toContain("W-FIVE-TEXT");
+    }
+    // The Location is made from numbers only: anything else is not found, never a redirect.
+    for (const query of ["", "?n=", "?n=05", "?n=5x", "?n=//evil.example", "?n=%2F%2Fevil"]) {
+      const res = await fetchW(`/works/${W}/chapters${query}`);
+      expect(res.status, query).toBe(404);
+      expect(res.headers.get("location"), query).toBeNull();
+    }
+  });
+
   it("First chapter has no previous link", async () => {
     const html = await htmlOf(chapterUrl(W, 1));
     expect(html).not.toMatch(/rel="prev"|>Previous/i);

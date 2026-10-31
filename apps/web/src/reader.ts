@@ -60,6 +60,18 @@ ${nav("bottom")}`,
   );
 }
 
+/**
+ * The chapter select's target: `/works/:id/chapters?n=5` goes to chapter 5. The
+ * Location is built from the two validated numbers, never from the query text; a
+ * chapter past the last is the chapter page's own 404.
+ */
+export function jumpToChapter(c: ReaderContext) {
+  const id = positiveInt(c.req.param("id"));
+  const n = positiveInt(c.req.query("n"));
+  if (id === null || n === null) return c.notFound();
+  return c.redirect(chapterUrl(id, n), 303);
+}
+
 /** A chapter's URL, from numbers only. */
 const chapterUrl = (id: number, n: number) => `/works/${id}/chapters/${n}`;
 
