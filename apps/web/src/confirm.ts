@@ -50,7 +50,15 @@ export async function confirmSignIn(c: ConfirmContext) {
       headers: c.req.raw.headers,
       asResponse: true,
     });
-    return answerVerified(verified) ?? c.html(signInFailedPage(), 500);
+    const answer = answerVerified(verified);
+    if (answer !== null) return answer;
+    // Better Auth's own logger is off (auth.ts), so say what kind of fault it was:
+    // its status and error code, never the address, the token or the link.
+    const code = URL.parse(verified.headers.get("location") ?? "")?.searchParams.get("error");
+    console.error(
+      `POST /login/confirm: sign-in failed, ${verified.status} ${code?.replace(/[^\w-]/g, "").slice(0, 64) ?? ""}`,
+    );
+    return c.html(signInFailedPage(), 500);
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }

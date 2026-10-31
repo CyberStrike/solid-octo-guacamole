@@ -27,7 +27,8 @@ export function makeAuth(env: Bindings, db: Kysely<Database>) {
     database: { db, type: "postgres" },
     telemetry: { enabled: false },
     // Its logger prints a caught error whole, and one from Postgres can quote the row,
-    // an address included. What it would log is thrown on to app.onError, which logs the name.
+    // an address included. Our routes log what failed themselves: app.onError the
+    // name of a thrown error, the confirm route a refused sign-in's code.
     logger: { disabled: true },
     // Counters in Postgres, not in this isolate's memory. Only `auth.handler`
     // requests are counted, so `auth.api` calls from our routes never are: their

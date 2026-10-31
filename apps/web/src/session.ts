@@ -11,9 +11,11 @@ export type SessionVariables = { session: Session | null };
 
 /**
  * Reads the session cookie and sets `c.var.session`: the user and their session,
- * or null when signed out. It only reads: a page that needs an account decides
- * what to do without one. Better Auth's default lifetime holds (seven days, extended
- * once a day of use), and an extension comes back as a new cookie, passed on here.
+ * or null when signed out. It never redirects or refuses: a page that needs an
+ * account decides what to do without one. Better Auth's default lifetime holds
+ * (seven days, extended once a day of use). The lookup can write: an extension
+ * updates the session row and comes back as a new cookie, passed on here, and an
+ * expired session's row is deleted.
  */
 export const sessionMiddleware: MiddlewareHandler<{
   Bindings: Bindings;
