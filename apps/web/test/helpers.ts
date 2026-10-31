@@ -104,9 +104,9 @@ export async function signIn(
   email: string,
   { next = "/", acceptTerms: accept = false }: { next?: string; acceptTerms?: boolean } = {},
 ): Promise<string> {
-  const before = (await deliveredEmails()).map(parseMessage).filter((e) => e?.to === email);
+  const before = (await emailsTo(email, { atLeast: 0 })).length;
   expect((await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN })).status).toBe(200);
-  const sent = await emailsTo(email, { atLeast: before.length + 1 });
+  const sent = await emailsTo(email, { atLeast: before + 1 });
   const token = new URL(sent.at(-1)!.url).searchParams.get("token")!;
   const res = await postLogin({ token, next }, { url: "/login/confirm" });
   expect(res.status).toBe(303);

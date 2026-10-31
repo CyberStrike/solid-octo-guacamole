@@ -7,8 +7,8 @@ import type { Context, MiddlewareHandler } from "hono";
 import type { Bindings } from "./env";
 import { readForm } from "./login";
 import { forbiddenPage, welcomeTermsPage } from "./pages";
-import type { SessionVariables } from "./session";
-import { isSameOrigin, safeNext } from "./signin";
+import { redirectCarryingNext, type SessionVariables } from "./session";
+import { isSameOrigin, safeNext, SITE } from "./signin";
 
 /** The terms page itself. */
 export const WELCOME_TERMS = "/welcome/terms";
@@ -36,10 +36,8 @@ export const isTermsExempt = (path: string) =>
 
 /**
  * Sends a signed-in account whose `terms_accepted_at` is empty to the terms page,
- * whatever the method: a GET or HEAD with a 302 carrying the page as `next`, any
- * other with a 303 and no `next`, since a form post is no page to come back to.
- * Runs after the session middleware; signed-out visitors and accepted accounts
- * pass untouched.
+ * whatever the method, as `redirectCarryingNext` does. Runs after the session
+ * middleware; signed-out visitors and accepted accounts pass untouched.
  */
 export const termsGate: MiddlewareHandler<{ Variables: SessionVariables }> = async (c, next) => {
   const user = c.var.session?.user;
@@ -48,10 +46,7 @@ export const termsGate: MiddlewareHandler<{ Variables: SessionVariables }> = asy
   }
   // Signed in: never cached shared (#108).
   c.header("Cache-Control", "no-store");
-  if (c.req.method !== "GET" && c.req.method !== "HEAD") return c.redirect(WELCOME_TERMS, 303);
-  const url = new URL(c.req.url);
-  const query = new URLSearchParams({ next: safeNext(url.pathname + url.search) });
-  return c.redirect(`${WELCOME_TERMS}?${query.toString()}`, 302);
+  return redirectCarryingNext(c, WELCOME_TERMS);
 };
 
 type TermsContext = Context<{ Bindings: Bindings; Variables: SessionVariables }>;
@@ -62,7 +57,7 @@ type TermsContext = Context<{ Bindings: Bindings; Variables: SessionVariables }>
  */
 function continueTo(next: string | null): string {
   const path = safeNext(next);
-  return path === WELCOME_TERMS || path.startsWith(`${WELCOME_TERMS}?`) ? "/" : path;
+  return new URL(path, SITE).pathname === WELCOME_TERMS ? "/" : path;
 }
 
 /**
@@ -84,7 +79,7 @@ export function showTerms(c: TermsContext) {
 export async function acceptTerms(c: TermsContext) {
   if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
   // A body too large to be our form is not read; accepting needs nothing from it.
-  const form = (await readForm(c.req.raw)) ?? new URLSearchParams();
+  const next = (await readForm(c.req.raw))?.get("next") ?? null;
   const user = c.var.session?.user;
   if (user !== undefined && user.termsAcceptedAt == null) {
     const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
@@ -101,5 +96,5 @@ export async function acceptTerms(c: TermsContext) {
     }
   }
   c.header("Cache-Control", "no-store");
-  return c.redirect(continueTo(form.get("next")), 303);
+  return c.redirect(continueTo(next), 303);
 }

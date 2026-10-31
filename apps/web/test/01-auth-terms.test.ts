@@ -49,6 +49,10 @@ const termsAcceptedAt = async (email: string) =>
 /** Where a redirect goes, as a URL on the site. */
 const locationOf = (res: Response) => new URL(res.headers.get("location") ?? "", BASE);
 
+/** The `next` the terms page's form carries, as it stands in the markup. */
+const hiddenNextOf = (html: string) =>
+  html.match(/<input type="hidden" name="next" value="([^"]*)">/)?.[1];
+
 /** Shows `res` sends the account to the terms page, to come back to `next`. */
 function expectTermsRedirect(res: Response, next: string) {
   expect(res.status).toBe(302);
@@ -67,7 +71,7 @@ describe("01-auth-magic-link", () => {
     expectTermsRedirect(gated, WORK_PAGE);
     // The terms page, as the redirect opens it, carries the work page on.
     const page = await (await get(gated.headers.get("location")!, cookie)).text();
-    const next = page.match(/<input type="hidden" name="next" value="([^"]*)">/)![1]!;
+    const next = hiddenNextOf(page)!;
     expect(next).toBe(WORK_PAGE);
     expect(await termsAcceptedAt(email)).toBeNull();
 
@@ -203,12 +207,10 @@ describe("01-auth-magic-link", () => {
 
   it("The terms page keeps only a same-site next, escaped", async () => {
     const cookie = await signIn("terms-page-next@example.test");
-    const hiddenNext = async (next: string) => {
-      const html = await (
-        await get(`/welcome/terms?next=${encodeURIComponent(next)}`, cookie)
-      ).text();
-      return html.match(/<input type="hidden" name="next" value="([^"]*)">/)?.[1];
-    };
+    const hiddenNext = async (next: string) =>
+      hiddenNextOf(
+        await (await get(`/welcome/terms?next=${encodeURIComponent(next)}`, cookie)).text(),
+      );
 
     for (const next of ["https://evil.example/", "//evil.example", "/\\evil.example", ""]) {
       expect(await hiddenNext(next), next).toBe("/");

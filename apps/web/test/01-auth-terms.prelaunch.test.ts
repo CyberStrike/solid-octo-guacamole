@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acceptTerms, fetchW, signIn } from "./helpers";
+import { acceptTerms, BASE, fetchW, signIn } from "./helpers";
 
 // Runs in the "prelaunch" project, with PRELAUNCH on as wrangler.jsonc deploys it.
 // The terms gate runs after the pre-launch redirect, so a closed page still goes to
@@ -21,9 +21,9 @@ describe("01-auth-magic-link before launch", () => {
     // An open page that isn't exempt goes to the terms page.
     const about = await get("/about", cookie);
     expect(about.status).toBe(302);
-    expect(new URL(about.headers.get("location")!, "https://rarepair.fans").pathname).toBe(
-      "/welcome/terms",
-    );
+    const location = new URL(about.headers.get("location")!, BASE);
+    expect(location.pathname).toBe("/welcome/terms");
+    expect(location.searchParams.get("next")).toBe("/about");
 
     await acceptTerms(cookie);
     expect((await get("/about", cookie)).status).toBe(200);

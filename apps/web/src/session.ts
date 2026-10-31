@@ -1,5 +1,5 @@
 import { createDb } from "@archive/db";
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { getCookie } from "hono/cookie";
 import { makeAuth, SESSION_COOKIE } from "./auth";
 import type { Bindings } from "./env";
@@ -50,19 +50,21 @@ export const sessionMiddleware: MiddlewareHandler<{
 };
 
 /**
- * For a route that needs an account, after `sessionMiddleware`. Signed out, a GET
- * or HEAD is sent to sign in with a 302, carrying the page as `next`; any other
- * method gets a 303 to `/login` with no `next`, since a form post is no page to
- * come back to. A route that must answer a script with 401 instead checks
- * `c.var.session` itself.
+ * Sends the request to `target` before its page: a GET or HEAD with a 302 carrying
+ * the page as `next`, reduced to a same-site path; any other method with a 303 and
+ * no `next`, since a form post is no page to come back to.
  */
-export const requireSignIn: MiddlewareHandler<{ Variables: SessionVariables }> = async (
-  c,
-  next,
-) => {
-  if (c.var.session != null) return next();
-  if (c.req.method !== "GET" && c.req.method !== "HEAD") return c.redirect("/login", 303);
+export function redirectCarryingNext(c: Context, target: string) {
+  if (c.req.method !== "GET" && c.req.method !== "HEAD") return c.redirect(target, 303);
   const url = new URL(c.req.url);
   const query = new URLSearchParams({ next: safeNext(url.pathname + url.search) });
-  return c.redirect(`/login?${query.toString()}`, 302);
-};
+  return c.redirect(`${target}?${query.toString()}`, 302);
+}
+
+/**
+ * For a route that needs an account, after `sessionMiddleware`: signed out, it is
+ * sent to sign in, as `redirectCarryingNext` does. A route that must answer a
+ * script with 401 instead checks `c.var.session` itself.
+ */
+export const requireSignIn: MiddlewareHandler<{ Variables: SessionVariables }> = async (c, next) =>
+  c.var.session != null ? next() : redirectCarryingNext(c, "/login");
