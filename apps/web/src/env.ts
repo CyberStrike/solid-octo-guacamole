@@ -9,6 +9,8 @@ export type Bindings = {
   ASSETS: Fetcher;
   /** Neon Postgres. */
   HYPERDRIVE: Hyperdrive;
+  /** Chapter fragments, under works/ (ARCHITECTURE, Reading). */
+  BUCKET: R2Bucket;
   /** The queue apps/mailer sends from. */
   EMAIL: Queue<EmailMessage>;
   TURNSTILE_SECRET_KEY: string;
