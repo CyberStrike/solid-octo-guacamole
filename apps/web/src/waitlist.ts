@@ -78,9 +78,10 @@ async function claimConfirmation(
     .where("w.confirmed_at", "is", null)
     .where("w.confirm_count", "<", MAX_CONFIRMATIONS)
     .where("w.confirm_sent_at", "<", sql<Date>`now() - interval '1 hour'`)
-    .returning([
+    .returning((eb) => [
       "old.confirm_token_hash as hash",
-      "old.confirm_sent_at as sentAt",
+      // As text: a Date would drop the microseconds Postgres keeps.
+      eb.cast<string>("old.confirm_sent_at", "text").as("sentAt"),
       "old.confirm_count as count",
     ])
     .executeTakeFirst();
@@ -91,7 +92,7 @@ async function claimConfirmation(
       .updateTable("waitlist")
       .set({
         confirm_token_hash: previous.hash,
-        confirm_sent_at: previous.sentAt,
+        confirm_sent_at: sql<Date>`${previous.sentAt}::timestamptz`,
         confirm_count: previous.count,
       })
       .where("email", "=", email)
@@ -154,10 +155,11 @@ export async function joinWaitlist(c: WaitlistContext) {
         const url = `${SITE}/waitlist/confirm?token=${token}`;
         await c.env.EMAIL.send({ kind: "waitlist-confirm", to: email, url });
       } catch (error) {
-        await undo();
         // Its kind only: a queue error can name the address.
         const kind = error instanceof Error ? error.name : "unknown";
         console.error(`${c.req.method} ${c.req.path}: email not queued: ${kind}`);
+        // If this fails too, onError answers 500: the page below would be untrue.
+        await undo();
         return c.html(waitlistUnavailablePage(), 503);
       }
     }

@@ -431,7 +431,8 @@ describe("22-waitlist privacy", () => {
 
     // So joining again works at once, without waiting out the hour.
     expect((await join(email)).status).toBe(200);
-    expect(await emailsTo(email)).toHaveLength(1);
+    await emailsTo(email);
+    expect(await queuedFor(email)).toBe(1);
   });
 
   it("A resend whose email can't be queued leaves the row as it was", async () => {
@@ -439,7 +440,18 @@ describe("22-waitlist privacy", () => {
     expect((await join(email)).status).toBe(200);
     await emailsTo(email);
     await anHourPasses(email);
-    const before = (await rowOf(email))!;
+    // The time as Postgres keeps it, to the microsecond: a Date would round it.
+    const exactly = () =>
+      db
+        .selectFrom("waitlist")
+        .select((eb) => [
+          "confirm_token_hash",
+          "confirm_count",
+          eb.cast<string>("confirm_sent_at", "text").as("confirm_sent_at"),
+        ])
+        .where("email", "=", email)
+        .executeTakeFirst();
+    const before = await exactly();
     const { queue, sent } = refusingQueue();
 
     const { res } = await runLogged(
@@ -449,7 +461,7 @@ describe("22-waitlist privacy", () => {
 
     expect(sent.count).toBe(1);
     expect(res.status).toBe(503);
-    expect(await rowOf(email)).toEqual(before);
+    expect(await exactly()).toEqual(before);
   });
 });
 

@@ -99,7 +99,12 @@ describe("22-waitlist", () => {
     ]);
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]!.emails).toHaveLength(1);
+    // SAFETY: each email the mailer renders carries these fields.
+    const sent = calls[0]!.emails as { to: string; text: string }[];
+    expect(sent).toHaveLength(1);
+    // The one sent is the valid one.
+    expect(sent[0]!.to).toBe("joiner1@example.test");
+    expect(sent[0]!.text).toContain("token=join-1");
     expect(result.explicitAcks).toHaveLength(11);
     expect(result.retryMessages).toEqual([]);
   });
