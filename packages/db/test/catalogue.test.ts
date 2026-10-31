@@ -23,6 +23,7 @@ const expected = {
     language: { type: "text", nullable: true },
     words: { type: "int4", nullable: true },
     chapters_count: { type: "int4", nullable: false },
+    chapters_total: { type: "int4", nullable: true },
     complete: { type: "bool", nullable: false },
     published_at: { type: "timestamptz", nullable: true },
     updated_at: { type: "timestamptz", nullable: true },
@@ -36,12 +37,14 @@ const expected = {
     work_id: { type: "text", nullable: false },
     pseud: { type: "text", nullable: false },
     ao3_user: { type: "text", nullable: true },
+    position: { type: "int4", nullable: false },
   },
   work_versions: {
     id: { type: "text", nullable: false },
     work_id: { type: "text", nullable: false },
     upload_id: { type: "text", nullable: false },
     chapter_count: { type: "int4", nullable: false },
+    chapter_total: { type: "int4", nullable: true },
     r2_prefix: { type: "text", nullable: false },
     created_at: { type: "timestamptz", nullable: false },
     review_reasons: { type: "_text", nullable: false },
@@ -270,11 +273,14 @@ describe("packages/db catalogue constraints", () => {
 
   it("A work lists a pseud once", async () => {
     const work = await addWork(210);
-    const author = { work_id: work.id, pseud: "twice", ao3_user: null };
+    const author = { work_id: work.id, pseud: "twice", ao3_user: null, position: 0 };
     await t.db.insertInto("work_authors").values(author).execute();
-    await expect(t.db.insertInto("work_authors").values(author).execute()).rejects.toThrow(
-      /unique|duplicate key/i,
-    );
+    await expect(
+      t.db
+        .insertInto("work_authors")
+        .values({ ...author, position: 1 })
+        .execute(),
+    ).rejects.toThrow(/unique|duplicate key/i);
   });
 
   it("Co-authors may share a pseud name under different users", async () => {
@@ -282,15 +288,18 @@ describe("packages/db catalogue constraints", () => {
     await t.db
       .insertInto("work_authors")
       .values([
-        { work_id: work.id, pseud: "Sam", ao3_user: "alice" },
-        { work_id: work.id, pseud: "Sam", ao3_user: "bob" },
+        { work_id: work.id, pseud: "Sam", ao3_user: "alice", position: 0 },
+        { work_id: work.id, pseud: "Sam", ao3_user: "bob", position: 1 },
       ])
       .execute();
-    const anonymous = { work_id: work.id, pseud: "Anonymous", ao3_user: null };
+    const anonymous = { work_id: work.id, pseud: "Anonymous", ao3_user: null, position: 2 };
     await t.db.insertInto("work_authors").values(anonymous).execute();
-    await expect(t.db.insertInto("work_authors").values(anonymous).execute()).rejects.toThrow(
-      /unique|duplicate key/i,
-    );
+    await expect(
+      t.db
+        .insertInto("work_authors")
+        .values({ ...anonymous, position: 3 })
+        .execute(),
+    ).rejects.toThrow(/unique|duplicate key/i);
   });
 
   it("A work's tags can be renumbered in one statement", async () => {
@@ -352,7 +361,7 @@ describe("packages/db catalogue constraints", () => {
       .execute();
     await t.db
       .insertInto("work_authors")
-      .values({ work_id: work.id, pseud: "p", ao3_user: null })
+      .values({ work_id: work.id, pseud: "p", ao3_user: null, position: 0 })
       .execute();
     await t.db
       .insertInto("chapters")

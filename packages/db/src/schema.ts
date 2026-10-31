@@ -98,6 +98,8 @@ export interface WorkTable {
   language: string | null;
   words: number | null;
   chapters_count: number;
+  /** The planned total (AO3's y in x/y). NULL when unknown. */
+  chapters_total: number | null;
   complete: boolean;
   /** AO3's dates for the work, not the row's. */
   published_at: Timestamp | null;
@@ -118,6 +120,8 @@ export interface WorkAuthorTable {
   pseud: string;
   /** NULL for an anonymous work, or a byline with no user link. */
   ao3_user: string | null;
+  /** The author's place in the byline, from 0. Unique per work. */
+  position: number;
 }
 
 export interface WorkVersionTable {
@@ -125,6 +129,8 @@ export interface WorkVersionTable {
   work_id: string;
   upload_id: string;
   chapter_count: number;
+  /** The planned total as this version's preface gave it. NULL when unknown. */
+  chapter_total: number | null;
   /** `works/<ao3_work_id>/<upload_id>/`, with the trailing slash. */
   r2_prefix: string;
   created_at: CreatedTimestamp;
