@@ -393,6 +393,7 @@ describe("report form checks", () => {
       { headers: { origin: "https://evil.example", "sec-fetch-site": "cross-site" } },
     );
     expect(signedOut.status).toBe(403);
+    expect(signedOut.headers.get("cache-control")).toBe("no-store");
     expect(await reportsBy(email)).toEqual([]);
   });
 

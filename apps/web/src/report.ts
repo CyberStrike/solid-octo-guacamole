@@ -141,7 +141,8 @@ export async function showReportForm(c: ReportContext) {
   if (id === null) return c.notFound();
   const session = c.var.session;
   if (session === null) return c.redirect(signInFirst(id), 302);
-  const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
+  // Its queries run one after another, so one connection.
+  const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   try {
     const work = await liveWork(db, id);
     if (!work) return c.notFound();
@@ -157,7 +158,7 @@ export async function showReportForm(c: ReportContext) {
  * goes before the session middleware, so a cross-site post costs no session lookup.
  */
 export const sameOriginOnly: MiddlewareHandler = async (c, next) => {
-  if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
+  if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403, NO_STORE);
   await next();
 };
 
@@ -173,7 +174,8 @@ export async function submitReport(c: ReportContext) {
   if (session === null) return c.redirect(signInFirst(id), 303);
 
   const form = await readForm(c.req.raw, MAX_REPORT_BODY);
-  const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
+  // Its queries run one after another, so one connection.
+  const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   try {
     const work = await liveWork(db, id);
     if (!work) return c.notFound();
