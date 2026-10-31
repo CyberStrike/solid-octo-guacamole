@@ -1,11 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  getLiveWork,
-  getTagName,
-  insertUpload,
-  listLiveWorksByTag,
-  normalizeTagName,
-} from "../src/index";
+import { getLiveWork, insertUpload, listLiveWorksByTag, normalizeTagName } from "../src/index";
 import { seedWork } from "../src/seed";
 import { createTestDb, type TestDb } from "../src/testing";
 
@@ -83,16 +77,6 @@ describe("packages/db tag listing", () => {
     ]);
     const anonymous = works.find((w) => w.work.id === anon.workId);
     expect(anonymous?.authors).toEqual([{ pseud: "Anonymous", ao3_user: null }]);
-  });
-
-  it("A tag's name is the first of its spellings by code unit", async () => {
-    await seedWork(t.db, { tags: [{ type: "fandom", name: "listing heading" }] });
-    await seedWork(t.db, { tags: [{ type: "fandom", name: "Listing  Heading!" }] });
-    await seedWork(t.db, { tags: [{ type: "character", name: "A Listing Heading" }] });
-
-    expect(await getTagName(t.db, "fandom", "listing heading")).toBe("Listing  Heading!");
-    expect(await getTagName(t.db, "character", "listing heading")).toBeNull();
-    expect(await getTagName(t.db, "fandom", "!!!")).toBeNull();
   });
 
   it("A name with nothing left once folded lists no works", async () => {

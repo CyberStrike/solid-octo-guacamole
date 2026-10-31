@@ -10,7 +10,7 @@ import type {
   WorkTable,
   WorkVersionTable,
 } from "./schema";
-import { compareCodeUnits, normalizeTagName } from "./tags";
+import { normalizeTagName } from "./tags";
 
 /** A work's own fields, as a page shows them. */
 export type WorkSummary = Pick<
@@ -212,27 +212,6 @@ export async function listLiveWorksByTag(
       .sort((a, b) => a.position - b.position)
       .map(({ id, type, name, name_norm }) => ({ id, type, name, name_norm })),
   }));
-}
-
-/**
- * The name a listing of this tag goes by: of the stored spellings of this type
- * that match `name` under the tag rule, the first by code unit. Null when none do.
- */
-export async function getTagName(
-  db: Kysely<Database>,
-  type: TagType,
-  name: string,
-): Promise<string | null> {
-  const nameNorm = normalizeTagName(type, name);
-  if (nameNorm === "") return null;
-  const rows = await db
-    .selectFrom("tags")
-    .select("name")
-    .where("type", "=", type)
-    .where("name_norm", "=", nameNorm)
-    .execute();
-  // Sorted here: Postgres orders by collation, not by code unit.
-  return rows.map((r) => r.name).sort(compareCodeUnits)[0] ?? null;
 }
 
 /**

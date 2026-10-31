@@ -305,33 +305,57 @@ describe("14-browse-and-home tag listing URLs", () => {
     expect(cardOf(and, 30080)).toBe("");
   });
 
-  it("The heading is the first spelling by code unit", async () => {
+  it("The heading is the first spelling a live work uses, by code unit", async () => {
     await seedWork(db, { ao3WorkId: 30090, tags: [{ type: "fandom", name: "url heading" }] });
     await seedWork(db, { ao3WorkId: 30091, tags: [{ type: "fandom", name: "Url  Heading!" }] });
+    // First by code unit, but only a hidden work uses it: nothing of it is shown.
+    await seedWork(db, {
+      ao3WorkId: 30092,
+      status: "hidden",
+      hiddenCause: "reports",
+      tags: [{ type: "fandom", name: "URL HEADING" }],
+    });
 
     const html = await htmlOf("/tags/fandom/url%20heading");
 
     expect(html.match(/<h1>([^<]*)<\/h1>/g)).toEqual(["<h1>Url  Heading!</h1>"]);
+    expect(html).not.toContain("URL HEADING");
   });
 
-  it("A tag with no live works lists no works", async () => {
+  it("A tag with no live works lists no works, and shows nothing of the others", async () => {
     await seedWork(db, {
       ao3WorkId: 30100,
       status: "removed",
       tags: [{ type: "freeform", name: "Url Empty Freeform" }],
     });
+    await seedWork(db, {
+      ao3WorkId: 30101,
+      status: "hidden",
+      hiddenCause: "removal_request",
+      tags: [{ type: "freeform", name: "Url Hidden Freeform!" }],
+    });
 
-    const res = await fetchW("/tags/freeform/url%20empty%20freeform");
-    const html = await res.text();
+    // A tag only removed or hidden works use reads the same as one nobody has used.
+    for (const name of [
+      "url%20empty%20freeform",
+      "url%20hidden%20freeform",
+      "url%20never%20seeded",
+    ]) {
+      const res = await fetchW(`/tags/freeform/${name}`);
+      const html = await res.text();
 
-    expect(res.status).toBe(200);
-    expect(html).toContain("No works");
-    expect(html).not.toContain('class="work-card"');
+      expect(res.status, name).toBe(200);
+      expect(html.match(/<h1>([^<]*)<\/h1>/g), name).toEqual([
+        `<h1>${decodeURIComponent(name)}</h1>`,
+      ]);
+      expect(html).toContain("No works");
+      expect(html).not.toContain('class="work-card"');
+    }
   });
 
-  it("An unknown tag type, or a tag nobody has used, is not found", async () => {
+  it("An unknown tag type, or a name with nothing left once folded, is not found", async () => {
     expect((await fetchW("/tags/genre/harry%20potter")).status).toBe(404);
-    expect((await fetchW("/tags/fandom/url%20never%20seeded")).status).toBe(404);
+    expect((await fetchW("/tags/fandom/%21%21%21")).status).toBe(404);
   });
 
   it("A tag listing has the strict policy, no script and no cookie", async () => {

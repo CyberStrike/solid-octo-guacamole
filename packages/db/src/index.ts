@@ -6,7 +6,6 @@ export { TAG_TYPES } from "./schema";
 export { normalizePseud } from "./pseud";
 export {
   getLiveWork,
-  getTagName,
   listLiveWorksByTag,
   insertUpload,
   type ListedWork,

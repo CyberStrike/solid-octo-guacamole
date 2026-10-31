@@ -3,10 +3,11 @@
 // B2 adds paging, sorting, filters and caching.
 
 import {
+  compareCodeUnits,
   createDb,
-  getTagName,
   isTagType,
   listLiveWorksByTag,
+  normalizeTagName,
   type ListedWork,
   type TagType,
 } from "@archive/db";
@@ -21,16 +22,29 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
   const type = c.req.param("type");
   const name = c.req.param("name");
   if (type === undefined || name === undefined || !isTagType(type)) return c.notFound();
-  // One connection: the request's two queries run one after the other.
+  const nameNorm = normalizeTagName(type, name);
+  // A name of only punctuation folds to nothing, which names no tag.
+  if (nameNorm === "") return c.notFound();
+  // One query, on one connection.
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   try {
-    // The heading first: a tag nobody has used is not found.
-    const heading = await getTagName(db, type, name);
-    if (heading === null) return c.notFound();
-    return c.html(tagListingPage(heading, await listLiveWorksByTag(db, type, name)));
+    const works = await listLiveWorksByTag(db, type, nameNorm);
+    return c.html(tagListingPage(headingOf(works, type, nameNorm), works));
   } finally {
     c.executionCtx.waitUntil(db.destroy());
   }
+}
+
+/**
+ * The first spelling of the tag a listed work uses, by code unit. Only live
+ * works count: a hidden or removed work's spelling is never shown, so a tag
+ * only they use reads like one nobody has used, headed by its folded name.
+ */
+function headingOf(works: ListedWork[], type: TagType, nameNorm: string): string {
+  const spellings = works.flatMap((w) =>
+    w.tags.flatMap((t) => (t.type === type && t.name_norm === nameNorm ? [t.name] : [])),
+  );
+  return spellings.sort(compareCodeUnits)[0] ?? nameNorm;
 }
 
 const tagListingPage = (heading: string, works: ListedWork[]) =>
@@ -88,6 +102,10 @@ const stats = (work: ListedWork["work"]) =>
     .filter(Boolean)
     .join(" · ");
 
+/** A card line, or nothing when it would be empty. */
+const line = (className: string, html: string) =>
+  html ? `<p class="${className}">${html}</p>` : "";
+
 /** The six lines, in order: title and author, rating and warnings, fandoms, summary, tags, stats. */
 function workCard({ work, authors, tags }: ListedWork): string {
   const href = `/works/${work.ao3_work_id}`;
@@ -99,9 +117,9 @@ function workCard({ work, authors, tags }: ListedWork): string {
 <h2 class="card-title"><a href="${href}">${escapeHtml(work.title)}</a></h2>
 <p class="card-byline">by ${escapeHtml(authors.map((a) => a.pseud).join(", "))}</p>
 <p class="card-rating"><strong>${escapeHtml(rating.join(" · "))}</strong></p>
-<p class="card-fandoms">${tagLinks(ofType("fandom"))}</p>
+${line("card-fandoms", tagLinks(ofType("fandom")))}
 ${summary(work.summary_html, href)}
-<p class="card-tags">${cardTags(ofType("relationship"), ofType("character"), ofType("freeform").length)}</p>
+${line("card-tags", cardTags(ofType("relationship"), ofType("character"), ofType("freeform").length))}
 <p class="card-stats">${stats(work)}</p>
 </li>`;
 }

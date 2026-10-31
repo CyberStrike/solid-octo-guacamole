@@ -28,9 +28,11 @@ export interface TestDbOptions {
 }
 
 // Frontend messages after which the backend answers ReadyForQuery (Sync, Query,
-// FunctionCall, PasswordMessage) or closes (Terminate). Any other (Parse, Bind,
-// Describe, Execute, Close, Flush, CopyData...) is part-way through a cycle.
-const ENDS_CYCLE = new Set(["S", "Q", "F", "p", "X"]);
+// FunctionCall, PasswordMessage, and CopyDone or CopyFail after a COPY) or
+// closes (Terminate). Any other (Parse, Bind, Describe, Execute, Close, Flush,
+// CopyData) is part-way through a cycle. Nothing here uses COPY or SASL, so a
+// COPY inside a pipeline, or a SASL exchange, isn't kept whole.
+const ENDS_CYCLE = new Set(["S", "Q", "F", "p", "c", "f", "X"]);
 
 /**
  * PGlite that keeps each client's protocol cycle whole. pglite-socket 0.2.16
