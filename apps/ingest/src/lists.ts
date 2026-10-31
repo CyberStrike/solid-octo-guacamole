@@ -42,8 +42,9 @@ async function optedOut(db: Kysely<Database>, authors: ParsedWork["authors"]): P
 
 async function takenDown(db: Kysely<Database>, ao3WorkId: string): Promise<boolean> {
   const id = Number(ao3WorkId);
-  // `ao3_work_id` is an int4: any other ID has no work, so it is on no list.
-  if (!Number.isInteger(id) || id < 1 || id > MAX_INT4) return false;
+  // `ao3_work_id` is an int4 the schema doesn't bound below: an ID past it has no work, so it
+  // is on no list. The processor's ID is all digits, so it is never negative.
+  if (!Number.isInteger(id) || id < 0 || id > MAX_INT4) return false;
   const row = await db
     .selectFrom("takedowns")
     .innerJoin("works", "works.id", "takedowns.work_id")

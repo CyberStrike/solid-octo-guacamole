@@ -32,6 +32,14 @@ describe("17-reports-and-dmca", () => {
     expectNotOptedOut(await reuploadAfterNotice("live", TAKEDOWN_REMOVED));
   });
 
+  it("finds a takedown on AO3 work ID 0", async () => {
+    // The schema allows 0, so it can be listed like any ID. The only test seeding 0.
+    const seeded = await seededWork({ ao3WorkId: 0, status: "removed" });
+    await addTakedown(seeded.workId, TAKEDOWN_REMOVED);
+
+    expectOptedOut(await ingestEpub(0));
+  });
+
   it("finds no takedown for an AO3 work ID past int4", async () => {
     // No work can have it, so it is on no list, and Postgres is never asked about it.
     expectNotOptedOut(await ingestEpub(2_147_483_648));
