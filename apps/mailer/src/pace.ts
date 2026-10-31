@@ -6,12 +6,16 @@
 // Used when BULK_INTERVAL_SECONDS is missing or not a number: a misspelt setting must not turn
 // the pacing off.
 const DEFAULT_INTERVAL_MS = 10_000;
+const MAX_SECONDS = 300;
 
 /** The pause between bulk batches, in ms, from the BULK_INTERVAL_SECONDS var. */
 export function bulkIntervalMs(seconds: string | undefined): number {
   if (seconds === undefined || seconds.trim() === "") return DEFAULT_INTERVAL_MS;
   const value = Number(seconds);
-  return Number.isFinite(value) && value >= 0 ? value * 1000 : DEFAULT_INTERVAL_MS;
+  // An hour-long typo would outlast the invocation's wall-clock limit, so it is refused too.
+  return Number.isFinite(value) && value >= 0 && value <= MAX_SECONDS
+    ? value * 1000
+    : DEFAULT_INTERVAL_MS;
 }
 
 /** Waits out what is left of `intervalMs` since `startedAt`; nothing if the send was slower. */

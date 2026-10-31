@@ -54,7 +54,7 @@ describe("bulkIntervalMs", () => {
   });
 
   // A missing or misspelt setting must not turn the pacing off.
-  it.each([undefined, "", "soon", "-5", "NaN", "Infinity"])(
+  it.each([undefined, "", "soon", "-5", "NaN", "Infinity", "3600"])(
     "falls back to the default for %s",
     (value) => {
       expect(bulkIntervalMs(value)).toBe(10_000);

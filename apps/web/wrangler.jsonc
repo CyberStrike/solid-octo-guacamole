@@ -45,7 +45,9 @@
         "queue": "email-bulk-dlq",
         "max_batch_size": 100,
         "max_batch_timeout": 5,
-        "max_retries": 3,
+        // A database outage retries the batch for ten minutes before it is dropped.
+        "max_retries": 10,
+        "retry_delay": 60,
       },
     ],
   },
