@@ -14,7 +14,8 @@ describe("20-closed-links after launch", () => {
     const res = await fetchW("/no-such-page");
     expect(res.status).toBe(404);
     const html = await res.text();
-    expect(html).toContain('role="search"');
-    expect(html).not.toMatch(/\bdisabled\b/);
+    const form = html.match(/<form[^>]*role="search"[\s\S]*?<\/form>/)?.[0] ?? "";
+    expect(form).toContain('type="search"');
+    expect(form).not.toMatch(/\bdisabled\b/);
   });
 });

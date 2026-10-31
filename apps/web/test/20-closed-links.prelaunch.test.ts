@@ -31,8 +31,9 @@ describe("20-closed-links before launch", () => {
     expect(res.status).toBe(404);
     const html = await res.text();
     expect(html).toMatch(/<label[^>]*for="q"/);
-    expect(html).toMatch(/<input\b[^>]*\bdisabled\b/);
-    expect(html).toMatch(/<button\b[^>]*\bdisabled\b/);
+    const form = html.match(/<form[^>]*role="search"[\s\S]*?<\/form>/)?.[0] ?? "";
+    expect(form).toMatch(/<input\b[^>]*\bdisabled\b/);
+    expect(form).toMatch(/<button\b[^>]*\bdisabled\b/);
   });
 
   it("No new open path: /remove and /search still redirect to the coming-soon page", async () => {
