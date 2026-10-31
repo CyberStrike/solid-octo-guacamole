@@ -14,7 +14,8 @@
     "docs/**",
     "**/*.md",
     "**/*.html",
-    // Accepted output: a snapshot changes only with a reason.
+    // Accepted output: a snapshot changes only with a reason. oxfmt 0.75.0 doesn't format
+    // .snap files; this keeps a later version from starting to.
     "**/__snapshots__/**",
     // Merged migrations are history and are never edited.
     "packages/db/migrations/**",

@@ -10,11 +10,12 @@ import { configs as deslopConfigs } from "ai-deslop";
 
 export default defineConfig({
   jsPlugins: ["ai-deslop"],
-  // typeAware runs through oxlint-tsgolint, one program per workspace tsconfig.
+  // typeAware runs through oxlint-tsgolint, one program per tsconfig (each workspace's, and
+  // scripts/tsconfig.json). A file under none, such as this one, gets default options.
   options: deslopConfigs.recommended.options,
   rules: deslopConfigs.recommended.rules,
-  // The code paths .oxfmtrc.jsonc also ignores: keep the two in step. oxfmt's list adds the
-  // non-code files it would otherwise format.
+  // The code paths .oxfmtrc.jsonc also ignores: keep the two in step. oxfmt's list adds
+  // non-code files: prose, pages and snapshots.
   ignorePatterns: [
     // Reference code with its own lockfile, not a workspace.
     "spikes/**",
@@ -31,11 +32,11 @@ export default defineConfig({
       // and these functions are where that input is validated.
       files: ["packages/epub/src/package.ts"],
       rules: {
-        // child/attr/text take whatever node the parser produced and check it themselves.
+        // asArray, child, attr and text take whatever the parser produced and check it themselves.
         "deslop/no-unknown-parameters": "off",
         // typeof is how each reader checks a parser value before using it.
         "deslop/no-runtime-typeof": "off",
-        // XmlNode and OrderedNode are the parser's own open records; no schema exists to derive.
+        // XmlNode and OrderedNode type the parser's open records; no schema exists to derive.
         "deslop/no-unsafe-dictionary-type": "off",
       },
     },

@@ -16,7 +16,8 @@ const MAX_URL = 2048;
 // be sent, so retrying it would only keep an address in the queue longer.
 export function parseMessage(body: unknown): EmailMessage | null {
   if (typeof body !== "object" || body === null) return null;
-  // SAFETY: body is a non-null object, so its keys are strings; each value is checked below.
+  // SAFETY: body is a non-null object, so reading named properties off it is safe; each value
+  // is checked below.
   const { kind, to, url } = body as Record<string, unknown>;
   if (kind !== "sign-in") return null;
   // A bare address only: no display name, no list, at most 254 characters.

@@ -1,5 +1,6 @@
 {
-  // Not typechecked. It gives the type-aware lint rules the same strictness as the workspaces.
+  // Not typechecked. It gives the type-aware lint rules the workspaces' strict null checks
+  // and noUncheckedIndexedAccess.
   "compilerOptions": {
     "target": "ES2022",
     "module": "NodeNext",
