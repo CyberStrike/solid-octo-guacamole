@@ -1,5 +1,5 @@
 // The server half of a Turnstile check, shared by every form that has one:
-// sign-in, upload requests and removal requests (ARCHITECTURE, Surge controls).
+// sign-in, the wait list, upload requests and removal requests (ARCHITECTURE, Surge controls).
 // It takes everything site-specific as arguments, so each route passes its own.
 
 const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
