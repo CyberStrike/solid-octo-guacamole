@@ -106,14 +106,24 @@ describe("22-waitlist purge script", () => {
     expect(await count()).toBe(4);
   });
 
-  it("The wait list is deleted after the launch send: one waiting address is refused in the singular, and a bad lock timeout falls back", async () => {
+  it("The wait list is deleted after the launch send: one waiting address is refused in the singular", async () => {
     await seed({ email: "waiting@example.test" });
 
-    const result = await run({ lockTimeoutMs: Number.NaN });
+    const result = await run();
 
-    expect(result.error).toBeNull();
     expect(result.refused).toBe("1 confirmed address is still waiting for the launch send");
     expect(await count()).toBe(1);
+  });
+
+  it("The wait list is deleted after the launch send: a lock timeout that is not a finite number falls back to the default", async () => {
+    await seed({ email: "a@example.test", notifiedAgo: "3 days" });
+    for (const lockTimeoutMs of [Number.NaN, Number.POSITIVE_INFINITY, -5, 0]) {
+      await seed({ email: `w${lockTimeoutMs}@example.test`.replace(/[^\w@.]/g, "") });
+      const result = await run({ lockTimeoutMs });
+      expect(result.error, String(lockTimeoutMs)).toBeNull();
+      expect(result.refused, String(lockTimeoutMs)).not.toBeNull();
+    }
+    expect(await count()).toBe(5);
   });
 
   it("The wait list is deleted after the launch send: refuses while the last batch is under a day old", async () => {

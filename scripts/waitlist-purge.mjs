@@ -22,6 +22,8 @@ import pg from "pg";
 
 // How long the purge waits for a send's open claim before it gives up.
 const LOCK_TIMEOUT_MS = 10_000;
+// How long the open transaction may sit idle, holding the table lock, before the server ends it.
+const IDLE_TIMEOUT_MS = 60_000;
 
 // A pg error can carry a value, so only a code or a name is ever printed.
 const codeOf = (error) => {
@@ -70,11 +72,11 @@ export async function waitlistPurge({
     const lockMs = Number.isFinite(lockTimeoutMs)
       ? Math.max(1, Math.floor(lockTimeoutMs))
       : LOCK_TIMEOUT_MS;
-    // The lock is held to the commit: if the connection stalls, the server ends the
-    // transaction instead of leaving every join, confirm and unsubscribe write queued behind it.
-    await client.query(
-      `set local lock_timeout = ${lockMs}; set local statement_timeout = 60000; set local idle_in_transaction_session_timeout = 60000`,
-    );
+    await client.query(`set local lock_timeout = ${lockMs}`);
+    // The lock is held to the commit: if this process stalls between statements, the server
+    // ends the transaction instead of leaving every join, confirm and unsubscribe write queued
+    // behind it.
+    await client.query(`set local idle_in_transaction_session_timeout = ${IDLE_TIMEOUT_MS}`);
     // Waits for any open claim (a row write) and holds off new ones until this commits or
     // rolls back. Plain reads are not blocked.
     await client.query("lock table waitlist in exclusive mode");
