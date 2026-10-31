@@ -1,0 +1,242 @@
+import { createDb } from "@archive/db";
+import { putFragments, seedWork, type SeedChapter } from "@archive/db/seed";
+import { env } from "cloudflare:workers";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { STRICT, TURNSTILE, fetchW, nonceOf, withoutNonce } from "./helpers";
+
+// Every work here has an AO3 work ID in 21000-21999 and tags named r4-..., so no other
+// test file sharing the database sees them. Text is synthetic markers only.
+const W = 21001;
+const TITLE = `R4 <b>entire</b> & "work"`;
+const TITLE_ESCAPED = "R4 &lt;b&gt;entire&lt;/b&gt; &amp; &quot;work&quot;";
+const TAGS = [
+  { type: "rating" as const, name: "r4-General Audiences" },
+  { type: "fandom" as const, name: "r4-Fandom" },
+];
+
+// Work W's five chapters.
+const CHAPTERS: SeedChapter[] = [
+  { title: "R4 one", html: "<p>R4-W-1-TEXT</p>" },
+  { title: "R4 <i>two</i>", html: "<p>R4-W-2-TEXT</p>" },
+  // A chapter with no title of its own.
+  { title: " ", html: "<p>R4-W-3-TEXT</p>" },
+  // Test only: a script that got past the sanitizer, and a heading of the chapter's own.
+  {
+    title: "R4 four",
+    html: "<h1>R4-W-4-HEADING</h1><p>R4-W-4-TEXT</p><script>window.R4 = 1</script>",
+  },
+  { title: "R4 five", html: "<p>R4-W-5-TEXT</p>" },
+];
+
+/** Live, with review reasons no moderator has cleared. */
+const F = 21002;
+/** Live, with review reasons a moderator has cleared. */
+const CHECKED = 21003;
+/** No fragment in R2 at all. */
+const MISSING_FIRST = 21004;
+/** Chapters 1 and 2 in R2, chapter 3 not. */
+const MISSING_LATER = 21005;
+/** 60 chapters. */
+const LONG = 21006;
+/** One chapter of several MB, multi-byte characters throughout. */
+const BIG = 21007;
+const BIG_HTML = `<p>${"é🙂ü".repeat(500_000)}</p>`;
+
+const db = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 });
+
+// R2 writes go in beforeAll: isolated storage undoes those made inside an `it`.
+beforeAll(async () => {
+  const w = await seedWork(db, { ao3WorkId: W, title: TITLE, tags: TAGS, chapters: CHAPTERS });
+  await putFragments(env.BUCKET, w.fragments);
+  for (const ao3WorkId of [F, CHECKED]) {
+    const seeded = await seedWork(db, {
+      ao3WorkId,
+      reviewReasons: ["missing_rating"],
+      tags: TAGS,
+      chapters: [1, 2, 3].map((n) => ({ html: `<p>R4-${ao3WorkId}-${n}-TEXT</p>` })),
+    });
+    await putFragments(env.BUCKET, seeded.fragments);
+    if (ao3WorkId === CHECKED) {
+      await db
+        .updateTable("work_versions")
+        .set({ checked_at: new Date().toISOString() })
+        .where("id", "=", seeded.versionId)
+        .execute();
+    }
+  }
+  await seedWork(db, { ao3WorkId: MISSING_FIRST, tags: TAGS, chapters: 2 });
+  const later = await seedWork(db, {
+    ao3WorkId: MISSING_LATER,
+    tags: TAGS,
+    chapters: [1, 2, 3].map((n) => ({ html: `<p>R4-LATER-${n}-TEXT</p>` })),
+  });
+  await putFragments(env.BUCKET, later.fragments.slice(0, 2));
+  const long = await seedWork(db, {
+    ao3WorkId: LONG,
+    tags: TAGS,
+    chapters: Array.from({ length: 60 }, (_, i) => ({ html: `<p>R4-LONG-${i + 1}</p>` })),
+  });
+  await putFragments(env.BUCKET, long.fragments);
+  const big = await seedWork(db, { ao3WorkId: BIG, tags: TAGS, chapters: [{ html: BIG_HTML }] });
+  await putFragments(env.BUCKET, big.fragments);
+});
+
+afterAll(() => db.destroy());
+
+const fullUrl = (id: number | string) => `/works/${id}/full`;
+const chapterUrl = (id: number, n: number) => `/works/${id}/chapters/${n}`;
+
+const NOTICE = `<p class="review-notice">Chapters may be imperfect; a moderator will check.</p>`;
+
+const htmlOf = async (path: string) => {
+  const res = await fetchW(path);
+  expect(res.status, path).toBe(200);
+  return res.text();
+};
+
+/** Every chapter article's markup, in page order. */
+const articlesOf = (html: string) =>
+  [...html.matchAll(/<article class="chapter">([\s\S]*?)<\/article>/g)].map(([, a = ""]) => a);
+
+describe("11-reader-and-csp", () => {
+  it("Entire work on one page", async () => {
+    const res = await fetchW(fullUrl(W));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/^text\/html/);
+    const html = await res.text();
+    // Every chapter, each in its own article, in order.
+    const articles = articlesOf(html);
+    expect(articles).toEqual([
+      "<p>R4-W-1-TEXT</p>",
+      "<p>R4-W-2-TEXT</p>",
+      "<p>R4-W-3-TEXT</p>",
+      "<h1>R4-W-4-HEADING</h1><p>R4-W-4-TEXT</p><script>window.R4 = 1</script>",
+      "<p>R4-W-5-TEXT</p>",
+    ]);
+    // Each under its own heading, escaped, with a stable anchor; no title is its number.
+    const headings = [
+      ...html.matchAll(
+        /<h2 class="chapter-title" id="chapter-(\d+)">([^<]*)<\/h2>\n<article class="chapter">/g,
+      ),
+    ].map(([, n, title]) => [n, title]);
+    expect(headings).toEqual([
+      ["1", "R4 one"],
+      ["2", "R4 &lt;i&gt;two&lt;/i&gt;"],
+      ["3", "Chapter 3"],
+      ["4", "R4 four"],
+      ["5", "R4 five"],
+    ]);
+    // The slim bar: the work title is the one chrome h1; the chapter's own h1 is content.
+    const chrome = articles.reduce((page, a) => page.replace(a, ""), html);
+    expect(chrome.match(/<h1\b[^>]*>[\s\S]*?<\/h1>/g)).toEqual([`<h1>${TITLE_ESCAPED}</h1>`]);
+    expect(chrome).toMatch(/<div class="reader-bar"><h1>[^<]*<\/h1><a href="\/settings\/reader">/);
+    // No chapter select, no frame, no epub engine, no summary; a way back to the work.
+    expect(html).not.toMatch(/<select|<iframe/i);
+    expect(html).not.toContain("A seeded summary");
+    expect(chrome.slice(chrome.lastIndexOf("</article>"))).toContain(`<a href="/works/${W}">`);
+  });
+});
+
+describe("11-reader-and-csp", () => {
+  it("Reader pages show the may-be-imperfect notice", async () => {
+    // Two of F's chapters and its entire work: once each, as chrome, never inside a chapter.
+    for (const path of [chapterUrl(F, 1), chapterUrl(F, 3), fullUrl(F)]) {
+      const html = await htmlOf(path);
+      expect(html.split(NOTICE), path).toHaveLength(2);
+      for (const article of articlesOf(html)) expect(article, path).not.toContain("review-notice");
+      // Under the bar, before the chapter nav and the text.
+      const at = html.indexOf(NOTICE);
+      expect(at, path).toBeGreaterThan(html.indexOf('<div class="reader-bar">'));
+      expect(at, path).toBeLessThan(html.search(/<nav|<h2 class="chapter-title"/));
+    }
+    // No notice for a work without review reasons, or once a moderator has checked it.
+    for (const path of [chapterUrl(W, 1), fullUrl(W), chapterUrl(CHECKED, 2), fullUrl(CHECKED)]) {
+      expect(await htmlOf(path), path).not.toContain("review-notice");
+    }
+  });
+
+  it("Reader and work pages never allow third-party frames", async () => {
+    // W's entire work streams chapter 4's injected script: the header still holds.
+    for (const path of [`/works/${W}`, chapterUrl(W, 2), chapterUrl(W, 4), fullUrl(W)]) {
+      const res = await fetchW(path);
+      expect(res.status, path).toBe(200);
+      const csp = res.headers.get("content-security-policy");
+      // Exactly the strict policy: no frame-src, so no frame of any origin.
+      expect(withoutNonce(csp), path).toBe(STRICT);
+      expect(csp, path).not.toMatch(/frame-src|challenges\.cloudflare\.com/);
+      await res.body?.cancel();
+    }
+    // The control: a Turnstile page does carry the frame allowance.
+    const login = await fetchW("/login");
+    expect(withoutNonce(login.headers.get("content-security-policy"))).toBe(TURNSTILE);
+    await login.body?.cancel();
+  });
+});
+
+// Not scenario cases: the orchestrator's rulings for /full, and what streaming promises.
+describe("entire work", () => {
+  it("An unknown work or a malformed ID is the not-found page", async () => {
+    for (const id of ["21999", "0", "021001", "abc", "2147483648", "1e3", "%2B21001"]) {
+      const res = await fetchW(fullUrl(id));
+      expect(res.status, id).toBe(404);
+      const html = await res.text();
+      expect(html, id).toContain("<h1>Page not found</h1>");
+      expect(html, id).not.toContain('<article class="chapter">');
+    }
+  });
+
+  it("Each entire-work response has its own nonce", async () => {
+    const [a, b] = await Promise.all([fetchW(fullUrl(W)), fetchW(fullUrl(W))]);
+    const [na, nb] = [a, b].map((res) => nonceOf(res.headers.get("content-security-policy")));
+    expect(na).toBeTruthy();
+    expect(nb).toBeTruthy();
+    expect(na).not.toBe(nb);
+    await Promise.all([a.body?.cancel(), b.body?.cancel()]);
+  });
+
+  it("A first chapter whose fragment is missing is an empty, uncached 503", async () => {
+    const res = await fetchW(fullUrl(MISSING_FIRST));
+    expect(res.status).toBe(503);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.text()).toBe("");
+  });
+
+  it("A later fragment that is missing ends the page in an error", async () => {
+    // The 200 is out before chapter 3 is read: the stream errors, so no cache keeps a
+    // truncated page that looks whole.
+    const res = await fetchW(fullUrl(MISSING_LATER));
+    expect(res.status).toBe(200);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let seen = "";
+    const drain = async () => {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        seen += decoder.decode(value, { stream: true });
+      }
+    };
+    await expect(drain()).rejects.toBeInstanceOf(Error);
+    expect(seen).toContain("R4-LATER-2-TEXT");
+    expect(seen).not.toContain("</main>");
+  });
+
+  it("A work of 60 chapters comes out whole and in order", async () => {
+    const articles = articlesOf(await (await fetchW(fullUrl(LONG))).text());
+    expect(articles).toEqual(Array.from({ length: 60 }, (_, i) => `<p>R4-LONG-${i + 1}</p>`));
+  });
+
+  it("A large fragment streams in chunks and keeps its bytes", async () => {
+    const res = await fetchW(fullUrl(BIG));
+    const reader = res.body!.getReader();
+    const chunks: Uint8Array[] = [];
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+    expect(chunks.length).toBeGreaterThan(2);
+    const html = await new Blob(chunks).text();
+    expect(articlesOf(html)).toEqual([BIG_HTML]);
+  });
+});

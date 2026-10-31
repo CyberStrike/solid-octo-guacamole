@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { assetRoute } from "./assets";
 import { confirmSignIn, showConfirm } from "./confirm";
 import type { Bindings } from "./env";
+import { showFull } from "./full";
 import { requestSignIn, showSignIn } from "./login";
 import { jumpToChapter, showChapter } from "./reader";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
@@ -49,6 +50,7 @@ app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce")
 // The reader. Closed before launch, like every /works/ page.
 app.get("/works/:id/chapters/:n", showChapter);
 app.get("/works/:id/chapters", jumpToChapter);
+app.get("/works/:id/full", showFull);
 
 app.get("/about", (c) => c.html(aboutPage()));
 app.get("/terms", (c) => c.html(termsPage()));
