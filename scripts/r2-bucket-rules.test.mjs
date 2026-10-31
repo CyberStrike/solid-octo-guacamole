@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { corsRules, lifecycleRules } from "./r2-bucket-rules.mjs";
@@ -13,11 +13,19 @@ const script = fileURLToPath(new URL("r2-bucket-rules.mjs", import.meta.url));
 const stub = fileURLToPath(new URL("test/wrangler-stub.mjs", import.meta.url));
 const root = dirname(dirname(script));
 
-// Runs the script with the stub as its wrangler (or with `wrangler` as the override, "" for none).
-// The stub fails a call whose arguments start with `fail`. Returns the exit code, the output, and
-// each call the stub saw, in order.
-function run(args = [], { fail = "", wrangler = stub } = {}) {
+// No Cloudflare credentials reach the script under test, so a regression that drops the stub
+// cannot change a real bucket.
+const env = Object.fromEntries(
+  Object.entries(process.env).filter(([name]) => !name.startsWith("CLOUDFLARE_")),
+);
+
+// Runs the script with the stub as its wrangler (or with `wrangler` as the override, "" for none;
+// `relative` passes the stub's path relative to the directory it runs in). The stub fails a call
+// whose arguments start with `fail`. Returns the exit code, the output, and each call the stub
+// saw, in order.
+function run(args = [], { fail = "", wrangler = stub, relative: rel = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "r2-bucket-rules-test-"));
+  const override = rel ? relative(dir, stub) : wrangler;
   const log = join(dir, "calls.jsonl");
   writeFileSync(log, "");
   try {
@@ -25,7 +33,7 @@ function run(args = [], { fail = "", wrangler = stub } = {}) {
     const result = spawnSync(process.execPath, [script, ...args], {
       cwd: dir,
       encoding: "utf8",
-      env: { ...process.env, R2_BUCKET_RULES_WRANGLER: wrangler, STUB_LOG: log, STUB_FAIL: fail },
+      env: { ...env, R2_BUCKET_RULES_WRANGLER: override, STUB_LOG: log, STUB_FAIL: fail },
     });
     const calls = readFileSync(log, "utf8")
       .split("\n")
@@ -95,6 +103,12 @@ await test("CORS for the app origin", async (t) => {
   });
 });
 
+// Every call names apps/content's config, the one that binds the bucket, so wrangler finds no
+// other config (with an account_id that would beat CLOUDFLARE_ACCOUNT_ID) in a parent directory.
+const config = ["--config", "apps/content/wrangler.jsonc"];
+const cors = ["r2", "bucket", "cors"];
+const lifecycle = ["r2", "bucket", "lifecycle"];
+
 await test("Applying the bucket rules", async (t) => {
   await t.test("Replaces both rule sets, then prints the bucket's current rules", () => {
     const { code, stdout, calls } = run();
@@ -102,10 +116,10 @@ await test("Applying the bucket rules", async (t) => {
     assert.deepEqual(
       calls.map(({ args }) => args.map((arg, i) => (args[i - 1] === "--file" ? "<file>" : arg))),
       [
-        ["r2", "bucket", "cors", "set", "rarepair", "--file", "<file>", "--force"],
-        ["r2", "bucket", "lifecycle", "set", "rarepair", "--file", "<file>", "--force"],
-        ["r2", "bucket", "cors", "list", "rarepair"],
-        ["r2", "bucket", "lifecycle", "list", "rarepair"],
+        [...cors, "set", "rarepair", "--file", "<file>", "--force", ...config],
+        [...lifecycle, "set", "rarepair", "--file", "<file>", "--force", ...config],
+        [...cors, "list", "rarepair", ...config],
+        [...lifecycle, "list", "rarepair", ...config],
       ],
     );
     assert.match(stdout, /stub ran: r2 bucket cors list rarepair/);
@@ -125,10 +139,10 @@ await test("A dry run", async (t) => {
     assert.deepEqual(printed.cors, corsRules());
     assert.deepEqual(printed.lifecycle, lifecycleRules());
     assert.deepEqual(printed.commands, [
-      "wrangler r2 bucket cors set rarepair --file <cors.json> --force",
-      "wrangler r2 bucket lifecycle set rarepair --file <lifecycle.json> --force",
-      "wrangler r2 bucket cors list rarepair",
-      "wrangler r2 bucket lifecycle list rarepair",
+      "wrangler r2 bucket cors set rarepair --file <cors.json> --force --config apps/content/wrangler.jsonc",
+      "wrangler r2 bucket lifecycle set rarepair --file <lifecycle.json> --force --config apps/content/wrangler.jsonc",
+      "wrangler r2 bucket cors list rarepair --config apps/content/wrangler.jsonc",
+      "wrangler r2 bucket lifecycle list rarepair --config apps/content/wrangler.jsonc",
     ]);
   });
 });
@@ -178,9 +192,11 @@ await test("When wrangler fails", async (t) => {
 });
 
 await test("When wrangler fails part way", async (t) => {
-  await t.test("Exits 2, lists nothing, and leaves no rule file behind", () => {
-    const { code, calls } = run([], { fail: "r2 bucket lifecycle set" });
+  await t.test("Exits 2, says which rules were set, lists nothing, leaves no rule file", () => {
+    const { code, stdout, calls } = run([], { fail: "r2 bucket lifecycle set" });
     assert.equal(code, 2);
+    assert.match(stdout, /set the cors rules on rarepair/);
+    assert.doesNotMatch(stdout, /set the lifecycle rules/);
     assert.deepEqual(
       calls.map(({ args }) => args.slice(2, 4).join(" ")),
       ["cors set", "lifecycle set"],
@@ -197,6 +213,15 @@ await test("The installed wrangler", async (t) => {
     assert.ok(existsSync(wrangler), wrangler);
     const manifest = join(dirname(dirname(wrangler)), "package.json");
     assert.equal(JSON.parse(readFileSync(manifest, "utf8")).version, "4.156.0");
+  });
+});
+
+await test("An overridden wrangler", async (t) => {
+  await t.test("Is resolved from where the operator stands, and named on stderr", () => {
+    const { code, stderr, calls } = run([], { relative: true });
+    assert.equal(code, 0);
+    assert.equal(calls.length, 4);
+    assert.ok(stderr.includes(stub), stderr);
   });
 });
 
