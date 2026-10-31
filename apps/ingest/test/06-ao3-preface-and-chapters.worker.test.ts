@@ -79,7 +79,8 @@ async function expectOptedOut(id: string, { handler, saved }: ReturnType<typeof 
   expect(result.retryMessages).toEqual([]);
 }
 
-describe("06-ao3-preface-and-chapters: opt-outs and takedowns", () => {
+// Opt-outs and takedowns (I5, #34), in a block of their own.
+describe("06-ao3-preface-and-chapters", () => {
   it("Opted-out pseud is rejected", async () => {
     const t = token();
     await addOptOut(`moon child ${t}`);
