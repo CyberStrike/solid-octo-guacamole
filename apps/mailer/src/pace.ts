@@ -12,10 +12,10 @@ const MAX_SECONDS = 300;
 export function bulkIntervalMs(seconds: string | undefined): number {
   if (seconds === undefined || seconds.trim() === "") return DEFAULT_INTERVAL_MS;
   const value = Number(seconds);
-  // An hour-long typo would outlast the invocation's wall-clock limit, so it is refused too.
-  return Number.isFinite(value) && value >= 0 && value <= MAX_SECONDS
-    ? value * 1000
-    : DEFAULT_INTERVAL_MS;
+  if (!Number.isFinite(value) || value < 0) return DEFAULT_INTERVAL_MS;
+  // Capped, not refused: a longer wait would outlast the invocation's wall-clock limit, and
+  // falling back to the default would send faster than the operator asked.
+  return Math.min(value, MAX_SECONDS) * 1000;
 }
 
 /** Waits out what is left of `intervalMs` since `startedAt`; nothing if the send was slower. */

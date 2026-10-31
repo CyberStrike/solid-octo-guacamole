@@ -39,7 +39,10 @@
         // email-bulk-dlq, which the web Worker consumes to queue the address again.
         "max_retries": 2,
         "retry_delay": 300,
-        // Retention must be one day at most, set outside this file:
+        // Retention of email-bulk itself (4 days by default) must outlast the whole send:
+        // the list size divided by the batch size, times the interval. Raise it before launch:
+        // wrangler queues update email-bulk --message-retention-period-secs <seconds>
+        // The dead-letter queue's retention must be one day at most, also set outside this file:
         // wrangler queues update email-bulk-dlq --message-retention-period-secs 86400
         "dead_letter_queue": "email-bulk-dlq",
       },

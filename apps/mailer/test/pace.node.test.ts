@@ -49,12 +49,14 @@ describe("bulkIntervalMs", () => {
     ["10", 10_000],
     ["2.5", 2_500],
     ["0", 0],
+    // Capped at 300 s, not sent faster.
+    ["3600", 300_000],
   ])("reads %s seconds as %i ms", (value, ms) => {
     expect(bulkIntervalMs(value)).toBe(ms);
   });
 
   // A missing or misspelt setting must not turn the pacing off.
-  it.each([undefined, "", "soon", "-5", "NaN", "Infinity", "3600"])(
+  it.each([undefined, "", "soon", "-5", "NaN", "Infinity"])(
     "falls back to the default for %s",
     (value) => {
       expect(bulkIntervalMs(value)).toBe(10_000);

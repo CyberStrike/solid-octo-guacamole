@@ -703,9 +703,12 @@ markup: its inline `style` attributes become stylesheet rules, because
   arrives as a string and the mailer drops it. The token is the raw one: only
   its SHA-256 hash (lowercase hex, as `hashToken`) is in
   `unsubscribe_token_hash`. Each queue accepts only its own kinds, so a launch
-  email can't skip the pacing. The mailer waits `BULK_INTERVAL_SECONDS`
-  (`vars`, default 10) after each batch of at most 50, 5 emails a second as
-  configured; check that figure against Resend's current limit before launch.
+  email sent on `email` is refused rather than sent unpaced. The mailer waits
+  `BULK_INTERVAL_SECONDS` (`vars`, default 10, at most 300) after each batch
+  of at most 50: at most 5 emails a second as configured. Check that figure
+  against Resend's current limit before launch, and set `email-bulk`'s
+  retention (default 4 days) longer than the whole send: the list size over
+  50, times the interval.
   The mailer has no database binding, so the web Worker's dead-letter
   consumer reads only `to`. Each
   launch email has `List-Unsubscribe` with one-click

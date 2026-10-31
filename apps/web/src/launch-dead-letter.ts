@@ -16,9 +16,11 @@ export async function deadLetteredLaunchEmails(
   ctx: ExecutionContext,
 ): Promise<void> {
   const addresses = new Set<string>();
+  let unusable = 0;
   for (const message of batch.messages) {
     const parsed = parseMessage(message.body);
     if (parsed?.kind === "waitlist-launch") addresses.add(parsed.to);
+    else unusable++;
   }
 
   const event = "waitlist.launch-dead-letter";
@@ -40,6 +42,7 @@ export async function deadLetteredLaunchEmails(
       event,
       outcome: "cleared",
       messages: batch.messages.length,
+      unusable,
       cleared: Number(result.numUpdatedRows),
     });
   } catch (error) {
