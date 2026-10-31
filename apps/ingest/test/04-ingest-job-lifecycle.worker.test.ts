@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ao3Epub } from "../../../packages/epub/test/helpers";
-import { deliver, pendingUpload, setLease, uploadRow, watchedWorker } from "./helpers";
+import { deliver, gated, pendingUpload, setLease, uploadRow, watchedWorker } from "./helpers";
 
 describe("04-ingest-job-lifecycle", () => {
   it("Lease claims a pending upload", async () => {
@@ -47,16 +47,23 @@ describe("04-ingest-job-lifecycle", () => {
 
   it("Concurrent deliveries claim the lease once", async () => {
     const id = await pendingUpload(ao3Epub());
-    const { handler, parsed } = watchedWorker();
+    const gate = gated();
+    const first = watchedWorker({ process: gate.process });
+    const second = watchedWorker();
 
-    // Two invocations at once, each with its own connection to Postgres.
-    const results = await Promise.all([
-      deliver([{ upload_id: id }], { handler }),
-      deliver([{ upload_id: id }], { handler }),
-    ]);
+    // Two invocations in flight at once, each with its own connection to Postgres. The first
+    // is held inside its job while the second runs, so only one sends at a time: the test
+    // database's socket can interleave two clients' queries (vitest.config.ts).
+    const running = deliver([{ upload_id: id }], { handler: first.handler });
+    await gate.entered;
+    const secondResult = await deliver([{ upload_id: id }], { handler: second.handler });
+    gate.release();
+    const firstResult = await running;
 
-    expect(parsed).toHaveLength(1);
+    expect(first.parsed).toHaveLength(1);
+    expect(second.parsed).toHaveLength(0);
     expect((await uploadRow(id)).status).toBe("processing");
-    for (const result of results) expect(result.explicitAcks).toEqual(["msg-0"]);
+    expect(firstResult.explicitAcks).toEqual(["msg-0"]);
+    expect(secondResult.explicitAcks).toEqual(["msg-0"]);
   });
 });

@@ -89,6 +89,30 @@ export async function setLease(id: string, interval: string): Promise<Date> {
 }
 
 /**
+ * A processor step that holds each job until `release()`: `entered` resolves once the
+ * first job is inside it, and `running`/`most` count the jobs inside it now and at most.
+ */
+export function gated() {
+  let enter = () => {};
+  let release = () => {};
+  const entered = new Promise<void>((resolve) => (enter = resolve));
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const counts = { running: 0, most: 0 };
+  const process: Steps["process"] = async (bytes) => {
+    counts.running++;
+    counts.most = Math.max(counts.most, counts.running);
+    enter();
+    await released;
+    try {
+      return await processEpub(bytes);
+    } finally {
+      counts.running--;
+    }
+  };
+  return { process, entered, release, counts };
+}
+
+/**
  * The queue handler with `steps` over the real ones, watched: `parsed` gets each epub the
  * job hands the processor, in order.
  */

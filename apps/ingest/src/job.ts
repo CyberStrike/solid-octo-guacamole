@@ -1,5 +1,5 @@
 import type { Database } from "@archive/db";
-import { EpubError, type ParsedWork } from "@archive/epub";
+import { EpubError, LIMITS, type ParsedWork } from "@archive/epub";
 import type { Kysely } from "kysely";
 import { claimLease, endLease, type Lease } from "./lease";
 
@@ -22,6 +22,15 @@ export async function runJob(deps: JobDeps, uploadId: string): Promise<Verdict> 
   if (lease === null) return "ack";
   const object = await deps.bucket.get(lease.r2Key);
   if (object === null) return "ack";
+  // By the object's size, before its body is read: an over-limit file never reaches memory.
+  if (object.size > LIMITS.maxInputBytes) {
+    await object.body.cancel();
+    await endLease(deps.db, lease, {
+      status: "too_large",
+      failure: { stage: "read", error: "too_large" },
+    });
+    return "ack";
+  }
   let work: ParsedWork;
   try {
     work = await deps.process(new Uint8Array(await object.arrayBuffer()));

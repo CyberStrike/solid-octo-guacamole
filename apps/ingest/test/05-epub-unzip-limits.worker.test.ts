@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ao3Epub, zipEntries } from "../../../packages/epub/test/helpers";
+import { ao3Epub, MiB, zipEntries } from "../../../packages/epub/test/helpers";
 import { deliver, pendingUpload, uploadRow, watchedWorker } from "./helpers";
 
 describe("05-epub-unzip-limits", () => {
@@ -16,6 +16,22 @@ describe("05-epub-unzip-limits", () => {
     expect(row.lease_until).toBeNull();
     expect(row.work_id).toBeNull();
     expect(saved).toEqual([]);
+    expect(result.explicitAcks).toEqual(["msg-0"]);
+    expect(result.retryMessages).toEqual([]);
+  });
+
+  it("Object larger than 25 MB is not processed", async () => {
+    const id = await pendingUpload(new Uint8Array(25 * MiB + 1));
+    const { handler, parsed } = watchedWorker();
+
+    const result = await deliver([{ upload_id: id }], { handler });
+
+    // A length, not the array: a failure would print 25 MB of bytes.
+    expect(parsed.length).toBe(0);
+    const row = await uploadRow(id);
+    expect(row.status).toBe("too_large");
+    expect(row.error_stage).toBe("read");
+    expect(row.lease_until).toBeNull();
     expect(result.explicitAcks).toEqual(["msg-0"]);
     expect(result.retryMessages).toEqual([]);
   });
