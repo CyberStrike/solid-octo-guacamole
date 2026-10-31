@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { zipEntries } from "../../../packages/epub/test/helpers";
-import { deliver, pendingUpload, uploadRow } from "./helpers";
+import { TAKEDOWN_REMOVED } from "../src/lists";
+import {
+  addOptOut,
+  addTakedown,
+  deliver,
+  expectOptedOut,
+  freshAo3WorkId,
+  ingestEpub,
+  pendingUpload,
+  seededWork,
+  token,
+  uploadRow,
+  workExists,
+} from "./helpers";
 
 /** A well-formed epub with no AO3 preface, carrying `metadata` in its OPF. Synthetic text. */
 const prefacelessEpub = (metadata: string) =>
@@ -49,5 +62,24 @@ describe("06-ao3-preface-and-chapters", () => {
       prefacelessEpub(`<dc:source>https://archiveofourown.org/works/6</dc:source>
         <dc:contributor opf:role="bkp">FanFicFare [https://github.com/JimmXinu/FanFicFare]</dc:contributor>`),
     );
+  });
+});
+
+// Opt-outs and takedowns (I5, #34), in a block of their own.
+describe("06-ao3-preface-and-chapters", () => {
+  it("Opted-out pseud is rejected", async () => {
+    const t = token();
+    await addOptOut(`moon child ${t}`);
+    const workId = freshAo3WorkId();
+
+    expectOptedOut(await ingestEpub(workId, `Moon Child ${t}`));
+    expect(await workExists(workId)).toBe(false);
+  });
+
+  it("Work under takedown is rejected", async () => {
+    const removed = await seededWork({ status: "removed" });
+    await addTakedown(removed.workId, TAKEDOWN_REMOVED);
+
+    expectOptedOut(await ingestEpub(removed.ao3WorkId));
   });
 });

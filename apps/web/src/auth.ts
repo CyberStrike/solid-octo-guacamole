@@ -6,6 +6,12 @@ import type { Bindings } from "./env";
 import { LINK_LIFETIME_MINUTES, SITE } from "./signin";
 
 /**
+ * The session cookie's name: Better Auth's default, with the `__Secure-` prefix
+ * `useSecureCookies` adds (ARCHITECTURE, Auth). Tests pin it against the real header.
+ */
+export const SESSION_COOKIE = "__Secure-better-auth.session_token";
+
+/**
  * Better Auth, built per request: bindings only exist inside one, and a
  * per-request instance shares no in-process state with another isolate's
  * (ARCHITECTURE, Auth). Our routes call `auth.api.*`; `auth.handler`, with
@@ -20,9 +26,14 @@ export function makeAuth(env: Bindings, db: Kysely<Database>) {
     secret: env.BETTER_AUTH_SECRET,
     database: { db, type: "postgres" },
     telemetry: { enabled: false },
+    // Its logger prints a caught error whole, and one from Postgres can quote the row,
+    // an address included. Our routes log what failed themselves: app.onError the
+    // name of a thrown error, the confirm route the code of a sign-in that failed on our side.
+    logger: { disabled: true },
     // Counters in Postgres, not in this isolate's memory. Only `auth.handler`
-    // requests are counted, so `auth.api` calls from our routes never are: their
-    // own per-IP and per-email limits use the Workers rate-limiting binding (A3, #23).
+    // requests are counted, so `auth.api` calls from our routes never are. POST /login
+    // has its own per-IP and per-email limits on the Workers rate-limiting binding
+    // (A3, #23). POST /login/confirm and the session lookup have none yet (#242).
     rateLimit: { ...authSchema.rateLimit, enabled: true, storage: "database" },
     advanced: {
       // __Secure- cookies. No crossSubDomainCookies: no Domain, so never content.rarepair.fans.

@@ -50,9 +50,22 @@ async function queuedFor(to: string): Promise<boolean> {
   return (await deliveredEmails()).some((body) => JSON.stringify(body).includes(field));
 }
 
+/**
+ * The token rows made since `before` for `to`. By address: other test files issue,
+ * and spend, tokens at the same time.
+ */
+const tokensMadeFor = async (to: string, before: Set<string>) =>
+  (
+    await db
+      .selectFrom("verification")
+      .select(["id", "identifier", "value", "expires_at"])
+      .where("value", "like", `%${JSON.stringify(to)}%`)
+      .execute()
+  ).filter((row) => !before.has(row.id));
+
 /** Shows that a refused request left nothing behind: no token and no email. */
 async function expectNothingCreated(to: string, before: Set<string>) {
-  expect(await verificationIds()).toEqual(before);
+  expect(await tokensMadeFor(to, before)).toEqual([]);
   expect(await queuedFor(to)).toBe(false);
 }
 
@@ -135,12 +148,7 @@ describe("01-auth-magic-link", () => {
     expect(link.searchParams.get("next")).toBe("/works/1");
 
     // Only a hash of it is stored, and it is valid for 15 minutes.
-    const rows = (
-      await db
-        .selectFrom("verification")
-        .select(["id", "identifier", "value", "expires_at"])
-        .execute()
-    ).filter((row) => !before.has(row.id));
+    const rows = await tokensMadeFor("queued@example.test", before);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.identifier).not.toContain(token);
     expect(rows[0]!.value).not.toContain(token);
@@ -350,7 +358,14 @@ describe("01-auth-magic-link", () => {
       "cf-turnstile-response": PASSING_TOKEN,
     });
     await expectTooManyRequests(res);
-    expect(await verificationIds()).toEqual(before);
+    // No token, however the address would have been stored: matched in any case and
+    // spacing. By address, since other test files issue tokens at the same time.
+    const made = await db
+      .selectFrom("verification")
+      .select("id")
+      .where("value", "ilike", `%${email}%`)
+      .execute();
+    expect(made.filter((row) => !before.has(row.id))).toEqual([]);
     // Nothing more queued: a later request's email has arrived, and still only those.
     await queuedFor(email);
     expect(await emailsTo(email)).toHaveLength(LOGIN_EMAIL_LIMIT);
