@@ -7,6 +7,7 @@ export {
   getLiveWork,
   listLiveWorksByTag,
   liveTagSpellings,
+  NOT_RATED,
   tagNameKeys,
   insertUpload,
   type ListedWork,

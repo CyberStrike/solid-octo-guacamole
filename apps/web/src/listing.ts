@@ -7,6 +7,7 @@ import {
   isTagType,
   listLiveWorksByTag,
   liveTagSpellings,
+  NOT_RATED,
   tagNameKeys,
   type ListedWork,
   type ListingSort,
@@ -16,6 +17,7 @@ import type { Context } from "hono";
 import type { Bindings } from "./env";
 import { escapeHtml, layout } from "./pages";
 import { tagHref } from "./tag-links";
+import { TAG_LABELS } from "./work-page";
 
 const WORDS = new Intl.NumberFormat("en-US");
 
@@ -45,11 +47,14 @@ interface ListingQuery {
   sort: ListingSort;
   /** Absent for any rating. */
   rating?: string;
-  /** Absent for complete works and works in progress alike. */
-  complete?: boolean;
+  /** As the URL spells it; absent for complete works and works in progress alike. */
+  complete?: "yes" | "no";
   /** A second tag the works must carry, as typed. Absent for none. */
   tag?: { type: NarrowingType; name: string };
 }
+
+/** A query parameter, or a select's option: a value and its text. */
+type Pair = [string, string];
 
 /** The types a listing can be narrowed by, the first the form's default. */
 const NARROWING_TYPES = ["freeform", "fandom", "relationship", "character"] as const;
@@ -58,7 +63,7 @@ type NarrowingType = (typeof NARROWING_TYPES)[number];
 const SORTS: Record<ListingSort, string> = { updated: "Updated date", words: "Word count" };
 
 /** The ratings a work card shows; a work with none shows as "Not Rated". */
-const RATINGS = ["General Audiences", "Teen And Up Audiences", "Mature", "Explicit", "Not Rated"];
+const RATINGS = ["General Audiences", "Teen And Up Audiences", "Mature", "Explicit", NOT_RATED];
 
 const isSort = (raw: string | undefined): raw is ListingSort =>
   raw !== undefined && Object.hasOwn(SORTS, raw);
@@ -67,7 +72,7 @@ const isSort = (raw: string | undefined): raw is ListingSort =>
 function queryOf(raw: Record<string, string>): ListingQuery {
   const query: ListingQuery = { sort: isSort(raw.sort) ? raw.sort : "updated" };
   if (raw.rating !== undefined && RATINGS.includes(raw.rating)) query.rating = raw.rating;
-  if (raw.complete === "yes" || raw.complete === "no") query.complete = raw.complete === "yes";
+  if (raw.complete === "yes" || raw.complete === "no") query.complete = raw.complete;
   const tagType = NARROWING_TYPES.find((t) => t === raw.tag_type) ?? NARROWING_TYPES[0];
   // A tag that names nothing (it folds to nothing, or holds a NUL) narrows nothing.
   if (raw.tag !== undefined && tagNameKeys(tagType, raw.tag).length > 0) {
@@ -77,18 +82,15 @@ function queryOf(raw: Record<string, string>): ListingQuery {
 }
 
 /** The query's parameters that differ from the defaults, in a fixed order, then the page past the first. */
-function paramsOf(query: ListingQuery, page: number): string[][] {
+function paramsOf(query: ListingQuery, page: number): Pair[] {
   return [
-    ...(query.sort === "updated" ? [] : [["sort", query.sort]]),
-    ...(query.rating === undefined ? [] : [["rating", query.rating]]),
-    ...(query.complete === undefined ? [] : [["complete", query.complete ? "yes" : "no"]]),
+    ...(query.sort === "updated" ? [] : [["sort", query.sort] satisfies Pair]),
+    ...(query.rating === undefined ? [] : [["rating", query.rating] satisfies Pair]),
+    ...(query.complete === undefined ? [] : [["complete", query.complete] satisfies Pair]),
     ...(query.tag === undefined
       ? []
-      : [
-          ["tag", query.tag.name],
-          ["tag_type", query.tag.type],
-        ]),
-    ...(page === 1 ? [] : [["page", String(page)]]),
+      : [["tag", query.tag.name] satisfies Pair, ["tag_type", query.tag.type] satisfies Pair]),
+    ...(page === 1 ? [] : [["page", String(page)] satisfies Pair]),
   ];
 }
 
@@ -118,6 +120,7 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
     }
     const { works, total } = await listLiveWorksByTag(db, type, name, {
       ...query,
+      complete: query.complete === undefined ? undefined : query.complete === "yes",
       page,
       pageSize: PAGE_SIZE,
     });
@@ -145,18 +148,11 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
   }
 }
 
-const TAG_TYPE_LABELS: Record<NarrowingType, string> = {
-  freeform: "Freeform",
-  fandom: "Fandom",
-  relationship: "Relationship",
-  character: "Character",
-};
-
 /** A labelled select, with the option whose value is `chosen` selected. */
-const select = (id: string, name: string, label: string, options: string[][], chosen: string) =>
+const select = (id: string, name: string, label: string, options: Pair[], chosen: string) =>
   `<p><label for="${id}">${label}</label> <select id="${id}" name="${name}">${options
     .map(
-      ([value = "", text = ""]) =>
+      ([value, text]) =>
         `<option value="${escapeHtml(value)}"${value === chosen ? " selected" : ""}>${escapeHtml(text)}</option>`,
     )
     .join("")}</select></p>`;
@@ -166,10 +162,10 @@ const select = (id: string, name: string, label: string, options: string[][], ch
  * choices selected, so it works with JavaScript off and the choices land in the URL.
  */
 function filterForm(action: string, query: ListingQuery): string {
-  const complete = query.complete === undefined ? "" : query.complete ? "yes" : "no";
+  const tagTypes = NARROWING_TYPES.map((t): Pair => [t, TAG_LABELS[t]]);
   return `<form class="listing-filters" method="get" action="${action}">
 ${select("listing-sort", "sort", "Sort by", Object.entries(SORTS), query.sort)}
-${select("listing-rating", "rating", "Rating", [["", "Any"], ...RATINGS.map((r) => [r, r])], query.rating ?? "")}
+${select("listing-rating", "rating", "Rating", [["", "Any"], ...RATINGS.map((r): Pair => [r, r])], query.rating ?? "")}
 ${select(
   "listing-complete",
   "complete",
@@ -179,16 +175,16 @@ ${select(
     ["yes", "Complete"],
     ["no", "In progress"],
   ],
-  complete,
+  query.complete ?? "",
 )}
 <p><label for="listing-tag">With the tag</label> <input id="listing-tag" name="tag" type="text" value="${escapeHtml(query.tag?.name ?? "")}"></p>
-${select("listing-tag-type", "tag_type", "Tag type", Object.entries(TAG_TYPE_LABELS), query.tag?.type ?? NARROWING_TYPES[0])}
+${select("listing-tag-type", "tag_type", "Tag type", tagTypes, query.tag?.type ?? NARROWING_TYPES[0])}
 <p><button type="submit">Apply</button></p>
 </form>`;
 }
 
 /** The listing's URL with these parameters, escaped for an attribute. */
-function listingHref(type: TagType, name: string, params: string[][]): string {
+function listingHref(type: TagType, name: string, params: Pair[]): string {
   const query = new URLSearchParams(params).toString();
   return escapeHtml(tagHref(type, name) + (query ? `?${query}` : ""));
 }
@@ -300,7 +296,7 @@ function workCard({ work, authors, tags }: ListedWork): string {
   const ofType = (type: TagType) => tags.filter((t) => t.type === type);
   // Spelled out in bold, never a colour or a symbol, and never clamped.
   const warnings = ofType("warning").map((t) => t.name);
-  const rating = [work.rating || "Not Rated", warnings.join(", ")].filter(Boolean);
+  const rating = [work.rating || NOT_RATED, warnings.join(", ")].filter(Boolean);
   // No byline is shown as an anonymous one is.
   const byline = authors.map((a) => a.pseud).join(", ") || "Anonymous";
   // The article keeps a summary's stray <li> from closing the card's own.

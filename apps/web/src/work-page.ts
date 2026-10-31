@@ -21,7 +21,7 @@ type LinkedType = Exclude<Tag["type"], "rating" | "warning">;
 
 // The type is announced, never shown by colour (FRONTEND-DISCOVERY, Components,
 // Tag list). Rating and warnings are plain text on their own line instead.
-const TAG_LABELS: Record<LinkedType, string> = {
+export const TAG_LABELS: Record<LinkedType, string> = {
   fandom: "Fandom",
   category: "Category",
   relationship: "Relationship",

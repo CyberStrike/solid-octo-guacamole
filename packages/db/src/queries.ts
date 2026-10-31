@@ -194,7 +194,8 @@ export async function liveTagSpellings(
   return rows.map((r) => r.name).sort(compareCodeUnits);
 }
 
-const NOT_RATED = "Not Rated";
+/** The rating a page shows for a work with none, and the filter that also finds those. */
+export const NOT_RATED = "Not Rated";
 
 /** A page of a tag listing, and how many works the listing holds in all. */
 export interface TagListing {
@@ -213,7 +214,7 @@ export interface ListingOptions {
   sort?: ListingSort;
   /** Only works with this rating. "Not Rated" also finds works with none, as a card shows them. */
   rating?: string;
-  /** Only works that also carry this tag, matched as the listing's own is. */
+  /** Only works that also carry this tag, matched as the listing's own is. One that names nothing matches nothing. */
   tag?: { type: TagType; name: string };
   /** Only complete works, or only works in progress. */
   complete?: boolean;
