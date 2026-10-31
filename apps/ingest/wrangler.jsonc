@@ -1,0 +1,45 @@
+{
+  // Ingest Worker: consumes the ingest queue, one `{upload_id}` per message (ARCHITECTURE,
+  // Ingestion pipeline and EPUB processor). It reads the upload from R2 and writes Postgres
+  // through Hyperdrive. No routes: nothing reaches it but the queue.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "rarepair-ingest",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-08-01",
+  // pg needs Node's net and crypto.
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "queues": {
+    "consumers": [
+      {
+        "queue": "ingest",
+        // About 5 uploads a batch (ARCHITECTURE, Surge controls). A batch's jobs run one after
+        // another, so an invocation holds one epub and its parse in memory, not five.
+        "max_batch_size": 5,
+        "max_batch_timeout": 5,
+        // At most two invocations at once: a flood waits in the backlog instead of opening
+        // more Postgres connections and Worker memory than that.
+        "max_concurrency": 2,
+        // Three retries, two minutes apart, for R2 and Postgres outages. The job's lease is
+        // 60 seconds, under the retry delay, so a retry of a crashed job finds its lease
+        // expired. src/config.ts mirrors max_retries and the lease.
+        "max_retries": 3,
+        "retry_delay": 120,
+        // A job that fails for good is recorded as parse_failed, then dead-lettered here.
+        "dead_letter_queue": "ingest-dlq",
+      },
+    ],
+  },
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "rarepair" }],
+  // Neon Postgres. The id is a placeholder until the Hyperdrive config is created; tests replace
+  // the local connection string with their own database.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000000000000000000000000000",
+      "localConnectionString": "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
+    },
+  ],
+  "observability": { "enabled": true },
+}
