@@ -46,7 +46,6 @@ function rejectedIndexes(body: unknown, count: number): number[] {
 // and reported in `errors` instead of failing the whole call (resend-node's batch types; the
 // API reference doesn't document it).
 // https://resend.com/docs/api-reference/emails/send-batch-emails
-// https://resend.com/docs/api-reference/emails/send-batch-emails
 export function resendSender(
   apiKey: string,
   fetcher: typeof fetch = (...a) => fetch(...a),
