@@ -17,9 +17,13 @@ describe("isFragmentKey", () => {
       `works/20001/img/${"ab".repeat(32)}`,
     ]) {
       expect(isFragmentKey(key, 20001, PREFIX), key).toBe(false);
-      // Not even with a prefix that would cover it.
-      expect(isFragmentKey(key, 20001, "works/20001/img/"), key).toBe(false);
     }
+    // Not even when a corrupt version's prefix covers the key.
+    expect(isFragmentKey(`works/20001/img/${"ab".repeat(32)}`, 20001, "works/20001/img/")).toBe(
+      false,
+    );
+    expect(isFragmentKey("uploads/u.epub", 20001, "uploads/")).toBe(false);
+    expect(isFragmentKey("originals/o.epub", 20001, "originals/")).toBe(false);
   });
 
   it("refuses another work's prefix and keys outside the version's prefix", () => {

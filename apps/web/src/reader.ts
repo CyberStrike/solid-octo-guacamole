@@ -61,11 +61,15 @@ export async function showChapter(c: ReaderContext) {
   const nav = (end: "top" | "bottom") => chapterNav(id, prev, next, options, end);
   // The slim top bar is the reader's only chrome of its own: the work title, which is
   // the page's one h1, and the settings link. It scrolls away with the page.
-  const bar = `<div class="reader-bar"><h1>${escapeHtml(live.work.title)}</h1><a href="/settings/reader">Reader settings</a></div>`;
+  const workTitle = live.work.title.trim() || "Untitled work";
+  const bar = `<div class="reader-bar"><h1>${escapeHtml(workTitle)}</h1><a href="/settings/reader">Reader settings</a></div>`;
+  // The processor takes the chapter's heading out of the fragment and keeps it as its
+  // title, so the page shows it, as chrome, above the text.
   return c.html(
     layout(
-      `${live.work.title}, chapter ${n}`,
+      `${workTitle}, chapter ${n}`,
       `${nav("top")}
+<h2 class="chapter-title">${escapeHtml(chapterTitle(chapter))}</h2>
 <article class="chapter">${fragment}</article>
 ${nav("bottom")}`,
       "",
@@ -90,12 +94,15 @@ export function jumpToChapter(c: ReaderContext) {
 const chaptersUrl = (id: number) => `/works/${id}/chapters`;
 const chapterUrl = (id: number, n: number) => `${chaptersUrl(id)}/${n}`;
 
+/** A chapter's title, or "Chapter n" when it has none, as the processor names one. */
+const chapterTitle = (ch: { n: number; title: string }) => ch.title.trim() || `Chapter ${ch.n}`;
+
 /** The select's options, every chapter with the current one selected. */
 const chapterOptions = (n: number, chapters: { n: number; title: string }[]) =>
   chapters
     .map(
       (ch) =>
-        `<option value="${ch.n}"${ch.n === n ? " selected" : ""}>${ch.n}. ${escapeHtml(ch.title)}</option>`,
+        `<option value="${ch.n}"${ch.n === n ? " selected" : ""}>${ch.n}. ${escapeHtml(chapterTitle(ch))}</option>`,
     )
     .join("");
 

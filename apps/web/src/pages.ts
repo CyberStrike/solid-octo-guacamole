@@ -25,8 +25,9 @@ export const escapeHtml = (text: string) =>
  * from the title, the body inside main, then the footer. The title is escaped.
  * The body and head are trusted markup from the caller (this file,
  * waitlist-pages.ts or reader.ts), never escaped; every caller escapes any value it
- * puts in them. So is `heading`, which replaces the default h1 for a page whose one
- * h1 sits in other chrome, such as the reader's top bar.
+ * puts in them, except the reader's chapter fragment, which is trusted only because
+ * the sanitizer wrote it. So is `heading`, which replaces the default h1 for a page
+ * whose one h1 sits in other chrome, such as the reader's top bar.
  */
 export const layout = (
   title: string,

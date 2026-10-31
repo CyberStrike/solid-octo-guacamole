@@ -165,6 +165,19 @@ article.chapter {
    of anything positioned inside it, so no fragment can lay itself over the page. */
 article.chapter {
   contain: content;
+  overflow-wrap: anywhere;
+}
+
+/* Paint containment clips what overflows the chapter, so wide content fits or scrolls. */
+article.chapter img {
+  max-width: 100%;
+  height: auto;
+}
+
+article.chapter table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 /* The slim top bar scrolls away with the page: it is never sticky or fixed. */

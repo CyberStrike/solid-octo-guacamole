@@ -23,9 +23,12 @@ const CHAPTERS: SeedChapter[] = [
   { html: "<p>W-ONE-TEXT</p>" },
   // Notes are inline in the fragment, around the text, as the processor writes them.
   {
+    // The processor keeps the chapter's heading as its title, not in the fragment.
+    title: "R2 <i>two</i>",
     html: "<p>Chapter Notes</p><blockquote><p>W-TWO-NOTES</p></blockquote><p>W-TWO-TEXT</p><p>Chapter End Notes</p><blockquote><p>W-TWO-END-NOTES</p></blockquote>",
   },
-  { html: "<p>W-THREE-TEXT</p>" },
+  // A chapter with no title of its own.
+  { title: " ", html: "<p>W-THREE-TEXT</p>" },
   // Test only: a script that got past the sanitizer, and two headings of the chapter's own.
   {
     html: "<h1>W-FOUR-HEADING-A</h1><p>W-FOUR-TEXT</p><script>window.INJECTED = 1</script><h1>W-FOUR-HEADING-B</h1>",
@@ -102,6 +105,15 @@ describe("11-reader-and-csp", () => {
     expect(res.headers.get("content-type")).toMatch(/^text\/html/);
     const html = await res.text();
     expect(articleOf(html)).toContain("<p>W-TWO-TEXT</p>");
+    // The chapter's own title, escaped, as chrome just above the text.
+    expect(html).toContain(
+      '<h2 class="chapter-title">R2 &lt;i&gt;two&lt;/i&gt;</h2>\n<article class="chapter">',
+    );
+    expect(html).not.toContain("<i>two</i>");
+    // A chapter with no title is named by its number.
+    const three = await htmlOf(chapterUrl(W, 3));
+    expect(three).toContain('<h2 class="chapter-title">Chapter 3</h2>');
+    expect(three).toContain('<option value="3" selected>3. Chapter 3</option>');
     expect(html).not.toMatch(/<iframe/i);
     // No client-side epub engine: the page runs no script at all yet.
     expect(html).not.toMatch(/<script/i);
