@@ -296,7 +296,7 @@ function renderAgents() {
     const item = idx[a.item];
     return `<article class="agent">
       ${a.kind ? `<span class="label">${esc(KINDS[a.kind] || a.kind)}</span>` : ""}
-      <div class="top"><span class="who">${esc(a.name || a.id)}</span>${pill(a.status, a.kind === "gate" && a.status === "running" ? (a.step || "Gating") : null)}</div>
+      <div class="top"><span class="who">${esc(a.name || a.id)}</span>${pill(a.status, a.status === "running" || a.status === "idle" ? (a.step || (a.kind === "gate" && a.status === "running" ? "Gating" : null)) : null)}</div>
       <div class="t">${item ? `<span class="mono">${esc(item.label || item.id)}</span> ${esc(item.title)}` : esc(a.task || "")}</div>
       ${a.note ? `<div class="note">${esc(a.note)}</div>` : ""}
       ${fields([["Model", esc(a.model || "")], ["Lane", esc(a.lane || "")], ["PR", prLinks(a.pr)], ["Elapsed", `<span class="elapsed" data-from="${esc(a.startedAt || "")}" data-to="${esc(a.finishedAt || "")}" title="${esc(a.startedAt ? `since ${when(utc(a.startedAt))} UTC` : "start time not recorded")}">${esc(span(a.startedAt, a.finishedAt) || "—")}</span>`]])}
