@@ -48,6 +48,10 @@ describe("ipKey", () => {
     expect(await loginIp("2001:DB8:1:2::192.0.2.9")).toBe(key);
     expect(await loginIp("2001:db8:9:9::192.0.2.1")).not.toBe(key);
     expect(await loginIp("2001:db8:1:2::192.0.2.1")).not.toBe(await loginIp("192.0.2.1"));
+    // With six groups before the tail, or a "::" that stands for just one.
+    const full = await loginIp("1:2:3:4:5:6:102:304");
+    expect(await loginIp("1:2:3:4:5:6:1.2.3.4")).toBe(full);
+    expect(await loginIp("1:2:3:4:5::1.2.3.4")).toBe(full);
   });
 
   it("keys a value that isn't an address as itself, never as some real address", async () => {
@@ -64,6 +68,10 @@ describe("ipKey", () => {
     ] as const) {
       expect(await loginIp(bad)).not.toBe(await loginIp(lookalike));
     }
+    // Nor do they share one key among themselves, or with requests that have no address.
+    const bad = ["::ffff:1.2.3", "::ffff:256.0.0.1", "1::2::3"];
+    const keys = await Promise.all([...bad.map(loginIp), loginIp(null)]);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it("gives every request without a client address one shared key, still limited", async () => {
