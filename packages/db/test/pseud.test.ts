@@ -54,6 +54,14 @@ describe("normalizePseud", () => {
       WORD_JOINER,
       SOFT_HYPHEN,
       BYTE_ORDER_MARK,
+      ch(0x200c), // zero-width non-joiner
+      ch(0x200e), // left-to-right mark
+      ch(0x202e), // right-to-left override
+      ch(0x2066), // left-to-right isolate
+      ch(0x180e), // Mongolian vowel separator
+      ch(0xfe0f), // variation selector 16
+      ch(0xe0041), // tag letter A
+      GRAPHEME_JOINER,
     ]) {
       const name = invisible.codePointAt(0)!.toString(16);
       expect(normalizePseud(`Moon${invisible} Child`), name).toBe("moon child");
@@ -113,6 +121,13 @@ describe("normalizePseud", () => {
       const normalized = normalizePseud(input);
       expect(normalizePseud(normalized), JSON.stringify(input)).toBe(normalized);
       expect(normalized.normalize("NFKC"), JSON.stringify(input)).toBe(normalized);
+      expect(normalized, JSON.stringify(input)).not.toMatch(/\p{Default_Ignorable_Code_Point}/u);
     }
+  });
+
+  it("Letters split by an invisible character compose once it is dropped", () => {
+    // Hangul jamo G and A compose to one syllable; "e" and a combining acute to "é".
+    expect(normalizePseud(`${ch(0x1100)}${ZERO_WIDTH_SPACE}${ch(0x1161)}`)).toBe(ch(0xac00));
+    expect(normalizePseud(`e${ZERO_WIDTH_SPACE}${ch(0x301)}`)).toBe(ch(0xe9));
   });
 });

@@ -9,7 +9,7 @@ const WHITESPACE = /\p{White_Space}+/gu;
  * Characters that render as nothing: zero-width spaces and joiners, the word
  * joiner, the soft hyphen, the byte order mark, variation selectors.
  */
-const INVISIBLE = /\p{Default_Ignorable_Code_Point}/gu;
+const INVISIBLE = /\p{Default_Ignorable_Code_Point}+/gu;
 
 /**
  * A pseud's `pseud_norm`: NFKC, invisible characters dropped, lowercased, NFKC
