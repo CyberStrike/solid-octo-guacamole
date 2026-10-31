@@ -29,6 +29,7 @@ app.get(STYLESHEET_PATH, (c) =>
   c.body(STYLESHEET, 200, {
     "Content-Type": "text/css; charset=utf-8",
     "Cache-Control": "public, max-age=31536000, immutable",
+    "X-Content-Type-Options": "nosniff",
   }),
 );
 

@@ -3,6 +3,7 @@
 // system): the wait list's web fonts belong to its own pages, not here.
 
 export const STYLESHEET = `:root {
+  color-scheme: light dark;
   --space: 4px;
   --text-1: 13px;
   --text-2: 16px;
@@ -105,6 +106,12 @@ h1 {
 h2 {
   margin: calc(var(--space) * 8) 0 calc(var(--space) * 2);
   font-size: var(--text-3);
+}
+
+footer a {
+  display: inline-block;
+  min-height: 24px;
+  line-height: 24px;
 }
 
 .draft {

@@ -21,7 +21,9 @@ const stylesheetHref = (html: string) =>
 
 const stylesheetOf = async () => {
   const href = stylesheetHref(await htmlOf("/about"));
-  return (await fetchW(href ?? "/missing.css")).text();
+  const res = await fetchW(href ?? "/missing.css");
+  expect(res.status).toBe(200);
+  return res.text();
 };
 
 describe("20-site-chrome-and-legal", () => {
@@ -141,6 +143,7 @@ describe("21-accessibility-and-no-js", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toMatch(/^text\/css/);
     expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("strict-transport-security")).toMatch(/max-age/);
     expect(res.headers.get("set-cookie")).toBeNull();
     expect((await fetchW("/assets/site.0000.css")).status).toBe(404);

@@ -27,7 +27,7 @@ export const layout = (title: string, body: string, head = "") => `<!doctype htm
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(title)} · rarepair</title><link rel="stylesheet" href="${STYLESHEET_PATH}">${head}</head>
 <body>
 <a class="skip" href="#main">Skip to the main content</a>
-<p class="banner">rarepair is an unofficial, temporary stopgap. <a href="/about">About this site</a></p>
+<aside class="banner" aria-label="Notice">rarepair is an unofficial, temporary stopgap. <a href="/about">About this site</a></aside>
 <header><a class="site-name" href="/">rarepair</a></header>
 <main id="main">
 <h1>${escapeHtml(title)}</h1>
@@ -65,8 +65,8 @@ export const aboutPage = () =>
     "About rarepair",
     `${DRAFT}
 <p>rarepair is a temporary, community-run reading archive for fanworks. It is an unofficial stopgap, not the original archive, and it is not affiliated with or approved by that archive or the organisation behind it.</p>
-<p>People upload the epub files they downloaded from the original archive while it is offline. Anyone can browse, search and read the uploaded works here. Every work links back to its original page, and the credit belongs to its author.</p>
-<p>Uploads are public and readable by everyone. Anyone can ask for a work to be removed, with no need to prove who they are, using the "Remove my work" link in the footer.</p>`,
+<p>People upload the epub files they downloaded from the original archive while it is offline. Anyone can browse and read the works that have been uploaded and accepted. Work pages link back to the original page, and the credit belongs to its author.</p>
+<p>Accepted uploads are public. Anyone can ask for a work to be removed, with no need to prove who they are, using the "Remove my work" link in the footer.</p>`,
   );
 
 export const termsPage = () =>
@@ -76,8 +76,8 @@ export const termsPage = () =>
 <p>By creating an account you agree to these terms.</p>
 <ul>
 <li>You may upload only epub files exported from the original archive, and only works you are happy to have shared.</li>
-<li>Every upload is public: anyone can read it.</li>
-<li>Anyone can ask for a work to be removed, and we act on removal requests quickly, without asking for proof of identity.</li>
+<li>Uploads that pass our checks are public: anyone can read them.</li>
+<li>Anyone can ask for a work to be removed, without proving who they are.</li>
 <li>We may hide or remove any work, and close any account, to keep the site safe.</li>
 <li>This site is an unofficial, temporary stopgap with no guarantees: it may change or close at any time.</li>
 </ul>`,
@@ -87,11 +87,12 @@ export const privacyPage = () =>
   layout(
     "Privacy",
     `${DRAFT}
-<p>We keep as little about you as we can.</p>
+<p>This is what we keep about you.</p>
 <ul>
 <li>Signing in uses an email link. We keep your email address and no password.</li>
-<li>Uploads are public. We do not publish your email address.</li>
-<li>The wait list: before launch, if you join it, we keep your email address to send you one launch email, and delete the list after that email goes out.</li>
+<li>Accepted uploads are public. We do not publish your email address.</li>
+<li>Removal and opt-out requests keep a hashed form of the requester's network address, to limit abuse.</li>
+<li>The wait list: before launch, if you join it, we keep your email address to send you one launch email. We delete your address once the launch emails have been sent, or sooner if you unsubscribe.</li>
 <li>We store the settings and reading position you save, to bring them back next time.</li>
 <li>Our anti-spam check, provided by Cloudflare, runs on the sign-in, upload and removal pages.</li>
 </ul>`,
