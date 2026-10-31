@@ -3,7 +3,7 @@
 // script and no Turnstile, so it works with JavaScript off.
 
 import { createDb } from "@archive/db";
-import type { Context } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import type { Bindings } from "./env";
 import { readForm } from "./login";
 import { escapeHtml, forbiddenPage, layout } from "./pages";
@@ -66,6 +66,11 @@ const isKind = (value: string): value is Kind => Object.hasOwn(REASONS, value);
 
 /** The longest details kept, in characters, as the form says. */
 const MAX_DETAILS = 2000;
+
+// The form at its largest: maxlength counts UTF-16 code units, and none encodes to
+// more than 9 bytes percent-encoded (a three-byte character; a line break, sent as
+// CRLF, is 6), so 2000 come to 18 KB, plus a reason of under 100 bytes.
+const MAX_REPORT_BODY = 20 * 1024;
 
 interface ReportForm {
   /** Why the form came back. */
@@ -131,12 +136,19 @@ export async function showReportForm(c: ReportContext) {
 }
 
 /**
- * `POST /works/:id/report`: stores an open report. As on the sign-in forms, the
- * origin is checked before anything else, and a signed-out post is sent to sign
- * in before its body is read.
+ * Refuses a form posted from anywhere but the site, as the sign-in forms do. It
+ * goes before the session middleware, so a cross-site post costs no session lookup.
+ */
+export const sameOriginOnly: MiddlewareHandler = async (c, next) => {
+  if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
+  await next();
+};
+
+/**
+ * `POST /works/:id/report`, behind `sameOriginOnly`: stores an open report. A
+ * signed-out post is sent to sign in before its body is read.
  */
 export async function submitReport(c: ReportContext) {
-  if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
   const id = workId(c.req.param("id"));
   if (id === null) return c.notFound();
   const session = c.var.session;
@@ -148,14 +160,15 @@ export async function submitReport(c: ReportContext) {
     if (!work) return c.notFound();
     if (await isBanned(db, session.user.id)) return c.html(bannedPage(), 403);
 
-    const form = await readForm(c.req.raw);
+    const form = await readForm(c.req.raw, MAX_REPORT_BODY);
     // Nothing of it is shown back: the form comes again empty.
     if (form === null) {
       const error = "That report was too large. Please try again.";
       return c.html(reportPage(id, work.title, { error }), 413);
     }
     const reason = form.get("reason") ?? "";
-    const details = form.get("details") ?? "";
+    // A browser submits each line break as CRLF, but the form's maxlength counts it as one.
+    const details = (form.get("details") ?? "").replaceAll("\r\n", "\n");
     // The server checks, since the page has no script and a form can be posted by hand.
     if (!isKind(reason)) {
       return c.html(reportPage(id, work.title, { error: "Choose a reason.", details }), 400);

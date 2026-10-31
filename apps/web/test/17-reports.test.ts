@@ -319,11 +319,26 @@ describe("report form checks", () => {
     ]);
   });
 
+  it("Details the form allows are accepted, line breaks and any script included", async () => {
+    const email = "x4-full-details@example.test";
+    const cookie = await signIn(email);
+    // The form counts a line break as one character, and a browser submits it as CRLF.
+    const lines = `${"a".repeat(999)}\r\n${"b".repeat(1000)}`;
+    expect((await postReport({ reason: "other", details: lines }, { cookie })).status).toBe(200);
+    // 2000 characters of three UTF-8 bytes each, percent-encoded: about 18 KB of body.
+    const wide = "字".repeat(2000);
+    expect((await postReport({ reason: "other", details: wide }, { cookie })).status).toBe(200);
+    expect(await reportsBy(email)).toEqual([
+      { kind: "other", body: `${"a".repeat(999)}\n${"b".repeat(1000)}`, status: "open" },
+      { kind: "other", body: wide, status: "open" },
+    ]);
+  });
+
   it("A body too large to be the form is refused, and nothing of it shown back", async () => {
     const email = "x4-too-large@example.test";
     const cookie = await signIn(email);
     const res = await postReport(
-      { reason: "other", details: `x4-echo-${"z".repeat(20 * 1024)}` },
+      { reason: "other", details: `x4-echo-${"z".repeat(24 * 1024)}` },
       { cookie },
     );
     expect(res.status).toBe(413);
