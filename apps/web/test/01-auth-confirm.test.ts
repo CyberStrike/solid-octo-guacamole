@@ -315,7 +315,7 @@ describe("09-content-origin", () => {
     // A browser sends a cookie with no Domain attribute back to the host that set it
     // only, so never to content.rarepair.fans. (The content Worker sets no cookie of its
     // own: apps/content/test/content.test.ts.) No browser runs here.
-    const { token } = await issued("content-origin@example.test");
+    const { token } = await issued("session-cookie-scope@example.test");
     const res = await confirm({ token, next: "/" });
     const [cookie, ...more] = sessionCookies(res);
     expect(more).toEqual([]);
