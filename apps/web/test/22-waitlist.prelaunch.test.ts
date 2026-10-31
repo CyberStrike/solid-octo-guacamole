@@ -2,6 +2,7 @@ import { createExecutionContext } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 import app from "../src/index";
+import { STYLESHEET_PATH } from "../src/styles";
 import { BASE, fetchW, nonceOf, TURNSTILE, withoutNonce } from "./helpers";
 
 // Runs in the "prelaunch" project: wrangler.jsonc exactly as it deploys, PRELAUNCH on.
@@ -209,6 +210,9 @@ describe("22-waitlist", () => {
       ["/%75pload", "GET"],
       ["/login/", "GET"],
       ["/assets/../upload", "GET"],
+      // Nothing serves Better Auth's routes yet, so they stay closed before launch.
+      ["/api/auth/get-session", "GET"],
+      ["/api/auth/sign-in/magic-link", "POST"],
     ];
     for (const [path, method] of closed) {
       const res = await fetchW(path, { method });
@@ -233,7 +237,6 @@ describe("22-waitlist", () => {
       ["/welcome/terms", "GET"],
       ["/admin", "GET"],
       ["/admin/launch", "GET"],
-      ["/api/auth/get-session", "GET"],
       ["/robots.txt", "GET"],
       ["/favicon.ico", "GET"],
       ["/assets/waitlist/fonts/fraunces/OFL.txt", "GET"],
@@ -243,6 +246,10 @@ describe("22-waitlist", () => {
       const res = await fetchW(path, { method });
       expect(res.status, `${method} ${path}`).not.toBe(302);
       expect(res.headers.get("location")).toBeNull();
+    }
+    // The static pages and their shared stylesheet are served in full.
+    for (const path of ["/about", "/terms", "/privacy", STYLESHEET_PATH]) {
+      expect((await fetchW(path)).status, path).toBe(200);
     }
 
     // www is still sent to the bare domain first, whatever the path.

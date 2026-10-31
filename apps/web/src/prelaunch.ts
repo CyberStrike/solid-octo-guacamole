@@ -22,7 +22,9 @@ const OPEN_PATHS = new Set([
   "/favicon.ico",
 ]);
 // Open with everything below them, by whole segment: /admin/launch, never /administrator.
-const OPEN_SECTIONS = ["/waitlist", "/admin", "/api/auth", "/assets"];
+// Not /api/auth: nothing serves it yet, and opening it before launch would be a way
+// around POST /login's checks. The ticket that mounts Better Auth's handler adds it.
+const OPEN_SECTIONS = ["/waitlist", "/admin", "/assets"];
 
 const isOpenBeforeLaunch = (path: string) =>
   OPEN_PATHS.has(path) ||
