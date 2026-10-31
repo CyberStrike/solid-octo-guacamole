@@ -1,6 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { inspect } from "node:util";
-import { vi } from "vitest";
+import { expect, vi } from "vitest";
 import { parseMessage, type EmailMessage } from "../../mailer/src/message";
 
 // Shared by the workerd tests. (11-reader-and-csp and 20-site-chrome keep their own
@@ -92,6 +92,34 @@ export function postLogin(
     headers: { ...LOGIN_HEADERS, "cf-connecting-ip": freshIp(), ...headers },
     body,
   });
+}
+
+/**
+ * Signs `email` in through the Worker, as a browser follows the newest emailed link to
+ * the confirm page and presses its button, and returns the `name=value` of its session
+ * cookie. A new account hasn't accepted the terms, so every page but a few redirects it
+ * to /welcome/terms: pass `acceptTerms: true` to accept them too.
+ */
+export async function signIn(
+  email: string,
+  { next = "/", acceptTerms: accept = false }: { next?: string; acceptTerms?: boolean } = {},
+): Promise<string> {
+  const before = (await deliveredEmails()).map(parseMessage).filter((e) => e?.to === email);
+  expect((await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN })).status).toBe(200);
+  const sent = await emailsTo(email, { atLeast: before.length + 1 });
+  const token = new URL(sent.at(-1)!.url).searchParams.get("token")!;
+  const res = await postLogin({ token, next }, { url: "/login/confirm" });
+  expect(res.status).toBe(303);
+  const cookie = res.headers.getSetCookie()[0]!.split(";")[0]!;
+  if (accept) await acceptTerms(cookie);
+  return cookie;
+}
+
+/** Accepts the terms with `cookie`, as /welcome/terms's form posts it, and returns the answer. */
+export async function acceptTerms(cookie: string, next = "/") {
+  const res = await postLogin({ next }, { url: "/welcome/terms", headers: { cookie } });
+  expect(res.status).toBe(303);
+  return res;
 }
 
 export { LOGIN_EMAIL_LIMIT, LOGIN_IP_LIMIT } from "./limits";

@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { except } from "hono/combine";
 import { assetRoute } from "./assets";
 import { confirmSignIn, showConfirm } from "./confirm";
 import type { Bindings } from "./env";
@@ -11,12 +12,17 @@ import {
   wwwToBareDomain,
   type SecurityVariables,
 } from "./security";
+import { sessionMiddleware, type SessionVariables } from "./session";
 import { STYLESHEET, STYLESHEET_PATH } from "./styles";
+import { termsGate } from "./terms";
 import { joinWaitlist } from "./waitlist";
 import { comingSoonPage } from "./waitlist-pages";
 import { showWork } from "./work-page";
 
-const app = new Hono<{ Bindings: Bindings; Variables: SecurityVariables }>();
+const app = new Hono<{
+  Bindings: Bindings;
+  Variables: SecurityVariables & SessionVariables;
+}>();
 
 // Order matters: HSTS covers everything, the www redirect included, and www
 // never reaches the CSP, the routes or anything that could set a cookie. Before
@@ -25,6 +31,10 @@ app.use(strictTransportSecurity);
 app.use(wwwToBareDomain);
 app.use(closedBeforeLaunch);
 app.use(contentSecurityPolicy);
+// The session, once, for every page; routes read c.var.session and never mount it
+// again. Static files skip it, and the lookup's database connection with it. Then
+// an account that hasn't accepted the terms is sent to accept them.
+app.use(except("/assets/*", sessionMiddleware, termsGate));
 
 // The wait list pages' fonts and stylesheet. S1 serves its own stylesheet elsewhere under /assets/.
 app.get("/assets/waitlist/*", assetRoute);

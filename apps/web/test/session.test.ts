@@ -5,10 +5,10 @@ import { Hono } from "hono";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Bindings } from "../src/env";
 import { sessionMiddleware, type SessionVariables } from "../src/session";
-import { BASE, emailsTo, PASSING_TOKEN, postLogin } from "./helpers";
+import { BASE, signIn } from "./helpers";
 
-// The session middleware later pages use. No route of the Worker uses it yet, so it
-// is tested on a probe app of its own, with the Worker's bindings and a real cookie
+// The session middleware every page runs behind. It is tested on a probe app of its
+// own, without the Worker's terms gate, with the Worker's bindings and a real cookie
 // from signing in through the Worker.
 
 const db = createDb({ connectionString: env.HYPERDRIVE.connectionString, max: 1 });
@@ -34,17 +34,6 @@ async function whoIs(cookie?: string, path = "/") {
   // SAFETY: the probe answers with this JSON.
   const { email } = (await res.json()) as { email: string | null };
   return { email, setCookies: res.headers.getSetCookie() };
-}
-
-/** Signs `email` in through the Worker, and returns the `name=value` of its session cookie. */
-async function signIn(email: string): Promise<string> {
-  expect((await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN })).status).toBe(200);
-  const [sent] = await emailsTo(email);
-  const token = new URL(sent!.url).searchParams.get("token")!;
-  // The confirm page's form, as a browser on rarepair.fans posts it.
-  const res = await postLogin({ token, next: "/" }, { url: "/login/confirm" });
-  expect(res.status).toBe(303);
-  return res.headers.getSetCookie()[0]!.split(";")[0]!;
 }
 
 /**
