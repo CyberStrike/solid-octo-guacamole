@@ -125,3 +125,29 @@ export function watchedWorker(steps: Partial<Steps> = {}) {
   });
   return { handler, parsed };
 }
+
+/** An AO3 work ID no other test uses: one database serves every file, and works are keyed by it. */
+export const newWorkId = () => 1 + Math.floor(Math.random() * 2_000_000_000);
+
+/** The bucket step: the real bucket, with a `put` of `key` that fails as R2 down would. */
+export const failingPut =
+  (key: string): NonNullable<Steps["bucket"]> =>
+  (real) => ({
+    get: real.get.bind(real),
+    put: async (k, value, options) => {
+      if (k === key) throw new Error("injected R2 failure");
+      return real.put(k, value, options);
+    },
+  });
+
+/** The keys in the bucket under `prefix`, sorted. */
+export async function bucketKeys(prefix: string): Promise<string[]> {
+  const listed = await env.BUCKET.list({ prefix });
+  return listed.objects.map((o) => o.key).sort();
+}
+
+/** The text of the object at `key`, or null. */
+export async function bucketText(key: string): Promise<string | null> {
+  const object = await env.BUCKET.get(key);
+  return object === null ? null : object.text();
+}

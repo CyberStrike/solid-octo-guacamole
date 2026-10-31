@@ -1,12 +1,50 @@
+import { env } from "cloudflare:workers";
 import { describe, expect, it, vi } from "vitest";
 import { ao3Epub } from "../../../packages/epub/test/helpers";
-import { deliver, gated, pendingUpload, setLease, uploadRow, watchedWorker } from "./helpers";
+import {
+  bucketKeys,
+  bucketText,
+  deliver,
+  failingPut,
+  gated,
+  newWorkId,
+  pendingUpload,
+  setLease,
+  uploadRow,
+  watchedWorker,
+} from "./helpers";
+import type { Steps } from "../src/worker";
+
+// The lease cases look at the upload while its job holds it: their save leaves it `processing`.
+const holding: Partial<Steps> = { save: async () => {} };
 
 describe("04-ingest-job-lifecycle", () => {
-  it("Lease claims a pending upload", async () => {
-    const id = await pendingUpload(ao3Epub());
+  it("Retry overwrites only its own output", async () => {
+    const workId = newWorkId();
+    const id = await pendingUpload(ao3Epub({ workId }));
+    const own = `works/${workId}/${id}/1.html`;
+    const others = `works/${workId}/${crypto.randomUUID()}/1.html`;
+    await env.BUCKET.put(own, "stale output of an earlier attempt");
+    await env.BUCKET.put(others, "another upload's fragment");
+    // The first attempt writes the fragments, then fails before the transaction.
+    const { handler } = watchedWorker({ bucket: failingPut(`originals/${id}.epub`) });
+    const first = await deliver([{ upload_id: id }], { handler });
+    expect(first.retryMessages.map((m) => m.msgId)).toEqual(["msg-0"]);
 
-    const result = await deliver([{ upload_id: id }]);
+    const retry = await deliver([{ upload_id: id }], { attempts: 2 });
+
+    expect(await bucketText(own)).toContain("marker-only-chapter text.");
+    expect(await bucketText(others)).toBe("another upload's fragment");
+    expect(await bucketKeys(`works/${workId}/`)).toEqual([own, others].sort());
+    expect((await uploadRow(id)).status).toBe("live");
+    expect(retry.explicitAcks).toEqual(["msg-0"]);
+  });
+
+  it("Lease claims a pending upload", async () => {
+    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
+    const { handler } = watchedWorker(holding);
+
+    const result = await deliver([{ upload_id: id }], { handler });
 
     const row = await uploadRow(id);
     expect(row.status).toBe("processing");
@@ -15,7 +53,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("Duplicate delivery does not double-process", async () => {
-    const id = await pendingUpload(ao3Epub());
+    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
     const leaseUntil = await setLease(id, "1 hour");
     const { handler, parsed } = watchedWorker();
 
@@ -31,10 +69,10 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("Expired lease can be re-claimed", async () => {
-    const epub = ao3Epub();
+    const epub = ao3Epub({ workId: newWorkId() });
     const id = await pendingUpload(epub);
     await setLease(id, "-1 minute");
-    const { handler, parsed } = watchedWorker();
+    const { handler, parsed } = watchedWorker(holding);
 
     const result = await deliver([{ upload_id: id }], { handler });
 
@@ -46,9 +84,9 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("Concurrent deliveries claim the lease once", async () => {
-    const id = await pendingUpload(ao3Epub());
+    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
     const gate = gated();
-    const first = watchedWorker({ process: gate.process });
+    const first = watchedWorker({ ...holding, process: gate.process });
     const second = watchedWorker();
 
     // Two invocations in flight at once, each with its own connection to Postgres. The first
@@ -68,7 +106,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("Permanent failure goes to the dead-letter queue as parse_failed", async () => {
-    const id = await pendingUpload(ao3Epub());
+    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
     const { handler } = watchedWorker({
       process: async () => {
         throw new TypeError("injected failure at the process stage");
@@ -89,7 +127,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("records the stage that failed for good", async () => {
-    const id = await pendingUpload(ao3Epub());
+    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
     const { handler } = watchedWorker({
       save: async () => {
         throw new RangeError("injected failure at the save stage");
@@ -105,7 +143,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("logs a failure's class name, never its message", async () => {
-    const id = await pendingUpload(ao3Epub());
+    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
     const { handler } = watchedWorker({
       process: async () => {
         throw new TypeError("text quoted from the file: marker-in-message");
@@ -131,7 +169,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("releases the lease and retries a failure with attempts left", async () => {
-    const id = await pendingUpload(ao3Epub());
+    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
     const { handler } = watchedWorker({
       process: async () => {
         throw new Error("injected transient failure");
@@ -153,7 +191,7 @@ describe("04-ingest-job-lifecycle", () => {
     // Inside one invocation, a full batch runs one job at a time, and none fails for waiting.
     // One after another: the test database takes one client's queries at a time.
     const ids: string[] = [];
-    for (let i = 0; i < 5; i++) ids.push(await pendingUpload(ao3Epub()));
+    for (let i = 0; i < 5; i++) ids.push(await pendingUpload(ao3Epub({ workId: newWorkId() })));
     const gate = gated();
     const { handler } = watchedWorker({ process: gate.process });
 
@@ -171,11 +209,11 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("acks a message that names no upload, and runs the rest of its batch", async () => {
-    const id = await pendingUpload(ao3Epub());
+    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
 
     const result = await deliver([{ upload: id }, "not an object", { upload_id: id }]);
 
-    expect((await uploadRow(id)).status).toBe("processing");
+    expect((await uploadRow(id)).status).toBe("live");
     expect(result.explicitAcks.sort()).toEqual(["msg-0", "msg-1", "msg-2"]);
   });
 
