@@ -145,10 +145,15 @@ footer {
   font-size: var(--text-1);
 }
 
+/* Layout containment makes the chapter the containing block of anything positioned
+   inside it, so no fragment can lay itself over the page. Paint containment clips at
+   its edge, so the padding keeps focus rings inside it. */
 article.chapter {
   font-family: var(--reading);
   line-height: 1.6;
   max-width: 66ch;
+  contain: content;
+  padding: var(--space);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -228,6 +233,52 @@ article.chapter {
 .card-tags,
 .card-stats {
   font-size: var(--text-1);
+}
+
+/* The chapter reader (R2). Paint containment clips what overflows the chapter: long
+   words break through main's overflow-wrap, images shrink to fit, and wide tables scroll. */
+article.chapter img {
+  max-width: 100%;
+  height: auto;
+}
+
+article.chapter table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* The slim top bar scrolls away with the page: it is never sticky or fixed. */
+.reader-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) * 2) calc(var(--space) * 4);
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: calc(var(--space) * 2);
+  border-bottom: 1px solid var(--rule);
+}
+
+.reader-bar h1 {
+  margin: 0;
+  font-size: var(--text-2);
+}
+
+.chapter-nav,
+.chapter-nav form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) * 2) calc(var(--space) * 4);
+  align-items: center;
+}
+
+.chapter-nav {
+  margin: calc(var(--space) * 4) 0;
+}
+
+.chapter-nav select {
+  font: inherit;
+  max-width: 100%;
 }
 
 /* work page */

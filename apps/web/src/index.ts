@@ -4,6 +4,7 @@ import { confirmSignIn, showConfirm } from "./confirm";
 import type { Bindings } from "./env";
 import { showTagListing } from "./listing";
 import { requestSignIn, showSignIn } from "./login";
+import { jumpToChapter, showChapter } from "./reader";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
 import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
 import {
@@ -45,6 +46,10 @@ app.post("/waitlist", joinWaitlist);
 app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));
 app.get("/upload", (c) => c.html(turnstilePage("Upload a work", c.get("nonce"))));
 app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce"))));
+
+// The reader. Closed before launch, like every /works/ page.
+app.get("/works/:id/chapters/:n", showChapter);
+app.get("/works/:id/chapters", jumpToChapter);
 
 app.get("/about", (c) => c.html(aboutPage()));
 app.get("/terms", (c) => c.html(termsPage()));
