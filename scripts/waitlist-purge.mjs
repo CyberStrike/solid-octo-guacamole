@@ -25,13 +25,18 @@ const LOCK_TIMEOUT_MS = 10_000;
 // How long the open transaction may sit idle, holding the table lock, before the server ends it.
 const IDLE_TIMEOUT_MS = 60_000;
 
+const USAGE =
+  "usage: DATABASE_URL=... node scripts/waitlist-purge.mjs [--force]\nturn PRELAUNCH off first: the script can't see it, and sign-ups after the purge are not deleted";
+
 // A pg error can carry a value, so only a code or a name is ever printed.
 const codeOf = (error) => {
   if (!(error instanceof Error)) return "unknown";
   // pg's errors carry a SQLSTATE and Node's a system code such as ECONNREFUSED.
   /** @type {Error & { code?: string }} */
   const withCode = error;
-  return withCode.code ?? error.name;
+  const code = withCode.code ?? error.name;
+  // Only a short code is printed, never a free-text value that might quote one.
+  return /^[A-Za-z0-9_]{1,40}$/.test(String(code)) ? String(code) : "unknown";
 };
 
 /**
@@ -66,12 +71,15 @@ export async function waitlistPurge({
   // A dropped connection is reported by the statement that was using it.
   client.on("error", () => {});
   let committed = false;
+  let began = false;
   try {
     await client.connect();
     await client.query("begin");
-    const lockMs = Number.isFinite(lockTimeoutMs)
-      ? Math.max(1, Math.floor(lockTimeoutMs))
-      : LOCK_TIMEOUT_MS;
+    began = true;
+    const lockMs =
+      Number.isFinite(lockTimeoutMs) && lockTimeoutMs >= 1
+        ? Math.floor(lockTimeoutMs)
+        : LOCK_TIMEOUT_MS;
     await client.query(`set local lock_timeout = ${lockMs}`);
     // The lock is held to the commit: if this process stalls between statements, the server
     // ends the transaction instead of leaving every join, confirm and unsubscribe write queued
@@ -109,7 +117,7 @@ export async function waitlistPurge({
   } catch (caught) {
     return { deleted: 0, refused: null, error: `database error (${codeOf(caught)})` };
   } finally {
-    if (!committed) await client.query("rollback").catch(() => {});
+    if (began && !committed) await client.query("rollback").catch(() => {});
     await client.end().catch(() => {});
   }
 }
@@ -119,12 +127,12 @@ async function main() {
   const unknown = args.filter((arg) => arg !== "--force");
   if (unknown.length > 0) {
     console.error("waitlist-purge: unknown argument, only --force is accepted");
-    console.error("usage: DATABASE_URL=... node scripts/waitlist-purge.mjs [--force]");
+    console.error(USAGE);
     return 2;
   }
   if (!process.env.DATABASE_URL) {
     console.error("waitlist-purge: DATABASE_URL is not set");
-    console.error("usage: DATABASE_URL=... node scripts/waitlist-purge.mjs [--force]");
+    console.error(USAGE);
     return 2;
   }
   const { refused, error } = await waitlistPurge({
