@@ -174,3 +174,13 @@ export const signInFailedPage = () =>
     "Something went wrong",
     `<p>Signing in didn't work, and it isn't anything you did. <a href="/login">Request a new sign-in link</a> and try again.</p>`,
   );
+
+/**
+ * A request over a rate limit, shared by every limited route: when to try again,
+ * in the same whole number of seconds as the response's `Retry-After`.
+ */
+export const tooManyRequestsPage = (seconds: number) =>
+  layout(
+    "Too many requests",
+    `<p>There have been too many requests in a short time. Please try again in ${seconds === 1 ? "1 second" : `${seconds} seconds`}.</p>`,
+  );

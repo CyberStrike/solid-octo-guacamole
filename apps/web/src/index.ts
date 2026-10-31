@@ -12,7 +12,9 @@ import {
   type SecurityVariables,
 } from "./security";
 import { STYLESHEET, STYLESHEET_PATH } from "./styles";
+import { joinWaitlist } from "./waitlist";
 import { comingSoonPage } from "./waitlist-pages";
+import { showWork } from "./work-page";
 
 const app = new Hono<{ Bindings: Bindings; Variables: SecurityVariables }>();
 
@@ -37,12 +39,17 @@ app.get("/login", showSignIn);
 app.post("/login", requestSignIn);
 app.get("/login/confirm", showConfirm);
 app.post("/login/confirm", confirmSignIn);
+app.post("/waitlist", joinWaitlist);
+// After launch, a stale link to the form goes home. Before it, nothing is at GET /waitlist.
+app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));
 app.get("/upload", (c) => c.html(turnstilePage("Upload a work", c.get("nonce"))));
 app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce"))));
 
 app.get("/about", (c) => c.html(aboutPage()));
 app.get("/terms", (c) => c.html(termsPage()));
 app.get("/privacy", (c) => c.html(privacyPage()));
+
+app.get("/works/:id", showWork);
 
 // The URL carries a hash of the content, so the response never changes under it.
 app.get(STYLESHEET_PATH, (c) =>
