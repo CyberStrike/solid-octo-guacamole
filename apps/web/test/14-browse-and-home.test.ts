@@ -25,6 +25,26 @@ const cardOf = (html: string, ao3WorkId: number) =>
     .map((card) => card.slice(0, card.indexOf("</li>")))
     .find((card) => card.includes(`href="/works/${ao3WorkId}"`)) ?? "";
 
+/** The inner HTML of the card's element with this class, or null. */
+const lineOf = (card: string, className: string) =>
+  card.match(new RegExp(`<(p|div) class="${className}">([\\s\\S]*?)</\\1>`))?.[2] ?? null;
+
+const textOf = (html: string) => html.replace(/<[^>]*>/g, "");
+
+const stylesheetOf = async (html: string) => {
+  const href = html.match(/<link rel="stylesheet" href="([^"]+)"/)?.[1];
+  return htmlOf(href ?? "/missing.css");
+};
+
+/** The declarations of every rule whose selector names this class. */
+const rulesFor = (css: string, className: string) =>
+  [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(([, selector]) => new RegExp(`\\.${className}\\b`).test(selector ?? ""))
+    .map(([, , body]) => body)
+    .join("\n");
+
+const SYMBOLS = /<img|<svg|\p{Extended_Pictographic}/u;
+
 describe("14-browse-and-home", () => {
   beforeAll(async () => {
     await seedWork(db, { ao3WorkId: 30001, tags: [{ type: "fandom", name: "Harry Potter" }] });
@@ -82,5 +102,31 @@ describe("14-browse-and-home", () => {
       JSON.stringify(at),
     ).toBe(true);
     expect(at).toEqual([...at].sort((a, b) => a - b));
+  });
+
+  it("Rating and warnings spelled out on cards", async () => {
+    await seedWork(db, {
+      ao3WorkId: 30020,
+      rating: "Mature",
+      tags: [
+        { type: "rating", name: "Mature" },
+        { type: "warning", name: "Graphic Depictions Of Violence" },
+        { type: "fandom", name: "Spelled Out Fandom" },
+      ],
+    });
+    await seedWork(db, {
+      ao3WorkId: 30021,
+      rating: null,
+      tags: [{ type: "fandom", name: "Spelled Out Fandom" }],
+    });
+
+    const html = await htmlOf("/tags/fandom/spelled%20out%20fandom");
+
+    const line = lineOf(cardOf(html, 30020), "card-rating") ?? "";
+    expect(line).toBe("<strong>Mature · Graphic Depictions Of Violence</strong>");
+    expect(lineOf(cardOf(html, 30021), "card-rating")).toBe("<strong>Not Rated</strong>");
+    expect(cardOf(html, 30020)).not.toMatch(SYMBOLS);
+    expect(cardOf(html, 30020)).not.toMatch(/style=/);
+    expect(rulesFor(await stylesheetOf(html), "card-rating")).not.toMatch(/color|background/);
   });
 });

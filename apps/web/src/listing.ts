@@ -58,11 +58,13 @@ const tagLinks = (tags: ListedWork["tags"]) =>
 function workCard({ work, authors, tags }: ListedWork): string {
   const href = `/works/${work.ao3_work_id}`;
   const ofType = (type: TagType) => tags.filter((t) => t.type === type);
-  const rating = [work.rating ?? "Not Rated", ...ofType("warning").map((t) => t.name)];
+  // Spelled out in bold, never a colour or a symbol, and never clamped.
+  const warnings = ofType("warning").map((t) => t.name);
+  const rating = [work.rating ?? "Not Rated", ...(warnings.length ? [warnings.join(", ")] : [])];
   return `<li class="work-card">
 <h2 class="card-title"><a href="${href}">${escapeHtml(work.title)}</a></h2>
 <p class="card-byline">by ${escapeHtml(authors.map((a) => a.pseud).join(", "))}</p>
-<p class="card-rating">${escapeHtml(rating[0] ?? "")} · ${escapeHtml(rating.slice(1).join(", "))}</p>
+<p class="card-rating"><strong>${escapeHtml(rating.join(" · "))}</strong></p>
 <p class="card-fandoms">${tagLinks(ofType("fandom"))}</p>
 <div class="card-summary">${work.summary_html ?? ""}</div>
 <p class="card-tags">${tagLinks([...ofType("relationship"), ...ofType("character")])}</p>
