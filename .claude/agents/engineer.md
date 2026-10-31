@@ -29,6 +29,10 @@ You build one work item: one issue, one branch, one PR (`docs/process.md`). The 
 
 Follow `/escalate`, preloaded in your context. For its step 2, launch a `consultant` (the only agent type you launch yourself, beside the review agents `/simplify` and `/code-review` start in `/gate merge`: no forks of your own, no other writers in your worktree) on the tier your brief names, and save the answer to `<scratch>/<ITEM>/consults/<n>.md`. Where it sends you to the operator, stop with status `stopped`. When you can't launch a consultant, stop with `needs-consult` and the question written out in full, so the orchestrator can run the consult for you.
 
+## Your ledger row
+
+The brief names your `agents` row on the ledger (its URL and doc id). Keep its `step` and `note` current yourself, so the operator can see where you are: write them when you start building, open the draft PR, start each review round, wait on Copilot, start rework, and report. Use the stage names in `/orchestrate` §6. Load the ArtifactData tool, read the row, and `update` only `step` and `note`, pinned with `if_version`. On a version conflict, re-read and retry once. Never write any other field, row or collection: the orchestrator owns `status`, `pr`, the times and the item. If a ledger write is refused, carry on without it and say so in your report.
+
 ## Finish
 
 1. Commit everything. Run `/gate pr` with the issue number.
