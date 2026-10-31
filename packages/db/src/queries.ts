@@ -10,7 +10,7 @@ import type {
   WorkTable,
   WorkVersionTable,
 } from "./schema";
-import { normalizeTagName } from "./tags";
+import { compareCodeUnits, normalizeTagName } from "./tags";
 
 /** A work's own fields, as a page shows them. */
 export type WorkSummary = Pick<
@@ -70,7 +70,9 @@ export async function getLiveWork(
   // `ao3_work_id` is an int4: anything else is no work, not a database error.
   if (!Number.isInteger(ao3WorkId) || ao3WorkId < 1 || ao3WorkId > MAX_INT4) return null;
   // One statement, so the work, its version, byline, tags and chapters all
-  // come from one snapshot even while a moderator switches versions.
+  // come from one snapshot even while a moderator switches versions (a cached
+  // result through Hyperdrive is consistent, though not necessarily fresh).
+  // json_agg doesn't promise its input order, so the lists are sorted here.
   const row = await db
     .selectFrom("works")
     .innerJoin("work_versions", "work_versions.id", "works.current_version_id")
@@ -88,24 +90,20 @@ export async function getLiveWork(
         eb
           .selectFrom("work_authors")
           .select(["work_authors.pseud", "work_authors.ao3_user"])
-          .whereRef("work_authors.work_id", "=", "works.id")
-          .orderBy("work_authors.pseud")
-          .orderBy("work_authors.ao3_user"),
+          .whereRef("work_authors.work_id", "=", "works.id"),
       ).as("authors"),
       jsonArrayFrom(
         eb
           .selectFrom("work_tags")
           .innerJoin("tags", "tags.id", "work_tags.tag_id")
-          .select(["tags.id", "tags.type", "tags.name", "tags.name_norm"])
-          .whereRef("work_tags.work_id", "=", "works.id")
-          .orderBy("work_tags.position"),
+          .select(["tags.id", "tags.type", "tags.name", "tags.name_norm", "work_tags.position"])
+          .whereRef("work_tags.work_id", "=", "works.id"),
       ).as("tags"),
       jsonArrayFrom(
         eb
           .selectFrom("chapters")
           .select(["chapters.n", "chapters.title", "chapters.words", "chapters.r2_key"])
-          .whereRef("chapters.version_id", "=", "work_versions.id")
-          .orderBy("chapters.n"),
+          .whereRef("chapters.version_id", "=", "work_versions.id"),
       ).as("chapters"),
     ])
     .where("works.ao3_work_id", "=", ao3WorkId)
@@ -126,10 +124,16 @@ export async function getLiveWork(
   } = row;
   return {
     work,
-    authors,
-    tags,
+    // By pseud, then user, by code unit: the same order in every database.
+    authors: authors.sort(
+      (a, b) =>
+        compareCodeUnits(a.pseud, b.pseud) || compareCodeUnits(a.ao3_user ?? "", b.ao3_user ?? ""),
+    ),
+    tags: tags
+      .sort((a, b) => a.position - b.position)
+      .map(({ id, type, name, name_norm }) => ({ id, type, name, name_norm })),
     version: { id: version_id, chapter_count, r2_prefix, created_at, review_reasons, checked_at },
-    chapters,
+    chapters: chapters.sort((a, b) => a.n - b.n),
   };
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeTagName } from "../src/index";
+import { compareTagKeys, normalizeTagName } from "../src/index";
 
 describe("06 AO3 preface and chapters", () => {
   it("Tags are stored as written with a normalized form", () => {
@@ -13,6 +13,25 @@ describe("14 browse and home", () => {
   it("Tag matching uses the normalized form", () => {
     expect(normalizeTagName("fandom", "Harry Potter")).toBe("harry potter");
     expect(normalizeTagName("fandom", "harry  potter!")).toBe("harry potter");
+  });
+});
+
+describe("compareTagKeys", () => {
+  it("Distinct tag names never tie, so tag locks have one order", () => {
+    // "é" written two ways: precomposed, and "e" with a combining acute accent.
+    const composed = { type: "character" as const, name: String.fromCodePoint(0xe9) };
+    const combining = { type: "character" as const, name: `e${String.fromCodePoint(0x301)}` };
+    expect(composed.name.localeCompare(combining.name)).toBe(0);
+    const forward = compareTagKeys(composed, combining);
+    expect(forward).not.toBe(0);
+    expect(compareTagKeys(combining, composed)).toBe(-forward);
+    expect(compareTagKeys(composed, { ...composed })).toBe(0);
+  });
+
+  it("Type orders before name", () => {
+    expect(
+      compareTagKeys({ type: "character", name: "z" }, { type: "fandom", name: "a" }),
+    ).toBeLessThan(0);
   });
 });
 

@@ -13,6 +13,10 @@ afterAll(async () => {
   await t?.close();
 });
 
+// "é" written two ways: precomposed, and "e" with a combining acute accent.
+const COMPOSED = String.fromCodePoint(0xe9);
+const COMBINING = `e${String.fromCodePoint(0x301)}`;
+
 describe("@archive/db/seed seedWork", () => {
   it("A seeded work is live with its chapters, authors and tags", async () => {
     const s = await seedWork(t.db, {
@@ -117,6 +121,29 @@ describe("@archive/db/seed seedWork", () => {
     });
     const work = await getLiveWork(t.db, s.ao3WorkId);
     expect(work?.tags.map((x) => x.name)).toEqual(["Twice Seeded", "Between"]);
+  });
+
+  it("Authors read back by pseud, then user; tags keep both canonical spellings", async () => {
+    const s = await seedWork(t.db, {
+      authors: [
+        { pseud: "Zed", ao3_user: "zed" },
+        { pseud: "Sam", ao3_user: "bob" },
+        { pseud: "Sam", ao3_user: null },
+        { pseud: "Amy", ao3_user: "amy" },
+      ],
+      tags: [
+        { type: "character", name: COMBINING },
+        { type: "character", name: COMPOSED },
+      ],
+    });
+    const work = await getLiveWork(t.db, s.ao3WorkId);
+    expect(work?.authors).toEqual([
+      { pseud: "Amy", ao3_user: "amy" },
+      { pseud: "Sam", ao3_user: null },
+      { pseud: "Sam", ao3_user: "bob" },
+      { pseud: "Zed", ao3_user: "zed" },
+    ]);
+    expect(work?.tags.map((x) => x.name)).toEqual([COMBINING, COMPOSED]);
   });
 
   it("A work nobody seeded is not found", async () => {

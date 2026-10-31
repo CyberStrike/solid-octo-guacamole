@@ -7,7 +7,7 @@
 // each file its own tag names and AO3 work IDs, or a listing sees the others'.
 import type { Kysely, Transaction } from "kysely";
 import type { Database, HiddenCause, TagType } from "./schema";
-import { normalizeTagName } from "./tags";
+import { compareTagKeys, normalizeTagName } from "./tags";
 
 export interface SeedChapter {
   title?: string;
@@ -200,12 +200,10 @@ async function addTags(
     seen.add(key);
     return true;
   });
-  // Upserted in (type, name) order, so concurrent seeds lock shared rows in
-  // one order and can't deadlock. One row per type and name: a second seed
-  // of the same tag reuses it, with `name_norm` brought up to the rule.
-  const byKey = unique
-    .map((tag, position) => ({ ...tag, position }))
-    .sort((a, b) => ordinal(a.type, b.type) || ordinal(a.name, b.name));
+  // Upserted in the shared lock order (`compareTagKeys`). One row per type and
+  // name: a second seed of the same tag reuses it, with `name_norm` brought up
+  // to the rule.
+  const byKey = unique.map((tag, position) => ({ ...tag, position })).sort(compareTagKeys);
   for (const tag of byKey) {
     const row = await trx
       .insertInto("tags")
@@ -290,16 +288,6 @@ async function addVersion(
     chapterKeys: fragments.map((f) => f.key),
     fragments,
   };
-}
-
-/**
- * Compares by UTF-16 code units, so distinct strings never tie: `localeCompare`
- * can call "é" and "e" with a combining accent equal, and a tie would let two
- * seeds lock the same tags in different orders.
- */
-function ordinal(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
 }
 
 function randomAo3WorkId(): number {
