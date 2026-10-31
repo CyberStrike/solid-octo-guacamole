@@ -66,4 +66,19 @@ describe("04-ingest-job-lifecycle", () => {
     expect(firstResult.explicitAcks).toEqual(["msg-0"]);
     expect(secondResult.explicitAcks).toEqual(["msg-0"]);
   });
+
+  it("records parse_failed at the read stage, without a retry, when the object is gone", async () => {
+    // As for a message redriven after the 7-day expiry of uploads/ (#176).
+    const id = await pendingUpload(null);
+
+    const result = await deliver([{ upload_id: id }]);
+
+    const row = await uploadRow(id);
+    expect(row.status).toBe("parse_failed");
+    expect(row.error_stage).toBe("read");
+    expect(row.error).toBe("object_missing");
+    expect(row.lease_until).toBeNull();
+    expect(result.explicitAcks).toEqual(["msg-0"]);
+    expect(result.retryMessages).toEqual([]);
+  });
 });

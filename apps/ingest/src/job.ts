@@ -21,7 +21,14 @@ export async function runJob(deps: JobDeps, uploadId: string): Promise<Verdict> 
   const lease = await claimLease(deps.db, uploadId);
   if (lease === null) return "ack";
   const object = await deps.bucket.get(lease.r2Key);
-  if (object === null) return "ack";
+  if (object === null) {
+    // Gone, as after the 7-day expiry of uploads/ (#176): no retry brings it back.
+    await endLease(deps.db, lease, {
+      status: "parse_failed",
+      failure: { stage: "read", error: "object_missing" },
+    });
+    return "ack";
+  }
   // By the object's size, before its body is read: an over-limit file never reaches memory.
   if (object.size > LIMITS.maxInputBytes) {
     await object.body.cancel();
