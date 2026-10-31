@@ -92,6 +92,8 @@ function decodeXml(bytes: Uint8Array, what: string): string {
 function parseXml(bytes: Uint8Array, what: string): XmlNode {
   const text = decodeXml(bytes, what);
   try {
+    // SAFETY: the parser returns an object tree; nothing in it is trusted, since every read
+    // goes through child, attr and text, which check each value's type.
     return parser.parse(text) as XmlNode;
   } catch (e) {
     throw new EpubError("not_epub", `${what} is not valid XML`, { cause: e });
@@ -132,6 +134,8 @@ function parseNav(bytes: Uint8Array, budget: NodeBudget): OrderedNode[] {
   if (budget.remaining < 0)
     throw new EpubError("too_large", `More than ${LIMITS.maxNodes} elements and text nodes`);
   try {
+    // SAFETY: preserveOrder output is an array of nodes; every read goes through tagOf, kids,
+    // orderedAttr and orderedText, which check each value's type.
     return navParser.parse(text) as OrderedNode[];
   } catch (e) {
     // fast-xml-parser's message for maxNestedTags; nav.test.ts holds it to parse_failed.
@@ -148,12 +152,16 @@ function parseNav(bytes: Uint8Array, budget: NodeBudget): OrderedNode[] {
 
 function asArray(v: unknown): XmlNode[] {
   if (v === undefined || v === null) return [];
+  // SAFETY: an element may be a string or another value, not a node; child, attr and text
+  // check before reading from it.
   return (Array.isArray(v) ? v : [v]) as XmlNode[];
 }
 
 function child(node: unknown, name: string): XmlNode | undefined {
   if (!node || typeof node !== "object") return undefined;
+  // SAFETY: node is a non-null object, checked above.
   const v = (node as XmlNode)[name];
+  // SAFETY: as for asArray: the value may not be a node, and every reader checks first.
   return Array.isArray(v) ? (v[0] as XmlNode) : (v as XmlNode | undefined);
 }
 
@@ -166,6 +174,7 @@ function attr(node: unknown, name: string): string | undefined {
 function text(node: unknown): string {
   if (typeof node === "string") return node;
   if (node && typeof node === "object") {
+    // SAFETY: node is a non-null object, checked above.
     const t = (node as XmlNode)["#text"];
     if (typeof t === "string") return t;
   }
@@ -243,10 +252,12 @@ function tagOf(node: OrderedNode): string | undefined {
 function kids(node: OrderedNode): OrderedNode[] {
   const tag = tagOf(node);
   const v = tag === undefined ? undefined : node[tag];
+  // SAFETY: an array of preserveOrder nodes, each read only through the checking readers.
   return Array.isArray(v) ? (v as OrderedNode[]) : [];
 }
 
 function orderedAttr(node: OrderedNode, name: string): string | undefined {
+  // SAFETY: the ":@" group is an attribute record or absent; the value is checked next.
   const v = (node[":@"] as Record<string, unknown> | undefined)?.[name];
   return typeof v === "string" ? v : undefined;
 }

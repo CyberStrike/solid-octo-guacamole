@@ -35,7 +35,8 @@ export function zipEntries(
   const z: Zippable = {};
   if (mimetype !== null) z["mimetype"] = [strToU8(mimetype), { level: 0 }];
   for (const [name, data] of Object.entries(entries))
-    z[name] = data instanceof Uint8Array ? data : strToU8(data);
+    // oxlint-disable-next-line deslop/no-runtime-typeof -- tells the string | Uint8Array union apart, realm-safe
+    z[name] = typeof data === "string" ? strToU8(data) : data;
   return zipSync(z);
 }
 
