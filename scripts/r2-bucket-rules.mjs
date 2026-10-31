@@ -1,4 +1,13 @@
 #!/usr/bin/env node
+import { execFile } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+const BUCKET = "rarepair";
 const DAY = 86400;
 
 export function lifecycleRules() {
@@ -12,4 +21,44 @@ export function lifecycleRules() {
       },
     ],
   };
+}
+
+const wranglerBin = () =>
+  process.env.R2_BUCKET_RULES_WRANGLER ??
+  join(dirname(createRequire(import.meta.url).resolve("wrangler/package.json")), "bin/wrangler.js");
+
+async function main() {
+  const wrangler = async (args) =>
+    (
+      await promisify(execFile)(process.execPath, [wranglerBin(), ...args], {
+        encoding: "utf8",
+      })
+    ).stdout;
+  const dir = mkdtempSync(join(tmpdir(), "r2-bucket-rules-"));
+  try {
+    const lifecycleFile = join(dir, "lifecycle.json");
+    writeFileSync(lifecycleFile, JSON.stringify(lifecycleRules()));
+    await wrangler([
+      "r2",
+      "bucket",
+      "lifecycle",
+      "set",
+      BUCKET,
+      "--file",
+      lifecycleFile,
+      "--force",
+    ]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  return 0;
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  try {
+    process.exit(await main());
+  } catch (error) {
+    console.error(`r2-bucket-rules: cannot apply: ${error.message ?? error}`);
+    process.exit(2);
+  }
 }
