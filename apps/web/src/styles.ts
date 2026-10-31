@@ -301,6 +301,29 @@ article.chapter table {
   color: var(--muted);
 }
 
+/* the report form: one reason a line, each a large target, and details as wide as the page */
+
+.report-form fieldset {
+  margin: 0 0 calc(var(--space) * 4);
+}
+
+.report-form fieldset label {
+  display: block;
+  min-height: 24px;
+  padding: var(--space) 0;
+}
+
+.report-form > label {
+  display: block;
+}
+
+.report-form textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin: var(--space) 0 calc(var(--space) * 4);
+  font: inherit;
+}
+
 /* any page */
 
 /* A word longer than the line, such as a tag or a URL, breaks rather than scrolling sideways. */
@@ -320,6 +343,47 @@ main {
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+/* Listing sort and filters, and its pages (FRONTEND-DISCOVERY, Pagination): rows that wrap at 360px. */
+
+.listing-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) * 2) calc(var(--space) * 4);
+  align-items: end;
+  margin: calc(var(--space) * 4) 0;
+  padding-bottom: calc(var(--space) * 4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.listing-filters p {
+  margin: 0;
+}
+
+.listing-filters label {
+  display: block;
+  font-size: var(--text-1);
+}
+
+.listing-filters select,
+.listing-filters input {
+  font: inherit;
+  max-width: 100%;
+}
+
+.pager ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) * 2) calc(var(--space) * 4);
+  list-style: none;
+  margin: calc(var(--space) * 4) 0;
+  padding: 0;
+}
+
+/* The current page is bold text, not a link: not colour alone. */
+.pager [aria-current="page"] {
+  font-weight: bold;
 }
 `;
 

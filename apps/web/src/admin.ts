@@ -17,7 +17,7 @@ import {
 } from "./admin-pages";
 import type { Bindings } from "./env";
 import type { SecurityVariables } from "./security";
-import { sessionMiddleware, type SessionVariables } from "./session";
+import type { SessionVariables } from "./session";
 
 /** The roles with every moderator power (ARCHITECTURE, Data model): an admin has them too. */
 export type ModeratorRole = "moderator" | "admin";
@@ -51,7 +51,7 @@ export const adminGate: MiddlewareHandler<AdminEnv> = async (c, next) => {
   const userId = c.var.session?.user.id;
   if (userId === undefined) return refuse(c);
   // One connection serves the role read and the handler's queries. The session
-  // lookup before it has its own, until sessions share one (A4).
+  // lookup before it has its own, until sessions share one (#241).
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   try {
     const user = await db
@@ -179,12 +179,12 @@ export function showWorksToCheck(c: AdminContext) {
 /**
  * The area, for `app.route("/admin", admin)`. Its middleware runs for "/admin/*",
  * which matches /admin itself too and every path below it, routed or not, so a
- * later /admin route is gated without asking. Until A4 (#24) mounts the session for
- * every page, it is mounted here for /admin only. The session, role and database
- * are typed on this app alone: no other page has them.
+ * later /admin route is gated without asking. The session comes from the app's
+ * global mount (index.ts), so this is mounted after it. The role and database are
+ * typed on this app alone: no other page has them.
  */
 export const admin = new Hono<AdminEnv>();
-admin.use(sessionMiddleware, adminGate);
+admin.use(adminGate);
 admin.get("/", showAdminHome);
 admin.get("/reports", showReports);
 admin.get("/takedowns", showTakedowns);

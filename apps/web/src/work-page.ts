@@ -7,7 +7,7 @@ import type { Context } from "hono";
 import type { Bindings } from "./env";
 import { escapeHtml, layout } from "./pages";
 import type { SecurityVariables } from "./security";
-import { tagHref } from "./tag-links";
+import { TAG_LABELS, tagHref, type LinkedType } from "./tag-links";
 
 type WorkContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
 
@@ -15,19 +15,6 @@ type Tag = LiveWork["tags"][number];
 
 /** An AO3 work ID as its URLs spell it: no sign, no leading zero, at most ten digits. */
 const AO3_WORK_ID = /^[1-9]\d{0,9}$/;
-
-/** The types shown as links, each with the hidden label that announces it. */
-type LinkedType = Exclude<Tag["type"], "rating" | "warning">;
-
-// The type is announced, never shown by colour (FRONTEND-DISCOVERY, Components,
-// Tag list). Rating and warnings are plain text on their own line instead.
-const TAG_LABELS: Record<LinkedType, string> = {
-  fandom: "Fandom",
-  category: "Category",
-  relationship: "Relationship",
-  character: "Character",
-  freeform: "Additional tag",
-};
 
 // The label goes inside the link, so it is part of the link's name when a screen
 // reader lists the links or tabs through them.
@@ -82,6 +69,7 @@ ${block("p", "fandoms", fandoms.map(tagLink).join(", "))}${block("section", "sum
 ${needsCheck ? `<p class="review-notice">Chapters may be imperfect; a moderator will check.</p>\n` : ""}<ol class="chapters">${chapters.map((ch) => `<li><a href="${base}/chapters/${ch.n}">${escapeHtml(ch.title)}</a></li>`).join("")}</ol>
 <p class="full"><a href="${base}/full">Read the entire work on one page</a></p>
 <p class="download"><a href="${originalHref(version.r2_prefix)}">Download original epub</a></p>
+<p class="report"><a href="${base}/report">Report</a></p>
 <p class="unofficial">rarepair is an unofficial stopgap, not the original archive: this copy is here while the original is offline.</p>
 <p class="original"><a href="https://archiveofourown.org/works/${work.ao3_work_id}">The original work</a>, where the credit belongs. The link works again once the original archive is back.</p>`,
   );

@@ -81,9 +81,17 @@ const RENAME = new Map([["strike", "s"]]);
 // noreferrer: following a link must not tell the target which work a reader is on.
 const EXTERNAL_REL = "nofollow noopener noreferrer ugc";
 
+/** The only same-site link the serializer emits: a chapter in our reader. */
+const READER_URL = /^\/works\/[1-9]\d{0,9}\/chapters\/[1-9]\d{0,9}$/;
+
 export interface SanitizeContext {
   /** Returns the rewritten URL for an epub-internal image, or null to drop the img. */
   resolveImage(src: string, fromFile: string): string | null;
+  /**
+   * Returns our reader URL for an epub-internal link to another chapter of the
+   * work, or null to keep the link's text only.
+   */
+  resolveChapterLink?(href: string, fromFile: string): string | null;
   /** Elements to leave out entirely (e.g. AO3 navigation chrome). */
   skip?(el: ElementNode): boolean;
 }
@@ -157,10 +165,19 @@ function serializeNode(node: Node, ctx: SanitizeContext): string {
 
   let attrs = allowedAttrs(tag, node);
   if (tag === "a") {
-    const href = node.attrs["href"] === undefined ? null : safeHref(node.attrs["href"]);
-    // Internal links (other files, #fragments) and unsafe schemes become plain text.
-    if (href === null) return inner();
-    attrs = ` href="${escapeAttr(href)}" rel="${EXTERNAL_REL}"${attrs}`;
+    const raw = node.attrs["href"];
+    if (raw === undefined) return inner();
+    const href = safeHref(raw);
+    if (href !== null) {
+      attrs = ` href="${escapeAttr(href)}" rel="${EXTERNAL_REL}"${attrs}`;
+    } else {
+      // A link to another chapter becomes a same-site reader link; any other
+      // internal link (#fragments, other files) or unsafe scheme becomes plain text.
+      const chapter = ctx.resolveChapterLink?.(decodeEntities(raw).trim(), node.file);
+      // Checked here too: only a reader URL may leave the serializer without rel.
+      if (!chapter || !READER_URL.test(chapter)) return inner();
+      attrs = ` href="${escapeAttr(chapter)}"${attrs}`;
+    }
   }
 
   if (VOID_OUT.has(tag)) return `<${tag}${attrs}>`;

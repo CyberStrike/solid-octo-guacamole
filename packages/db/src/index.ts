@@ -6,9 +6,14 @@ export { normalizePseud } from "./pseud";
 export {
   getLiveWork,
   listLiveWorksByTag,
+  liveTagSpellings,
+  NOT_RATED,
   tagNameKeys,
   insertUpload,
   type ListedWork,
+  type ListingOptions,
+  type ListingSort,
+  type TagListing,
   type LiveWork,
   type WorkSummary,
 } from "./queries";
