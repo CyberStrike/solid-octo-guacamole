@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { except } from "hono/combine";
+import { admin } from "./admin";
 import { assetRoute } from "./assets";
 import { confirmSignIn, showConfirm } from "./confirm";
 import type { Bindings } from "./env";
@@ -40,6 +41,9 @@ app.post("/uploads", sameOriginUpload);
 // again. Static files skip it, and the lookup's database connection with it. Then
 // an account that hasn't accepted the terms is sent to accept them.
 app.use(except("/assets/*", sessionMiddleware, termsGate));
+
+// The moderation area: every /admin URL goes through its gate (admin.ts).
+app.route("/admin", admin);
 
 // The wait list pages' fonts and stylesheet. S1 serves its own stylesheet elsewhere under /assets/.
 app.get("/assets/waitlist/*", assetRoute);
@@ -83,7 +87,12 @@ app.get(STYLESHEET_PATH, (c) =>
   }),
 );
 
-app.notFound((c) => c.html(notFoundPage(), 404));
+// no-store on every 404, as on the /admin pages: the admin gate refuses with
+// this answer, and a header only its refusal sent would point at /admin.
+app.notFound((c) => {
+  c.header("Cache-Control", "no-store");
+  return c.html(notFoundPage(), 404);
+});
 // Hono's default logs the whole error, and one from Postgres can quote the row it
 // failed on, a sign-in address included. Log only what kind of error it was.
 app.onError((error, c) => {
