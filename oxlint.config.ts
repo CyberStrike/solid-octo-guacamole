@@ -41,8 +41,8 @@ export default defineConfig({
       },
     },
     {
-      // The email queue's message contract, where a body from outside is validated.
-      files: ["apps/mailer/src/message.ts"],
+      // The email and ingest queues' message contracts, where a body from outside is validated.
+      files: ["apps/mailer/src/message.ts", "apps/ingest/src/message.ts"],
       rules: {
         // parseMessage takes the raw body; checking it is its job.
         "deslop/no-unknown-parameters": "off",

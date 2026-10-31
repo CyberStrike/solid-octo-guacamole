@@ -17,8 +17,8 @@ const strictPolicy = (nonce: string) =>
     "frame-ancestors 'none'",
   ].join("; ");
 
-// The pages with a Turnstile check, matched exactly: only they, and / before launch
-// (hasTurnstile), may frame the challenge.
+// The pages with a Turnstile check, matched exactly: only they, and / and /waitlist
+// before launch (hasTurnstile), may frame the challenge.
 const TURNSTILE_PATHS = new Set(["/login", "/upload", "/remove"]);
 export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 const TURNSTILE_FRAME = `frame-src ${TURNSTILE_ORIGIN}`;
@@ -51,9 +51,12 @@ export const wwwToBareDomain: MiddlewareHandler = async (c, next) => {
 /** A fresh base64 nonce of 16 random bytes. */
 const newNonce = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(16))));
 
-/** Whether a path's page has a Turnstile check: / has the wait list form only before launch. */
+/**
+ * Whether a path's page has a Turnstile check. The wait list form is at / only before
+ * launch, and a refused `POST /waitlist` shows it again at /waitlist.
+ */
 const hasTurnstile = (path: string, env: Pick<Bindings, "PRELAUNCH">) =>
-  TURNSTILE_PATHS.has(path) || (path === "/" && isPrelaunch(env));
+  TURNSTILE_PATHS.has(path) || ((path === "/" || path === "/waitlist") && isPrelaunch(env));
 
 /**
  * Sets the CSP on every HTML response, with a nonce handlers read as c.get("nonce").

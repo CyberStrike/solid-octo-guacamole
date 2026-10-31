@@ -11,6 +11,7 @@ import {
   type SecurityVariables,
 } from "./security";
 import { STYLESHEET, STYLESHEET_PATH } from "./styles";
+import { joinWaitlist } from "./waitlist";
 import { comingSoonPage } from "./waitlist-pages";
 import { showWork } from "./work-page";
 
@@ -35,6 +36,9 @@ app.get("/", (c) =>
 );
 app.get("/login", showSignIn);
 app.post("/login", requestSignIn);
+app.post("/waitlist", joinWaitlist);
+// After launch, a stale link to the form goes home. Before it, nothing is at GET /waitlist.
+app.get("/waitlist", (c) => (isPrelaunch(c.env) ? c.notFound() : c.redirect("/", 302)));
 app.get("/upload", (c) => c.html(turnstilePage("Upload a work", c.get("nonce"))));
 app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce"))));
 
