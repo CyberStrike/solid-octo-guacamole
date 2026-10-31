@@ -7,6 +7,7 @@ import {
   consoleDuring,
   emailsTo,
   fetchW,
+  freshIp,
   PASSING_TOKEN,
   STRICT,
   withoutNonce,
@@ -28,11 +29,11 @@ const FORM_HEADERS = {
 
 const HSTS = "max-age=31536000; includeSubDomains";
 
-/** Submits the join form with a passing Turnstile token. */
+/** Submits the join form with a passing Turnstile token, from a fresh IP: one IP is limited. */
 const postJoin = (email: string) =>
   fetchW("/waitlist", {
     method: "POST",
-    headers: FORM_HEADERS,
+    headers: { ...FORM_HEADERS, "cf-connecting-ip": freshIp() },
     body: new URLSearchParams({ email, "cf-turnstile-response": PASSING_TOKEN }).toString(),
   });
 
