@@ -139,6 +139,7 @@ describe("22-waitlist", () => {
       const res = await fetchW(path);
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toBe("font/woff2");
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
       expect(res.headers.get("cache-control")).toBe(IMMUTABLE);
       expect(res.headers.get("strict-transport-security")).toBe(HSTS);
       const digest = await sha256(new Uint8Array(await res.arrayBuffer()));
@@ -174,6 +175,8 @@ describe("22-waitlist", () => {
       expect(res.headers.get("content-type")).toMatch(/^text\/plain/);
       expect(await sha256(new Uint8Array(await res.arrayBuffer()))).toBe(digest);
     }
+    // The provenance note is for the repo, not the site.
+    expect((await fetchW("/assets/waitlist/fonts/PROVENANCE.md")).status).toBe(404);
 
     // No other app page loads a web font. (WL2 and WL3 build the other wait list pages
     // on waitlistPage, which links the same stylesheet.)
@@ -197,6 +200,15 @@ describe("22-waitlist", () => {
       ["/login/confirm/x", "GET"],
       ["/terms/", "GET"],
       ["/welcome", "GET"],
+      // Spellings that must not slip past the allow-list or reach a closed route.
+      ["/upload", "HEAD"],
+      ["/upload", "OPTIONS"],
+      ["/UPLOAD", "GET"],
+      // In full: on its own, "//upload" is a URL whose host is "upload".
+      [`${BASE}//upload`, "GET"],
+      ["/%75pload", "GET"],
+      ["/login/", "GET"],
+      ["/assets/../upload", "GET"],
     ];
     for (const [path, method] of closed) {
       const res = await fetchW(path, { method });
