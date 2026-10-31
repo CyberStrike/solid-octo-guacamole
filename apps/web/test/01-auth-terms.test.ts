@@ -228,9 +228,10 @@ describe("01-auth-magic-link", () => {
     expect(location.pathname).toBe("/login");
     expect(location.searchParams.get("next")).toBe(page);
 
+    // A post too, carrying the page it was posted to (ARCHITECTURE, Auth).
     const post = await postLogin({ next: WORK_PAGE }, { url: "/welcome/terms" });
     expect(post.status).toBe(303);
-    expect(post.headers.get("location")).toBe("/login");
+    expect(post.headers.get("location")).toBe("/login?next=%2Fwelcome%2Fterms");
   });
 
   it("Once accepted, the terms page goes straight to next", async () => {

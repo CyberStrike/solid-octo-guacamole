@@ -50,20 +50,23 @@ export const sessionMiddleware: MiddlewareHandler<{
 };
 
 /**
- * Sends the request to `target` before its page: a GET or HEAD with a 302 carrying
- * the page as `next`, reduced to a same-site path; any other method with a 303 and
- * no `next`, since a form post is no page to come back to.
+ * Sends the request to `target` before its page, carrying the page's path and query
+ * as `next`, reduced to a same-site path: a GET or HEAD with a 302, any other method
+ * with a 303, since a form post is answered with a GET. `carryPosted: false` leaves
+ * `next` off the 303.
  */
-export function redirectCarryingNext(c: Context, target: string) {
-  if (c.req.method !== "GET" && c.req.method !== "HEAD") return c.redirect(target, 303);
+export function redirectCarryingNext(c: Context, target: string, { carryPosted = true } = {}) {
+  const isRead = c.req.method === "GET" || c.req.method === "HEAD";
+  if (!isRead && !carryPosted) return c.redirect(target, 303);
   const url = new URL(c.req.url);
   const query = new URLSearchParams({ next: safeNext(url.pathname + url.search) });
-  return c.redirect(`${target}?${query.toString()}`, 302);
+  return c.redirect(`${target}?${query.toString()}`, isRead ? 302 : 303);
 }
 
 /**
  * For a route that needs an account, after `sessionMiddleware`: signed out, it is
- * sent to sign in, as `redirectCarryingNext` does. A route that must answer a
+ * sent to sign in, carrying the page as `next`, a POST included (ARCHITECTURE,
+ * Auth, "Signed-out requests to signed-in pages"). A route that must answer a
  * script with 401 instead checks `c.var.session` itself.
  */
 export const requireSignIn: MiddlewareHandler<{ Variables: SessionVariables }> = async (c, next) =>

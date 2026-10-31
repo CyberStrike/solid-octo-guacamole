@@ -9,6 +9,7 @@ describe("terms gate's exempt paths", () => {
       "/privacy",
       "/login",
       "/login/confirm",
+      "/assets",
       "/assets/site.0123456789abcdef.css",
       "/assets/waitlist/font.0123456789abcdef.woff2",
     ]) {
@@ -27,7 +28,6 @@ describe("terms gate's exempt paths", () => {
       "/welcome/terms/x",
       "/welcome",
       "/privacyx",
-      "/assets",
       "/assetsx/site.css",
       "/login/confirmx",
     ]) {

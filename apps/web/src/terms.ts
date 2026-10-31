@@ -16,7 +16,8 @@ export const WELCOME_TERMS = "/welcome/terms";
 /**
  * What an account that hasn't accepted the terms can still reach: the terms page,
  * the terms and privacy pages it links to, sign-in (so it can switch address) and
- * static files. A path ending in `/*` covers everything below it, by whole segment.
+ * static files. A path ending in `/*` covers itself and everything below it, by
+ * whole segment, as Hono's `/assets/*` does.
  * Sign-out belongs here once a ticket builds it.
  */
 export const TERMS_EXEMPT = [
@@ -31,7 +32,9 @@ export const TERMS_EXEMPT = [
 /** Whether `path` is open to an account that hasn't accepted the terms. */
 export const isTermsExempt = (path: string) =>
   TERMS_EXEMPT.some((exempt) =>
-    exempt.endsWith("/*") ? path.startsWith(exempt.slice(0, -1)) : path === exempt,
+    exempt.endsWith("/*")
+      ? path === exempt.slice(0, -2) || path.startsWith(exempt.slice(0, -1))
+      : path === exempt,
   );
 
 /**
@@ -46,7 +49,8 @@ export const termsGate: MiddlewareHandler<{ Variables: SessionVariables }> = asy
   }
   // Signed in: never cached shared (#108).
   c.header("Cache-Control", "no-store");
-  return redirectCarryingNext(c, WELCOME_TERMS);
+  // A form post isn't a page to come back to after accepting.
+  return redirectCarryingNext(c, WELCOME_TERMS, { carryPosted: false });
 };
 
 type TermsContext = Context<{ Bindings: Bindings; Variables: SessionVariables }>;
