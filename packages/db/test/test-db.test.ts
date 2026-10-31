@@ -119,9 +119,12 @@ describe("createTestDb", () => {
 
   it("frees the database when a client drops inside a transaction", async () => {
     const dropped = await rawClient();
-    await dropped.query("begin");
-    await dropped.query("insert into client_turns (n) values (-2)");
-    dropped.socket.destroy();
+    try {
+      await dropped.query("begin");
+      await dropped.query("insert into client_turns (n) values (-2)");
+    } finally {
+      dropped.socket.destroy();
+    }
 
     const c = await client();
     try {
@@ -149,15 +152,20 @@ describe("createTestDb", () => {
 
       expect((await answer).rows).toEqual([{ n: 7 }]);
     } finally {
+      // First: c's Terminate would wait behind the open cycle.
+      dropped.socket.destroy();
       await c.end();
     }
   });
 
   it("frees the database when a client drops after a failed Parse, before its Sync", async () => {
     const dropped = await rawClient();
-    // The server now skips this client's messages until a Sync that never comes.
-    await expect(dropped.parseOnly("selec 1")).rejects.toThrow("syntax error");
-    dropped.socket.destroy();
+    try {
+      // The server now skips this client's messages until a Sync that never comes.
+      await expect(dropped.parseOnly("selec 1")).rejects.toThrow("syntax error");
+    } finally {
+      dropped.socket.destroy();
+    }
 
     const c = await client();
     try {
@@ -229,6 +237,9 @@ async function rawClient() {
       else if (type === awaited.type) awaited.arrived();
     }
   });
+  // A refused or reset connection fails what is waiting, rather than hanging it.
+  socket.on("error", (err) => awaited.failed(err));
+  socket.on("close", () => awaited.failed(new Error("connection closed")));
   /** Sends `bytes`, and resolves when a server message of type `until` arrives. */
   const send = (bytes: Buffer, until = READY_FOR_QUERY) =>
     new Promise<void>((resolve, reject) => {
