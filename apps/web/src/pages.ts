@@ -149,3 +149,38 @@ export const forbiddenPage = () =>
     "Request refused",
     `<p>That request didn't come from rarepair. <a href="/login">Sign in here</a>.</p>`,
   );
+
+/**
+ * The emailed link's page: only a button that posts the token. Opening the link
+ * uses nothing up, so a mail scanner's prefetch can't spend it. No script, so it
+ * works with JavaScript off. `next` is already reduced to a same-site path.
+ */
+export const confirmPage = (token: string, next: string) =>
+  layout(
+    "Sign in",
+    `<form method="post" action="/login/confirm">
+<input type="hidden" name="token" value="${escapeHtml(token)}">
+<input type="hidden" name="next" value="${escapeHtml(next)}">
+<button type="submit">Sign in</button>
+</form>`,
+  );
+
+/**
+ * Signing in failed on our side, not the link's. The link may already be spent
+ * (Better Auth uses it up before it makes the session), so it asks for a new one.
+ */
+export const signInFailedPage = () =>
+  layout(
+    "Something went wrong",
+    `<p>Signing in didn't work, and it isn't anything you did. <a href="/login">Request a new sign-in link</a> and try again.</p>`,
+  );
+
+/**
+ * A request over a rate limit, shared by every limited route: when to try again,
+ * in the same whole number of seconds as the response's `Retry-After`.
+ */
+export const tooManyRequestsPage = (seconds: number) =>
+  layout(
+    "Too many requests",
+    `<p>There have been too many requests in a short time. Please try again in ${seconds === 1 ? "1 second" : `${seconds} seconds`}.</p>`,
+  );

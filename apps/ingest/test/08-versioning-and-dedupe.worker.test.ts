@@ -4,7 +4,7 @@ import {
   bucketText,
   deliver,
   liveWork,
-  newWorkId,
+  freshAo3WorkId,
   pendingUpload,
   savedRows,
   uploadRow,
@@ -14,7 +14,7 @@ describe("08-versioning-and-dedupe", () => {
   it("First upload creates the work", async () => {
     // The scenario's 67890 stands for an ID no work has: here, one no other test uses, since a
     // rerun on the same database (vitest watch) would find a fixed ID's work from the first run.
-    const workId = newWorkId();
+    const workId = freshAo3WorkId();
     const id = await pendingUpload(
       ao3Epub({ workId, stats: "Published: 2020-01-02 Words: 3 Chapters: 1/1" }),
     );

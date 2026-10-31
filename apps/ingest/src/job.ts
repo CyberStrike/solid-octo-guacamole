@@ -3,6 +3,7 @@ import { EpubError, LIMITS, type ParsedWork } from "@archive/epub";
 import type { Kysely } from "kysely";
 import { MAX_RETRIES } from "./config";
 import { claimLease, endLease, type Lease, type Outcome, type Stage } from "./lease";
+import { onRejectList } from "./lists";
 import { LeaseLost, SaveRejected } from "./save";
 
 /** What a job needs from outside: the request's Kysely, the bucket and the two steps. */
@@ -88,6 +89,10 @@ async function run(
     if (!(error instanceof EpubError)) throw error;
     // The same bytes are rejected the same way every time, `parse_failed` included.
     return { status: error.code, failure: { stage: "process", error: error.code } };
+  }
+  // Before anything is written. A failure to read the lists throws, still in `process`.
+  if (await onRejectList(deps.db, work)) {
+    return { status: "opted_out", failure: { stage: "process", error: "opted_out" } };
   }
   enter("save");
   try {

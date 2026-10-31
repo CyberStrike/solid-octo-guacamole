@@ -6,11 +6,11 @@ import {
   bucketKeys,
   bucketText,
   deliver,
-  existingWork,
+  seededWork,
   failingPut,
   gated,
   liveWork,
-  newWorkId,
+  freshAo3WorkId,
   parsedWork,
   pendingUpload,
   savedRows,
@@ -26,7 +26,7 @@ const holding: Partial<Steps> = { save: async () => {} };
 
 describe("04-ingest-job-lifecycle", () => {
   it("Retry overwrites only its own output", async () => {
-    const workId = newWorkId();
+    const workId = freshAo3WorkId();
     const id = await pendingUpload(ao3Epub({ workId }));
     const own = `works/${workId}/${id}/1.html`;
     const others = `works/${workId}/${crypto.randomUUID()}/1.html`;
@@ -47,7 +47,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("Successful job saves in order and goes live last", async () => {
-    const workId = newWorkId();
+    const workId = freshAo3WorkId();
     const id = await pendingUpload(ao3Epub({ workId }));
     const watched = watchedPuts(workId);
     const { handler } = watchedWorker({ bucket: watched.bucket });
@@ -155,13 +155,13 @@ describe("04-ingest-job-lifecycle", () => {
   it("Failure inside the transaction leaves an existing work's current version unchanged", async () => {
     // Another job saves the work while this one writes R2: past the check before R2, this job
     // finds the work only inside its transaction, which rolls back.
-    const workId = newWorkId();
+    const workId = freshAo3WorkId();
     const id = await pendingUpload(ao3Epub({ workId }));
     // SAFETY: the bucket's put below assigns it; null until then.
-    let existing = null as Awaited<ReturnType<typeof existingWork>> | null;
+    let existing = null as Awaited<ReturnType<typeof seededWork>> | null;
     const { handler } = watchedWorker({
       bucket: beforePut(async (key) => {
-        if (key.startsWith("originals/")) existing = await existingWork({ ao3WorkId: workId });
+        if (key.startsWith("originals/")) existing = await seededWork({ ao3WorkId: workId });
       }),
     });
 
@@ -180,7 +180,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("refuses an upload of a known work before writing anything", async () => {
-    const existing = await existingWork({ ao3WorkId: newWorkId(), chapters: 2 });
+    const existing = await seededWork({ ao3WorkId: freshAo3WorkId(), chapters: 2 });
     const before = await savedRows(existing.ao3WorkId, existing.uploadId);
     const id = await pendingUpload(ao3Epub({ workId: existing.ao3WorkId }));
 
@@ -203,7 +203,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("acks without writing when another job takes the upload over during the save", async () => {
-    const workId = newWorkId();
+    const workId = freshAo3WorkId();
     const id = await pendingUpload(ao3Epub({ workId }));
     // SAFETY: the bucket's put below assigns it; null until then.
     let takenOver = null as Date | null;
@@ -230,7 +230,7 @@ describe("04-ingest-job-lifecycle", () => {
       [parsedWork({ ao3WorkId: "2147483648" }), "bad_work_id"],
       [parsedWork({ chapters: [] }), "no_chapters"],
     ] as const) {
-      const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
+      const id = await pendingUpload(ao3Epub({ workId: freshAo3WorkId() }));
       const { handler } = watchedWorker({ process: async () => work });
 
       const result = await deliver([{ upload_id: id }], { handler });
@@ -298,7 +298,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("Original file is kept", async () => {
-    const epub = ao3Epub({ workId: newWorkId() });
+    const epub = ao3Epub({ workId: freshAo3WorkId() });
     const id = await pendingUpload(epub);
 
     await deliver([{ upload_id: id }]);
@@ -319,7 +319,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("Lease claims a pending upload", async () => {
-    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
+    const id = await pendingUpload(ao3Epub({ workId: freshAo3WorkId() }));
     const { handler } = watchedWorker(holding);
 
     const result = await deliver([{ upload_id: id }], { handler });
@@ -331,7 +331,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("Duplicate delivery does not double-process", async () => {
-    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
+    const id = await pendingUpload(ao3Epub({ workId: freshAo3WorkId() }));
     const leaseUntil = await setLease(id, "1 hour");
     const { handler, parsed } = watchedWorker();
 
@@ -347,7 +347,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("Expired lease can be re-claimed", async () => {
-    const epub = ao3Epub({ workId: newWorkId() });
+    const epub = ao3Epub({ workId: freshAo3WorkId() });
     const id = await pendingUpload(epub);
     await setLease(id, "-1 minute");
     const { handler, parsed } = watchedWorker(holding);
@@ -362,7 +362,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("Concurrent deliveries claim the lease once", async () => {
-    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
+    const id = await pendingUpload(ao3Epub({ workId: freshAo3WorkId() }));
     const gate = gated();
     const first = watchedWorker({ ...holding, process: gate.process });
     const second = watchedWorker();
@@ -384,7 +384,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("Permanent failure goes to the dead-letter queue as parse_failed", async () => {
-    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
+    const id = await pendingUpload(ao3Epub({ workId: freshAo3WorkId() }));
     const { handler } = watchedWorker({
       process: async () => {
         throw new TypeError("injected failure at the process stage");
@@ -405,7 +405,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("records the stage that failed for good", async () => {
-    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
+    const id = await pendingUpload(ao3Epub({ workId: freshAo3WorkId() }));
     const { handler } = watchedWorker({
       save: async () => {
         throw new RangeError("injected failure at the save stage");
@@ -421,7 +421,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("logs a failure's class name, never its message", async () => {
-    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
+    const id = await pendingUpload(ao3Epub({ workId: freshAo3WorkId() }));
     const { handler } = watchedWorker({
       process: async () => {
         throw new TypeError("text quoted from the file: marker-in-message");
@@ -447,7 +447,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("releases the lease and retries a failure with attempts left", async () => {
-    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
+    const id = await pendingUpload(ao3Epub({ workId: freshAo3WorkId() }));
     const { handler } = watchedWorker({
       process: async () => {
         throw new Error("injected transient failure");
@@ -469,7 +469,8 @@ describe("04-ingest-job-lifecycle", () => {
     // Inside one invocation, a full batch runs one job at a time, and none fails for waiting.
     // One after another: the test database takes one client's queries at a time.
     const ids: string[] = [];
-    for (let i = 0; i < 5; i++) ids.push(await pendingUpload(ao3Epub({ workId: newWorkId() })));
+    for (let i = 0; i < 5; i++)
+      ids.push(await pendingUpload(ao3Epub({ workId: freshAo3WorkId() })));
     const gate = gated();
     const { handler } = watchedWorker({ process: gate.process });
 
@@ -487,7 +488,7 @@ describe("04-ingest-job-lifecycle", () => {
   });
 
   it("acks a message that names no upload, and runs the rest of its batch", async () => {
-    const id = await pendingUpload(ao3Epub({ workId: newWorkId() }));
+    const id = await pendingUpload(ao3Epub({ workId: freshAo3WorkId() }));
 
     const result = await deliver([{ upload: id }, "not an object", { upload_id: id }]);
 

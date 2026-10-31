@@ -1,15 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { ao3Epub, zipEntries } from "../../../packages/epub/test/helpers";
+import { TAKEDOWN_REMOVED } from "../src/lists";
 import {
+  addOptOut,
+  addTakedown,
   bucketKeys,
   deliver,
+  expectOptedOut,
+  freshAo3WorkId,
+  ingestEpub,
   liveWork,
-  newWorkId,
   parsedWork,
   pendingUpload,
   savedRows,
+  seededWork,
+  token,
   uploadRow,
   watchedWorker,
+  workExists,
 } from "./helpers";
 
 /** A well-formed epub with no AO3 preface, carrying `metadata` in its OPF. Synthetic text. */
@@ -62,7 +70,7 @@ describe("06-ao3-preface-and-chapters", () => {
   });
 
   it("Provenance from the preface line", async () => {
-    const workId = newWorkId();
+    const workId = freshAo3WorkId();
     const id = await pendingUpload(ao3Epub({ workId }));
 
     await deliver([{ upload_id: id }]);
@@ -74,7 +82,7 @@ describe("06-ao3-preface-and-chapters", () => {
   });
 
   it("Unknown labels are kept in raw_meta", async () => {
-    const workId = newWorkId();
+    const workId = freshAo3WorkId();
     const id = await pendingUpload(
       ao3Epub({
         workId,
@@ -200,5 +208,24 @@ describe("06-ao3-preface-and-chapters", () => {
     await deliver([{ upload_id: id }], { handler });
 
     expect((await liveWork(workId))?.authors).toEqual([{ pseud: "Anonymous", ao3_user: null }]);
+  });
+});
+
+// Opt-outs and takedowns (I5, #34), in a block of their own.
+describe("06-ao3-preface-and-chapters", () => {
+  it("Opted-out pseud is rejected", async () => {
+    const t = token();
+    await addOptOut(`moon child ${t}`);
+    const workId = freshAo3WorkId();
+
+    expectOptedOut(await ingestEpub(workId, `Moon Child ${t}`));
+    expect(await workExists(workId)).toBe(false);
+  });
+
+  it("Work under takedown is rejected", async () => {
+    const removed = await seededWork({ status: "removed" });
+    await addTakedown(removed.workId, TAKEDOWN_REMOVED);
+
+    expectOptedOut(await ingestEpub(removed.ao3WorkId));
   });
 });
