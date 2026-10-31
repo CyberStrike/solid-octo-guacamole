@@ -139,7 +139,7 @@ waitlist     (email PRIMARY KEY,               -- trimmed and lowercased; delete
 ```
 
 `user.role` is `user`, `moderator` or `admin`. An admin has every moderator
-power, plus the wait list's launch send and purge (Wait list).
+power, plus the wait list's purge (Wait list).
 
 A held upload doesn't make its work held: a first upload always goes live (with
 the notice if the parser gave review reasons), and a later upload that is held
@@ -658,7 +658,7 @@ The site goes up before the archive opens. While the web Worker's `PRELAUNCH`
 setting is on, `/` is a coming-soon page with a wait list form, and every
 other app page redirects there, except `/terms`, `/privacy`, the `/waitlist`
 pages, sign-in, `/welcome/terms`, sign-out and `/admin`, so an admin can sign
-in for the first time and run the launch send. Turning `PRELAUNCH` off opens the archive: `/`
+in for the first time. Turning `PRELAUNCH` off opens the archive: `/`
 becomes the home page and `POST /waitlist` answers 404.
 
 The wait list's pages are the only ones with web fonts: Fraunces and IBM Plex
@@ -686,16 +686,33 @@ markup: its inline `style` attributes become stylesheet rules, because
   keeps other people's and mistyped addresses off the list, so the launch
   email's bounce and complaint rates stay low. That matters because it shares
   the sign-in mail's sending reputation.
-- **The launch send.** An admin starts it from the admin area. The web Worker
-  pages through confirmed rows with `notified_at` empty, setting
-  `notified_at` and putting each batch on `email-bulk` (clearing it again if
-  the enqueue fails), so no address is queued twice. Each invocation queues a
-  bounded number of batches, and a Cron Trigger carries a started send on
-  until nothing is left, so a long list never outgrows one request's limits.
+- **The launch send.** The operator runs `scripts/launch-send.mjs` locally,
+  once. It takes its secrets from the environment only (`DATABASE_URL`,
+  `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` with Queues Write, and
+  `EMAIL_BULK_QUEUE_ID`), and prints counts, an HTTP status or a Cloudflare
+  error code, never an address. It claims up to 100 confirmed rows with
+  `notified_at` empty in one statement that sets `notified_at` and each row's
+  `unsubscribe_token_hash` (`for update skip locked`), so no address is
+  claimed twice, whether the script is rerun or two copies run at once. It
+  puts the batch on `email-bulk` through the Queues HTTP API; if that fails
+  or times out, it clears the batch's `notified_at` and stops with a non-zero
+  exit, and the operator reruns it. It prints how many confirmed addresses
+  are still waiting after each batch and at the end, and a run stopped by
+  SIGINT or SIGTERM clears the batch in flight first. Two gaps stay. A hard
+  kill, or a lost database connection at the clear, leaves up to 100
+  addresses marked notified with nothing queued, and a rerun skips them. A
+  batch's rows all get the same `notified_at`, so once nothing else is
+  running, find the killed batch as the newest time (`select notified_at,
+  count(*) from waitlist group by 1 order by 1 desc limit 3`), and if it
+  holds 100 rows or fewer and its push is not known to have succeeded, clear
+  it with `update waitlist set notified_at = null where notified_at = '<that
+  time>'`. And a push that timed out after Cloudflare accepted it is cleared and
+  queued again, so those addresses get two emails: delivery is at least once.
   The mailer sends at the configured rate, so the emails, and the visits
   they bring, arrive over hours. A launch email that both providers refuse
   is dead-lettered to `email-bulk-dlq`, which the web Worker consumes: it
-  clears that address's `notified_at`, so the send queues it again. An
+  clears that address's `notified_at`, so a rerun of the script queues it
+  again (rerun it after the queue has drained, and again after a day). An
   `email-bulk` message is a JSON object `{ "kind": "waitlist-launch", "to":
   <address as stored in waitlist.email>, "url":
   "https://rarepair.fans/waitlist/unsubscribe?token=<base64url token>" }`.

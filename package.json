@@ -20,9 +20,11 @@
   },
   "devDependencies": {
     "@oxlint/plugins": "1.90.0",
+    "@types/pg": "^8.15.0",
     "ai-deslop": "0.4.9",
     "oxfmt": "0.75.0",
     "oxlint": "1.90.0",
-    "oxlint-tsgolint": "7.0.2005"
+    "oxlint-tsgolint": "7.0.2005",
+    "pg": "^8.23.1"
   }
 }
