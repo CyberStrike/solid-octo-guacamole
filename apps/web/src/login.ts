@@ -38,16 +38,19 @@ export const showSignIn = (c: LoginContext) =>
 const MAX_BODY = 16 * 1024;
 
 /**
- * The fields of a plain form post, or null when the body is over `MAX_BODY`
+ * The fields of a plain form post, or null when the body is over `maxBytes`
  * bytes, which stops being read there, or breaks off. Anything else, such as a
  * multipart body, has no fields and is never read.
  */
-export async function readForm(request: Request): Promise<URLSearchParams | null> {
+export async function readForm(
+  request: Request,
+  maxBytes = MAX_BODY,
+): Promise<URLSearchParams | null> {
   const type = request.headers.get("content-type") ?? "";
   if (!type.toLowerCase().startsWith("application/x-www-form-urlencoded")) {
     return new URLSearchParams();
   }
-  if (Number(request.headers.get("content-length") ?? 0) > MAX_BODY) return null;
+  if (Number(request.headers.get("content-length") ?? 0) > maxBytes) return null;
   if (request.body === null) return new URLSearchParams();
 
   // Counted as it arrives, since a streamed body declares no length.
@@ -58,7 +61,7 @@ export async function readForm(request: Request): Promise<URLSearchParams | null
   try {
     for (let read = await reader.read(); !read.done; read = await reader.read()) {
       size += read.value.byteLength;
-      if (size > MAX_BODY) {
+      if (size > maxBytes) {
         // Not awaited: the refusal doesn't wait on, or fail with, the stream.
         reader.cancel().catch(() => undefined);
         return null;
