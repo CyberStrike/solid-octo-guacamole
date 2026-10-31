@@ -76,7 +76,7 @@ The document `meta/state` holds `main` (short sha) and `updatedAt`, which the pa
 Rules:
 
 - **When to update:** at every launch, report, merge, filed issue, question closure and operator ruling.
-- **Who writes an agent's row:** the orchestrator, at launch and at report, for every field but two. A builder engineer writes only its own row's `step` and `note`, pinned with `if_version` (`.claude/agents/engineer.md`, *Your ledger row*). Explorers, consultants, reviewers and the merge-main gate agent write nothing: the orchestrator keeps their `step`. The consults an engineer runs itself get their rows at its report, already `finished`. `step` is the stage the page shows on a running or idle agent's card (stage names in `/orchestrate` §6).
+- **Who writes an agent's row:** the orchestrator, at launch and at report, for every field but two. A builder engineer writes only its own row's `step` and `note`, pinned with `if_version` (`.claude/agents/engineer.md`, *Your ledger row*). Explorers, consultants and the merge-main gate agent write nothing: the orchestrator keeps their `step`. The consults an engineer runs itself get their rows at its report, already `finished`. The review agents inside an engineer's `/gate merge` have no rows: the builder's `step` shows the round. `step` is the stage the page shows on a running or idle agent's card (stage names in `/orchestrate` §6).
 - **Real times only:** every time on it comes from `date -u`, a commit, or GitHub's `mergedAt`. Never an estimate.
 - **Before a status summary,** query `agents` for `running` and `idle` rows and reconcile them with what is actually running.
 - **After every merge and every hand-back,** check the ledger against GitHub with `scripts/ledger-check.mjs`, from a checkout of this repository:

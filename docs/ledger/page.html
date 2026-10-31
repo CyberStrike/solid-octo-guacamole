@@ -73,8 +73,8 @@ header { display: grid; gap: 10px; border-bottom: 2px solid var(--ink); padding-
 .now { font-size: 15px; max-width: 72ch; }
 .tally { display: flex; flex-wrap: wrap; gap: 8px; }
 
-.pill { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-.pill::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; max-width: 100%; line-height: 1.3; }
+.pill::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .s-merged { color: var(--merged); background: var(--merged-bg); }
 .s-running { color: var(--running); background: var(--running-bg); }
 .s-running::before { animation: pulse 1.6s ease-in-out infinite; }
@@ -247,7 +247,7 @@ const span = (from, to) => {
 
 const LABELS = { merged: "Merged", running: "Building", building: "Building", gating: "In gate", review: "In review", ready: "Ready", waiting: "Waiting", blocked: "Blocked", open: "Open", closed: "Closed", done: "Done", queued: "Queued", idle: "Idle", finished: "Finished", failed: "Failed" };
 const TONE = { building: "running", running: "running", gating: "review", review: "review", idle: "waiting", finished: "merged", failed: "blocked", done: "merged", closed: "merged" };
-const pill = (s, text) => `<span class="pill s-${TONE[s] || s}">${esc(text || LABELS[s] || s)}</span>`;
+const pill = (s, text) => `<span class="pill s-${TONE[s] || s}" title="${esc(text || LABELS[s] || s)}">${esc(text || LABELS[s] || s)}</span>`;
 const isDone = (s) => s === "merged" || s === "closed" || s === "done";
 // An agent row written with an item's done word is finished too, so it never sticks on the board.
 const agentDone = (s) => s === "finished" || isDone(s);
@@ -281,6 +281,7 @@ function renderHeader() {
   document.getElementById("tally").innerHTML = order.filter((s) => counts[s]).map((s) => pill(s, `${counts[s]} ${LABELS[s].toLowerCase()}`)).join("");
 }
 
+const RUNNING_STEP = { explorer: "Exploring", consultant: "Consulting", gate: "Gating" };
 const KINDS = { explorer: "Explorer", builder: "Builder", consultant: "Consultant", gate: "Merge gate", reviewer: "Reviewer" };
 
 function renderAgents() {
@@ -296,7 +297,7 @@ function renderAgents() {
     const item = idx[a.item];
     return `<article class="agent">
       ${a.kind ? `<span class="label">${esc(KINDS[a.kind] || a.kind)}</span>` : ""}
-      <div class="top"><span class="who">${esc(a.name || a.id)}</span>${pill(a.status, a.status === "running" || a.status === "idle" ? (a.step || (a.kind === "gate" && a.status === "running" ? "Gating" : null)) : null)}</div>
+      <div class="top"><span class="who">${esc(a.name || a.id)}</span>${pill(a.status, a.status === "running" || a.status === "idle" ? (a.step || (a.status === "running" ? RUNNING_STEP[a.kind] : null)) : null)}</div>
       <div class="t">${item ? `<span class="mono">${esc(item.label || item.id)}</span> ${esc(item.title)}` : esc(a.task || "")}</div>
       ${a.note ? `<div class="note">${esc(a.note)}</div>` : ""}
       ${fields([["Model", esc(a.model || "")], ["Lane", esc(a.lane || "")], ["PR", prLinks(a.pr)], ["Elapsed", `<span class="elapsed" data-from="${esc(a.startedAt || "")}" data-to="${esc(a.finishedAt || "")}" title="${esc(a.startedAt ? `since ${when(utc(a.startedAt))} UTC` : "start time not recorded")}">${esc(span(a.startedAt, a.finishedAt) || "—")}</span>`]])}
