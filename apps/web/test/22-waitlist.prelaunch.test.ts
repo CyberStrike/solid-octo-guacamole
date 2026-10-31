@@ -186,4 +186,60 @@ describe("22-waitlist", () => {
       expect(other).not.toMatch(/\/assets\/waitlist\/|woff2|@font-face/);
     }
   });
+
+  it("Other app pages are closed before launch", async () => {
+    const closed: [string, string][] = [
+      ["/works/1/chapters/2?x=1", "GET"],
+      ["/no-such-page", "GET"],
+      ["/upload", "GET"],
+      ["/upload", "POST"],
+      ["/remove", "GET"],
+      // Exceptions match whole path segments, not prefixes of a name.
+      ["/administrator", "GET"],
+      ["/waitlistx", "GET"],
+      ["/loginx", "GET"],
+      ["/login/confirm/x", "GET"],
+      ["/terms/", "GET"],
+      ["/welcome", "GET"],
+    ];
+    for (const [path, method] of closed) {
+      const res = await fetchW(path, { method });
+      expect(res.status, `${method} ${path}`).toBe(302);
+      expect(res.headers.get("location")).toBe("/");
+      expect(res.headers.get("strict-transport-security")).toBe(HSTS);
+    }
+
+    // The exceptions, and the paths the open pages need, are not redirected. Most of
+    // these pages don't exist yet, so they may be 404: just never 302.
+    const open: [string, string][] = [
+      ["/", "GET"],
+      ["/waitlist", "GET"],
+      ["/waitlist", "POST"],
+      ["/waitlist/confirm?token=x", "GET"],
+      ["/terms", "GET"],
+      ["/privacy", "GET"],
+      ["/about", "GET"],
+      ["/login", "GET"],
+      ["/login", "POST"],
+      ["/login/confirm", "GET"],
+      ["/welcome/terms", "GET"],
+      ["/admin", "GET"],
+      ["/admin/launch", "GET"],
+      ["/api/auth/get-session", "GET"],
+      ["/robots.txt", "GET"],
+      ["/favicon.ico", "GET"],
+      ["/assets/waitlist/fonts/fraunces/OFL.txt", "GET"],
+      ["/assets/site.0123456789abcdef.css", "GET"],
+    ];
+    for (const [path, method] of open) {
+      const res = await fetchW(path, { method });
+      expect(res.status, `${method} ${path}`).not.toBe(302);
+      expect(res.headers.get("location")).toBeNull();
+    }
+
+    // www is still sent to the bare domain first, whatever the path.
+    const www = await fetchW("https://www.rarepair.fans/upload");
+    expect(www.status).toBe(308);
+    expect(www.headers.get("location")).toBe("https://rarepair.fans/upload");
+  });
 });

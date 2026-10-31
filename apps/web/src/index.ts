@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { assetRoute } from "./assets";
 import { notFoundPage, turnstilePage } from "./pages";
-import { isPrelaunch, type Bindings } from "./prelaunch";
+import { closedBeforeLaunch, isPrelaunch, type Bindings } from "./prelaunch";
 import {
   contentSecurityPolicy,
   strictTransportSecurity,
@@ -13,9 +13,11 @@ import { comingSoonPage } from "./waitlist-pages";
 const app = new Hono<{ Bindings: Bindings; Variables: SecurityVariables }>();
 
 // Order matters: HSTS covers everything, the www redirect included, and www
-// never reaches the CSP, the routes or anything that could set a cookie.
+// never reaches the CSP, the routes or anything that could set a cookie. Before
+// launch, closed pages are redirected next, so they carry HSTS but never a page.
 app.use(strictTransportSecurity);
 app.use(wwwToBareDomain);
+app.use(closedBeforeLaunch);
 app.use(contentSecurityPolicy);
 
 // The wait list pages' fonts and stylesheet. S1's stylesheet has its own route beside it.
