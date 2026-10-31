@@ -2,7 +2,7 @@ import { createDb } from "@archive/db";
 import { seedWork } from "@archive/db/seed";
 import { env } from "cloudflare:workers";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { fetchW } from "./helpers";
+import { fetchW, nonceOf, STRICT, withoutNonce } from "./helpers";
 
 // One database serves every test file in the run, so this file keeps to AO3 work
 // IDs 12345 to 12399 and to tag names starting "r1-", and a tag listing elsewhere
@@ -13,6 +13,10 @@ const A = 12346;
 const F = 12347;
 /** Live, with review reasons a moderator has cleared. */
 const CHECKED = 12348;
+/** Two co-authors, the byline naming Zed first. Its chapter total is unknown. */
+const COAUTHORED = 12349;
+/** Markup in every stored string. */
+const HOSTILE = 12350;
 
 // The site chrome test's check: names only as provenance, never in the page.
 const BRANDING = /AO3|OTW|Archive of Our Own|Organization for Transformative Works/i;
@@ -70,6 +74,25 @@ beforeAll(async () => {
     .set({ checked_at: new Date().toISOString() })
     .where("id", "=", checked.versionId)
     .execute();
+  await seedWork(db, {
+    ao3WorkId: COAUTHORED,
+    authors: [
+      { pseud: "r1-Zed", ao3_user: "r1_zed" },
+      { pseud: "r1-Amy", ao3_user: "r1_amy" },
+    ],
+    tags: [...FEW_TAGS],
+  });
+  await seedWork(db, {
+    ao3WorkId: HOSTILE,
+    title: 'r1 <script>alert(1)</script> "quoted"',
+    authors: [{ pseud: 'r1 <b onclick="x">pseud</b>', ao3_user: null }],
+    tags: [
+      { type: "rating", name: "General Audiences" },
+      { type: "fandom", name: 'r1-Fandom"><script>alert(2)</script>' },
+      { type: "freeform", name: "r1-<img src=x onerror=alert(3)>" },
+    ],
+    chapters: [{ title: "r1 <script>alert(4)</script>" }],
+  });
   await db
     .updateTable("works")
     .set({ summary_html: LONG_SUMMARY })
@@ -287,6 +310,46 @@ describe("10-work-page, no such work", () => {
       expect(html, id).toMatch(/<input type="search" id="q" name="q"/);
       expect(html, id).toMatch(/<main[\s\S]*<a href="\/">[\s\S]*<\/main>/);
     }
+  });
+});
+
+describe("10-work-page, other works", () => {
+  it("Co-authors are shown in byline order", async () => {
+    const { html } = await page(`/works/${COAUTHORED}`);
+    expect(html.match(/<p class="authors">([^<]*)<\/p>/)?.[1]).toBe("by r1-Zed, r1-Amy");
+  });
+
+  it("An unknown chapter total shows as ?", async () => {
+    const { html } = await page(`/works/${COAUTHORED}`);
+    expect(html.match(/<p class="stats">([^<]*)<\/p>/)?.[1]).toContain("Chapters 1/?");
+  });
+
+  it("Stored text is escaped, never run as markup", async () => {
+    const { html } = await page(`/works/${HOSTILE}`);
+    expect(html).not.toMatch(/<script|<img|<b /);
+    expect(html).toContain("<h1>r1 &lt;script&gt;alert(1)&lt;/script&gt; &quot;quoted&quot;</h1>");
+    expect(html).toContain("r1 &lt;b onclick=&quot;x&quot;&gt;pseud&lt;/b&gt;");
+    expect(html).toContain("r1-Fandom&quot;&gt;&lt;script&gt;alert(2)&lt;/script&gt;</a>");
+    expect(html).toContain("r1-&lt;img src=x onerror=alert(3)&gt;</a>");
+    expect(html).toContain("r1 &lt;script&gt;alert(4)&lt;/script&gt;</a>");
+    // Every tag href is percent-encoded: no quote or angle bracket survives into it.
+    for (const [, href] of html.matchAll(/<a href="([^"]*)"/g)) {
+      expect(href).not.toMatch(/[<>"' ]/);
+    }
+  });
+
+  it("The work page carries the site chrome, the strict CSP and no cookie", async () => {
+    const { res, html } = await page(`/works/${W}`);
+    const csp = res.headers.get("content-security-policy");
+    expect(nonceOf(csp)).toMatch(/^[A-Za-z0-9+/_-]{16,}={0,2}$/);
+    // The strict policy, with no frame-src: work pages never embed anything.
+    expect(withoutNonce(csp)).toBe(STRICT);
+    expect(res.headers.get("strict-transport-security")).toMatch(/max-age/);
+    expect(res.headers.get("set-cookie")).toBeNull();
+    expect(html).not.toMatch(/<script/i);
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(html.match(/<[a-z]+ class="banner"/g)).toHaveLength(1);
+    expect(html).toContain('<footer><a href="/remove">Remove my work</a>');
   });
 });
 
