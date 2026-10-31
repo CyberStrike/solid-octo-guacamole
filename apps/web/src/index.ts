@@ -5,6 +5,7 @@ import { assetRoute } from "./assets";
 import { confirmSignIn, showConfirm } from "./confirm";
 import type { Bindings } from "./env";
 import { showFull } from "./full";
+import { deadLetteredLaunchEmails } from "./launch-dead-letter";
 import { showTagListing } from "./listing";
 import { requestSignIn, showSignIn } from "./login";
 import { jumpToChapter, showChapter } from "./reader";
@@ -134,4 +135,9 @@ app.onError((error, c) => {
   return c.text("Internal Server Error", 500);
 });
 
-export default app;
+// Hono's `fetch` is bound to the app, so it can sit in this object. `queue` takes the
+// email-bulk-dlq batches (wrangler.jsonc consumers).
+export default {
+  fetch: app.fetch,
+  queue: deadLetteredLaunchEmails,
+} satisfies ExportedHandler<Bindings>;
