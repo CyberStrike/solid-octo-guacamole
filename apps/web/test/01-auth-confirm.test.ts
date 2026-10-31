@@ -269,6 +269,52 @@ describe("01-auth-magic-link", () => {
       expect(html, error).not.toContain("alert(1)");
     }
   });
+
+  it("A link with no token goes to the sign-in page", async () => {
+    for (const path of [
+      "/login/confirm",
+      "/login/confirm?token=",
+      "/login/confirm?next=/works/1",
+    ]) {
+      const res = await fetchW(path);
+      expect(res.status, path).toBe(302);
+      expect(res.headers.get("location"), path).toBe("/login?error=INVALID_TOKEN");
+    }
+    await expectRefused(await confirm({ next: "/" }));
+    await expectRefused(await confirm({ token: "", next: "/" }));
+  });
+
+  it("Confirming from another site is refused before the body is read", async () => {
+    const email = "cross-site-confirm@example.test";
+    const { row, token } = await issued(email);
+    for (const headers of [
+      { origin: "https://evil.example", "sec-fetch-site": "cross-site" },
+      // Same-site isn't enough: every *.rarepair.fans host is same-site.
+      { origin: "https://content.rarepair.fans", "sec-fetch-site": "same-site" },
+    ]) {
+      const res = await confirm({ token, next: "/" }, headers);
+      expect(res.status).toBe(403);
+      expect(res.headers.getSetCookie()).toEqual([]);
+    }
+    // A POST with neither header is refused too.
+    const bare = await fetchW("/login/confirm", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ token, next: "/" }).toString(),
+    });
+    expect(bare.status).toBe(403);
+    // The token is still unspent.
+    expect(await tokensFor(email)).toEqual([row]);
+    expect(await sessionCount(email)).toBe(0);
+  });
+
+  it("An oversized confirm request is refused unread", async () => {
+    const email = "oversized-confirm@example.test";
+    const { row, token } = await issued(email);
+    const res = await confirm({ token, next: "/", padding: "x".repeat(20 * 1024) });
+    await expectRefused(res);
+    expect(await tokensFor(email)).toEqual([row]);
+  });
 });
 
 describe("09-content-origin", () => {

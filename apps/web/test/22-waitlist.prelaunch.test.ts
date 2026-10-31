@@ -197,7 +197,7 @@ describe("22-waitlist", () => {
 
     // No other app page loads a web font. (WL2 and WL3 build the other wait list pages
     // on waitlistPage, which links the same stylesheet.)
-    for (const path of ["/login", "/login/confirm", "/about", "/terms", "/privacy"]) {
+    for (const path of ["/login", "/login/confirm?token=x", "/about", "/terms", "/privacy"]) {
       const other = await (await fetchW(path)).text();
       expect(other).not.toMatch(/\/assets\/waitlist\/|woff2|@font-face/);
     }
@@ -249,7 +249,7 @@ describe("22-waitlist", () => {
       ["/about", "GET"],
       ["/login", "GET"],
       ["/login", "POST"],
-      ["/login/confirm", "GET"],
+      ["/login/confirm?token=x", "GET"],
       ["/welcome/terms", "GET"],
       ["/admin", "GET"],
       ["/admin/launch", "GET"],

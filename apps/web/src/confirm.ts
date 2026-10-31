@@ -14,12 +14,15 @@ type ConfirmContext = Context<{ Bindings: Bindings; Variables: SecurityVariables
  * (ARCHITECTURE, Auth). The link's query is anyone's to write, so `next` is
  * reduced again here.
  */
-export const showConfirm = (c: ConfirmContext) =>
-  c.html(confirmPage(c.req.query("token") ?? "", safeNext(c.req.query("next") ?? null)), 200, {
+export function showConfirm(c: ConfirmContext) {
+  const token = c.req.query("token") ?? "";
+  if (token === "") return c.redirect(REFUSED, 302);
+  return c.html(confirmPage(token, safeNext(c.req.query("next") ?? null)), 200, {
     // The token is in the URL: keep it out of caches and out of any Referer.
     "Cache-Control": "no-store",
     "Referrer-Policy": "no-referrer",
   });
+}
 
 /**
  * `POST /login/confirm`: spends the token and signs in. As on `POST /login`, our
@@ -29,12 +32,16 @@ export const showConfirm = (c: ConfirmContext) =>
 export async function confirmSignIn(c: ConfirmContext) {
   if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
 
+  // A body too large to be our form has no token either.
   const form = (await readForm(c.req.raw)) ?? new URLSearchParams();
+  const token = form.get("token") ?? "";
+  if (token === "") return c.redirect(REFUSED, 303);
+
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString });
   try {
     const verified = await makeAuth(c.env, db).api.magicLinkVerify({
       query: {
-        token: form.get("token") ?? "",
+        token,
         callbackURL: safeNext(form.get("next")),
         errorCallbackURL: "/login",
       },
