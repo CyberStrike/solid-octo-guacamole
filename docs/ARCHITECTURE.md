@@ -700,7 +700,22 @@ markup: its inline `style` attributes become stylesheet rules, because
   The mailer sends at the configured rate, so the emails, and the visits
   they bring, arrive over hours. A launch email that both providers refuse
   is dead-lettered to `email-bulk-dlq`, which the web Worker consumes: it
-  clears that address's `notified_at`, so the send queues it again. Each
+  clears that address's `notified_at`, so the send queues it again. An
+  `email-bulk` message is a JSON object `{ "kind": "waitlist-launch", "to":
+  <address as stored in waitlist.email>, "url":
+  "https://rarepair.fans/waitlist/unsubscribe?token=<base64url token>" }`.
+  The queue's HTTP API must be given `content_type: "json"`, or the body
+  arrives as a string and the mailer drops it. The token is the raw one: only
+  its SHA-256 hash (lowercase hex, as `hashToken`) is in
+  `unsubscribe_token_hash`. Each queue accepts only its own kinds, so a launch
+  email sent on `email` is refused rather than sent unpaced. The mailer waits
+  `BULK_INTERVAL_SECONDS` (`vars`, default 10, at most 300) after each batch
+  of at most 50: at most 5 emails a second as configured. Check that figure
+  against Resend's current limit before launch, and set `email-bulk`'s
+  retention (default 4 days) longer than the whole send: the list size over
+  50, times the interval.
+  The mailer has no database binding, so the web Worker's dead-letter
+  consumer reads only `to`. Each
   launch email has `List-Unsubscribe` with one-click
   `List-Unsubscribe-Post`. A POST to its link deletes the row, with no
   `Origin` check because mail providers send it; opening the link in a

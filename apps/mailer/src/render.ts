@@ -19,5 +19,12 @@ export function render(message: EmailMessage, from: string): OutgoingEmail {
         subject: "Confirm your place on the rarepair wait list",
         text: `Use this link to confirm your address for the rarepair wait list. It works once, for up to 7 days. A newer confirmation email replaces it.\n\n${message.url}\n\nOnce you confirm, you'll get one email when the archive opens, and nothing else.\n\nIf you didn't ask to join, you can ignore this email.\n`,
       };
+    case "waitlist-launch":
+      return {
+        from,
+        to: message.to,
+        subject: "rarepair is open",
+        text: `You asked to hear when rarepair opens, and it has: https://rarepair.fans/\n\nThis is the one email you'll get from the wait list, and your address is not kept for anything else. To remove it now, use this link:\n\n${message.url}\n`,
+      };
   }
 }

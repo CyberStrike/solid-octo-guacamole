@@ -5,6 +5,7 @@ import { assetRoute } from "./assets";
 import { confirmSignIn, showConfirm } from "./confirm";
 import type { Bindings } from "./env";
 import { showFull } from "./full";
+import { deadLetteredLaunchEmails } from "./launch-dead-letter";
 import { showTagListing } from "./listing";
 import { requestSignIn, showSignIn } from "./login";
 import { jumpToChapter, showChapter } from "./reader";
@@ -12,7 +13,7 @@ import { sameOriginOnly, showReportForm, submitReport } from "./report";
 import { aboutPage, notFoundPage, privacyPage, termsPage, turnstilePage } from "./pages";
 import { pageState } from "./page-state";
 import { SETTINGS_SCRIPT, SETTINGS_SCRIPT_PATH } from "./reader-settings";
-import { closedBeforeLaunch, isPrelaunch } from "./prelaunch";
+import { closedBeforeLaunch, disableClosedLinks, isPrelaunch } from "./prelaunch";
 import {
   contentSecurityPolicy,
   strictTransportSecurity,
@@ -51,6 +52,8 @@ app.use(except("/assets/*", sessionMiddleware, termsGate));
 // The reader's settings, on every page. Inside the CSP, which keys on what it returns,
 // and after the terms gate, never in front of it.
 app.use(pageState);
+// Before launch, links to closed pages are shown disabled.
+app.use(disableClosedLinks);
 
 // The moderation area: every /admin URL goes through its gate (admin.ts).
 app.route("/admin", admin);
@@ -132,4 +135,9 @@ app.onError((error, c) => {
   return c.text("Internal Server Error", 500);
 });
 
-export default app;
+// Hono's `fetch` is bound to the app, so it can sit in this object. `queue` takes the
+// email-bulk-dlq batches (wrangler.jsonc consumers).
+export default {
+  fetch: app.fetch,
+  queue: deadLetteredLaunchEmails,
+} satisfies ExportedHandler<Bindings>;
