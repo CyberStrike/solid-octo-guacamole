@@ -1,7 +1,8 @@
 // A work's planned chapter total (AO3's y in x/y; NULL when it's "?" or the
 // byline gives none) on the work and on each version, beside the posted
 // counts. And the byline order of a work's authors, as `work_tags.position`
-// keeps the order of its tags. Add-only: never edit this file once merged.
+// keeps the order of its tags. Works ingested before this keep a NULL total
+// until they are uploaded again. Add-only: never edit this file once merged.
 export default /* sql */ `
 alter table "works" add column "chapters_total" integer;
 alter table "works" add constraint "works_chapters_total_check"
