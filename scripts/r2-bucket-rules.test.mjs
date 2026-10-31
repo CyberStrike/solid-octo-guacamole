@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { lifecycleRules } from "./r2-bucket-rules.mjs";
+import { corsRules, lifecycleRules } from "./r2-bucket-rules.mjs";
 
 const script = fileURLToPath(new URL("r2-bucket-rules.mjs", import.meta.url));
 const stub = fileURLToPath(new URL("test/wrangler-stub.mjs", import.meta.url));
@@ -84,6 +84,29 @@ await test("Applying the bucket rules", async (t) => {
     );
     assert.match(stdout, /stub ran: r2 bucket cors list rarepair/);
     assert.match(stdout, /stub ran: r2 bucket lifecycle list rarepair/);
+  });
+});
+
+await test("A dry run", async (t) => {
+  await t.test("Prints both rule sets and the commands, and calls nothing", () => {
+    const { code, stdout, calls } = run(["--dry-run"]);
+    assert.equal(code, 0);
+    assert.equal(calls.length, 0);
+    const printed = JSON.parse(stdout);
+    assert.deepEqual(printed.cors, corsRules());
+    assert.deepEqual(printed.lifecycle, lifecycleRules());
+    assert.deepEqual(printed.commands, [
+      "wrangler r2 bucket cors set rarepair --file <cors.json> --force",
+      "wrangler r2 bucket lifecycle set rarepair --file <lifecycle.json> --force",
+      "wrangler r2 bucket cors list rarepair",
+      "wrangler r2 bucket lifecycle list rarepair",
+    ]);
+  });
+
+  await t.test("Expires nothing outside uploads/", () => {
+    const { lifecycle } = JSON.parse(run(["--dry-run"]).stdout);
+    assert.equal(lifecycle.rules.length, 1);
+    assert.equal(lifecycle.rules[0].conditions.prefix, "uploads/");
   });
 });
 
