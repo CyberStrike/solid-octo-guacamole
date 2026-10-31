@@ -9,6 +9,10 @@ import { fetchW } from "./helpers";
 // never sees its works. Text is synthetic.
 const W = 12345;
 const A = 12346;
+/** Live, with review reasons no moderator has cleared. */
+const F = 12347;
+/** Live, with review reasons a moderator has cleared. */
+const CHECKED = 12348;
 
 // The site chrome test's check: names only as provenance, never in the page.
 const BRANDING = /AO3|OTW|Archive of Our Own|Organization for Transformative Works/i;
@@ -26,6 +30,12 @@ const W_TAGS = [
   { type: "character", name: "r1-Ay" },
   { type: "freeform", name: "r1-Slow Burn" },
   { type: "freeform", name: "r1-Found Family" },
+] as const;
+
+// The other works' tags: none of seedWork's shared defaults.
+const FEW_TAGS = [
+  { type: "rating", name: "General Audiences" },
+  { type: "fandom", name: "r1-Fandom One" },
 ] as const;
 
 const LONG_SUMMARY = `<p>${"A synthetic summary sentence. ".repeat(40)}</p><p>The last paragraph of it.</p>`;
@@ -46,11 +56,20 @@ beforeAll(async () => {
   await seedWork(db, {
     ao3WorkId: A,
     anonymous: true,
-    tags: [
-      { type: "rating", name: "General Audiences" },
-      { type: "fandom", name: "r1-Fandom One" },
-    ],
+    rating: "General Audiences",
+    tags: [...FEW_TAGS],
   });
+  await seedWork(db, { ao3WorkId: F, reviewReasons: ["missing_rating"], tags: [...FEW_TAGS] });
+  const checked = await seedWork(db, {
+    ao3WorkId: CHECKED,
+    reviewReasons: ["missing_rating"],
+    tags: [...FEW_TAGS],
+  });
+  await db
+    .updateTable("work_versions")
+    .set({ checked_at: new Date().toISOString() })
+    .where("id", "=", checked.versionId)
+    .execute();
   await db
     .updateTable("works")
     .set({ summary_html: LONG_SUMMARY })
@@ -172,8 +191,10 @@ describe("10-work-page", () => {
     const { res, html } = await page(`/works/${W}`);
     expect(res.status).toBe(200);
     expect(res.headers.get("location")).toBeNull();
-    expect(originalBlock(html)).toBe(originalBlock((await page(`/works/${W}`)).html));
-    expect(originalBlock(html)).toContain('<a href="https://archiveofourown.org/works/12345">');
+    // The link and its note, as in the case before.
+    const block = originalBlock(html);
+    expect(block).toContain('<a href="https://archiveofourown.org/works/12345">');
+    expect(block).toMatch(/works again once .* is back/i);
   });
 
   it("Work page states it is unofficial", async () => {
@@ -210,6 +231,62 @@ describe("10-work-page", () => {
     expect(list.html).not.toMatch(/<a [^>]*(class|style)=/);
     const css = await stylesheetOf(html);
     expect(css).toMatch(/\.tags\s*\{[^}]*font-size:\s*var\(--text-1\)/);
+  });
+});
+
+describe("10-work-page, its links", () => {
+  it("Chapter list links to each chapter", async () => {
+    const { html } = await page(`/works/${W}`);
+    const list = html.match(/<ol class="chapters">[\s\S]*?<\/ol>/)?.[0] ?? "";
+    const links = [...list.matchAll(/<a href="([^"]*)">([^<]*)<\/a>/g)].map((m) => [m[1], m[2]]);
+    expect(links).toEqual([
+      ["/works/12345/chapters/1", "r1 chapter 1"],
+      ["/works/12345/chapters/2", "r1 chapter 2"],
+      ["/works/12345/chapters/3", "r1 chapter 3"],
+      ["/works/12345/chapters/4", "r1 chapter 4"],
+      ["/works/12345/chapters/5", "r1 chapter 5"],
+    ]);
+    expect(html.match(/<a href="\/works\/12345\/full">/g)).toHaveLength(1);
+  });
+
+  it("Download original link is offered", async () => {
+    const { html } = await page(`/works/${W}`);
+    const links = [...html.matchAll(/<a href="([^"]*)">Download original epub<\/a>/g)];
+    expect(links).toHaveLength(1);
+    // The content Worker's one form for an original: one plain path segment
+    // (apps/content). The segment itself waits on #119.
+    expect(links[0]?.[1]).toMatch(
+      /^https:\/\/content\.rarepair\.fans\/originals\/[A-Za-z0-9_-][A-Za-z0-9._-]*$/,
+    );
+  });
+});
+
+describe("10-work-page, the review notice", () => {
+  const NOTICE = "Chapters may be imperfect; a moderator will check.";
+
+  it("Work with review reasons shows the notice", async () => {
+    const { html } = await page(`/works/${F}`);
+    expect(html).toContain(`<p class="review-notice">${NOTICE}</p>`);
+    expect((await page(`/works/${W}`)).html).not.toContain(NOTICE);
+  });
+
+  it("The notice goes once a moderator has checked the work", async () => {
+    expect((await page(`/works/${CHECKED}`)).html).not.toContain(NOTICE);
+  });
+});
+
+describe("10-work-page, no such work", () => {
+  it("Unknown work shows the not-found page", async () => {
+    // Never seeded; not an ID at all; and other spellings of W's ID, which name no
+    // work: only the plain decimal form is an AO3 work ID.
+    for (const id of ["999999999", "abc", "0", "0x3039", "1.2345e4", "012345", "12345.0"]) {
+      const res = await fetchW(`/works/${id}`);
+      const html = await res.text();
+      expect(res.status, id).toBe(404);
+      expect(html, id).toMatch(/<form role="search" method="get" action="\/search">/);
+      expect(html, id).toMatch(/<input type="search" id="q" name="q"/);
+      expect(html, id).toMatch(/<main[\s\S]*<a href="\/">[\s\S]*<\/main>/);
+    }
   });
 });
 
