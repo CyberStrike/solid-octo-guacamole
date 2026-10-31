@@ -2,11 +2,11 @@ import { createDb } from "@archive/db";
 import { env } from "cloudflare:workers";
 import { afterAll, describe, expect, it } from "vitest";
 import {
-  emailsTo,
   fetchW,
   nonceOf,
   PASSING_TOKEN,
   postLogin,
+  signIn as signInAs,
   TURNSTILE,
   withoutNonce,
 } from "./helpers";
@@ -28,18 +28,13 @@ const S3_HOST = "test0000000000000000000000000acct.r2.cloudflarestorage.com";
  * and the `name=value` of the session cookie.
  */
 async function signIn(email: string): Promise<{ userId: string; cookie: string }> {
-  expect((await postLogin({ email, "cf-turnstile-response": PASSING_TOKEN })).status).toBe(200);
-  const [sent] = await emailsTo(email);
-  const token = new URL(sent!.url).searchParams.get("token")!;
-  const res = await postLogin({ token, next: "/upload" }, { url: "/login/confirm" });
-  expect(res.status).toBe(303);
+  const cookie = await signInAs(email, { next: "/upload", acceptTerms: true });
   const user = await db
-    .updateTable("user")
-    .set({ terms_accepted_at: new Date() })
+    .selectFrom("user")
+    .select("id")
     .where("email", "=", email)
-    .returning("id")
     .executeTakeFirstOrThrow();
-  return { userId: user.id, cookie: res.headers.getSetCookie()[0]!.split(";")[0]! };
+  return { userId: user.id, cookie };
 }
 
 /** The upload page's script asking for a URL, as a browser on rarepair.fans sends it. */
