@@ -75,6 +75,29 @@ describe("22-waitlist", () => {
     expect(result.retryMessages).toEqual([]);
   });
 
+  it("The launch send puts the unsubscribe headers on each email, and a sign-in email has none", async () => {
+    const calls = stubResend(accepted);
+
+    await consume("email-bulk", [launch(1), launch(2)]);
+    await consume("email", [signIn(1)]);
+
+    // SAFETY: each email the mailer renders is a JSON object.
+    const bulk = calls[0]!.emails as { headers?: Record<string, string> }[];
+    expect(bulk.map((e) => e.headers)).toEqual([
+      {
+        "List-Unsubscribe": "<https://rarepair.fans/waitlist/unsubscribe?token=bye-1>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      },
+      {
+        "List-Unsubscribe": "<https://rarepair.fans/waitlist/unsubscribe?token=bye-2>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+      },
+    ]);
+    // SAFETY: as above.
+    const single = calls[1]!.emails as { headers?: unknown }[];
+    expect(single[0]).not.toHaveProperty("headers");
+  });
+
   it("The launch send is spread out: the consumer holds each batch for the interval", async () => {
     stubResend(accepted);
     const started = Date.now();
