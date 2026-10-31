@@ -154,21 +154,51 @@ export async function getLiveWork(
   };
 }
 
+/** A work as a listing's card shows it. */
+export type ListedWork = Pick<LiveWork, "work" | "authors" | "tags">;
+
+/**
+ * The names a listing of `name` matches: `name` under the tag rule, and `name`
+ * itself, since a tag link carries a stored `name_norm` and the rule isn't
+ * idempotent for a few letters (NFKC can compose what lowercasing left). Empty
+ * when it names no tag: it folds to nothing, or holds a NUL, which Postgres refuses.
+ */
+export function tagNameKeys(type: TagType, name: string): string[] {
+  const nameNorm = normalizeTagName(type, name);
+  if (nameNorm === "" || name.includes("\0")) return [];
+  return nameNorm === name ? [name] : [nameNorm, name];
+}
+
 /**
  * The `live` works carrying a tag of this type that matches `name` under the
- * tag rule, however each work spelled it.
+ * tag rule (`tagNameKeys`), however each work spelled it, with their bylines
+ * and tags. By AO3 work ID, and every one of them: B2 adds paging and sorting.
  */
 export async function listLiveWorksByTag(
   db: Kysely<Database>,
   type: TagType,
   name: string,
-): Promise<WorkSummary[]> {
-  const nameNorm = normalizeTagName(type, name);
-  // A name of only punctuation folds to nothing, which names no tag.
-  if (nameNorm === "") return [];
-  return db
+): Promise<ListedWork[]> {
+  const keys = tagNameKeys(type, name);
+  if (keys.length === 0) return [];
+  const rows = await db
     .selectFrom("works")
     .select(SUMMARY)
+    .select((eb) => [
+      jsonArrayFrom(
+        eb
+          .selectFrom("work_authors")
+          .select(["work_authors.pseud", "work_authors.ao3_user", "work_authors.position"])
+          .whereRef("work_authors.work_id", "=", "works.id"),
+      ).as("authors"),
+      jsonArrayFrom(
+        eb
+          .selectFrom("work_tags")
+          .innerJoin("tags", "tags.id", "work_tags.tag_id")
+          .select(["tags.id", "tags.type", "tags.name", "tags.name_norm", "work_tags.position"])
+          .whereRef("work_tags.work_id", "=", "works.id"),
+      ).as("tags"),
+    ])
     .where("works.status", "=", "live")
     .where((eb) =>
       eb.exists(
@@ -177,12 +207,22 @@ export async function listLiveWorksByTag(
           .innerJoin("tags", "tags.id", "work_tags.tag_id")
           .select("work_tags.tag_id")
           .whereRef("work_tags.work_id", "=", "works.id")
-          .where("tags.name_norm", "=", nameNorm)
+          .where("tags.name_norm", "in", keys)
           .where("tags.type", "=", type),
       ),
     )
     .orderBy("works.ao3_work_id")
     .execute();
+  // As in getLiveWork, json_agg's order isn't promised, so the lists are sorted here.
+  return rows.map(({ authors, tags, ...work }) => ({
+    work,
+    authors: authors
+      .sort((a, b) => a.position - b.position)
+      .map(({ pseud, ao3_user }) => ({ pseud, ao3_user })),
+    tags: tags
+      .sort((a, b) => a.position - b.position)
+      .map(({ id, type, name, name_norm }) => ({ id, type, name, name_norm })),
+  }));
 }
 
 /**
