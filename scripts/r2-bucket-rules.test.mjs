@@ -110,6 +110,15 @@ await test("A dry run", async (t) => {
   });
 });
 
+await test("A usage error", async (t) => {
+  await t.test("Exits 2 on an unknown argument and calls nothing", () => {
+    const { code, stderr, calls } = run(["--bucket", "other"]);
+    assert.equal(code, 2);
+    assert.match(stderr, /usage: node scripts\/r2-bucket-rules\.mjs \[--dry-run\]/);
+    assert.equal(calls.length, 0);
+  });
+});
+
 await test("When wrangler fails", async (t) => {
   await t.test("Exits 2 with wrangler's error and runs nothing after it", () => {
     const { code, stderr, calls } = run([], { fail: "r2 bucket cors set" });

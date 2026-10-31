@@ -1,4 +1,26 @@
 #!/usr/bin/env node
+// Applies the R2 bucket's rules: the CORS rule that lets the upload page PUT a raw epub straight
+// to a presigned URL (ARCHITECTURE, Ingestion pipeline, step 1), and the lifecycle rule that
+// expires uploads/ after 7 days, so an upload whose /complete never comes deletes itself
+// (ARCHITECTURE, Orphaned uploads). Then it prints the bucket's current rules, for the gate.
+//
+//   node scripts/r2-bucket-rules.mjs [--dry-run]
+//
+// The bucket is rarepair, the one apps/content/wrangler.jsonc binds. The operator runs this by
+// hand, once, and again whenever a rule here changes; nothing deploys it. It needs wrangler's
+// credentials: CLOUDFLARE_API_TOKEN (a token with Workers R2 Storage Write) and
+// CLOUDFLARE_ACCOUNT_ID in the environment, or a `wrangler login`. It never prints them.
+//
+// Every rule this bucket has lives here. `cors set` and `lifecycle set` replace the bucket's whole
+// rule set, so a rule added any other way (the dashboard, `wrangler r2 bucket lifecycle add`) is
+// deleted by the next run: add it to corsRules or lifecycleRules instead.
+//
+// --dry-run prints both rule sets and the wrangler commands, and calls nothing.
+// R2_BUCKET_RULES_WRANGLER, when set, is the wrangler script to run in place of the installed
+// one; the tests point it at a stub.
+// Exits 0 when the rules are applied and printed (or the dry run printed them), and 2 on a usage
+// error or when wrangler fails: missing, unauthenticated, or refused. A run that fails part way is
+// safe to repeat.
 import { execFile } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -78,8 +100,13 @@ async function main(dryRun) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const args = process.argv.slice(2);
+  if (args.length > 1 || (args.length === 1 && args[0] !== "--dry-run")) {
+    console.error("usage: node scripts/r2-bucket-rules.mjs [--dry-run]");
+    process.exit(2);
+  }
   try {
-    process.exit(await main(process.argv.slice(2).includes("--dry-run")));
+    process.exit(await main(args[0] === "--dry-run"));
   } catch (error) {
     console.error(`r2-bucket-rules: cannot apply: ${error.message ?? error}`);
     process.exit(2);
