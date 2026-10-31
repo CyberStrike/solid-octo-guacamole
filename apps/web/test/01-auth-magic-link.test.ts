@@ -5,34 +5,18 @@ import { inspect } from "node:util";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import type { EmailMessage } from "../../mailer/src/message";
 import app from "../src/index";
-import { BASE, deliveredEmails, emailsTo, fetchW, nonceOf } from "./helpers";
+import {
+  deliveredEmails,
+  emailsTo,
+  fetchW,
+  loginRequest,
+  nonceOf,
+  PASSING_TOKEN,
+  postLogin,
+} from "./helpers";
 
 /** The opening tag of the sign-in form, or null. */
 const formTag = (html: string) => html.match(/<form\b[^>]*action="\/login"[^>]*>/)?.[0] ?? null;
-
-// The token vitest.config.ts's siteverify stand-in passes, as Cloudflare's test secret does.
-const PASSING_TOKEN = "XXXX.DUMMY.TOKEN.XXXX";
-
-/** The sign-in form as a browser on rarepair.fans submits it. */
-function postLogin(
-  fields: Record<string, string>,
-  {
-    url = "/login",
-    headers = {},
-    body = new URLSearchParams(fields).toString(),
-  }: { url?: string; headers?: Record<string, string>; body?: BodyInit } = {},
-) {
-  return fetchW(url, {
-    method: "POST",
-    headers: {
-      "content-type": "application/x-www-form-urlencoded",
-      origin: BASE,
-      "sec-fetch-site": "same-origin",
-      ...headers,
-    },
-    body,
-  });
-}
 
 // The Postgres the Worker uses, through the same Hyperdrive binding. One database
 // serves every test file of a project, so each test uses its own email address.
@@ -308,8 +292,10 @@ describe("Sign-in failures", () => {
   it("A failing sign-in request logs no address", async () => {
     // The same app, with a queue that refuses the email with an error naming the
     // address. Miniflare's queue can't be made to fail, so this one stands in for it.
+    let sends = 0;
     const queue: Queue<EmailMessage> = {
       send: async (message) => {
+        sends += 1;
         throw new Error(`queue refused the email to ${message.to}`);
       },
       sendBatch: async () => {
@@ -318,32 +304,29 @@ describe("Sign-in failures", () => {
       metrics: async () => ({ backlogCount: 0, backlogBytes: 0 }),
     };
     const refusing = { ...env, EMAIL: queue };
-    // Each line as a log would show it: inspect prints an error's stack and own fields.
+    // Every console line, as a log would show it: inspect prints an error's stack,
+    // cause and own fields, at any depth.
     const logged: string[] = [];
-    const spy = vi.spyOn(console, "error").mockImplementation((...args) => {
-      logged.push(args.map((arg) => inspect(arg)).join(" "));
-    });
+    const spies = (["error", "warn", "log", "info", "debug"] as const).map((level) =>
+      vi.spyOn(console, level).mockImplementation((...args) => {
+        logged.push(args.map((arg) => inspect(arg, { depth: Infinity })).join(" "));
+      }),
+    );
     try {
-      const request = new Request(`${BASE}/login`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/x-www-form-urlencoded",
-          origin: BASE,
-          "sec-fetch-site": "same-origin",
-        },
-        body: new URLSearchParams({
-          email: "logged-nowhere@example.test",
-          "cf-turnstile-response": PASSING_TOKEN,
-        }).toString(),
-      });
       const ctx = createExecutionContext();
+      const request = loginRequest({
+        email: "logged-nowhere@example.test",
+        "cf-turnstile-response": PASSING_TOKEN,
+      });
       const res = await app.fetch(request, refusing, ctx);
       await waitOnExecutionContext(ctx);
+      // It failed where the error names the address.
+      expect(sends).toBe(1);
       expect(res.status).toBe(500);
       expect(logged.length).toBeGreaterThan(0);
       expect(logged.join("\n")).not.toContain("logged-nowhere");
     } finally {
-      spy.mockRestore();
+      for (const spy of spies) spy.mockRestore();
     }
   });
 });
