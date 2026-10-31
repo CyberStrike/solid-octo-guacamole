@@ -55,7 +55,8 @@
     // always-passes test sitekey: replace it with the real one before launch. Cloudflare
     // refuses its tokens under a real secret key, so until then those forms fail closed.
     "TURNSTILE_SITE_KEY": "1x00000000000000000000AA",
-    // The bucket presigned upload URLs PUT into, under uploads/ (src/presign.ts).
+    // The bucket presigned upload URLs PUT into, under uploads/ (src/presign.ts). It must be
+    // the BUCKET binding's bucket_name above, which /complete and ingest read uploads from.
     "R2_BUCKET": "rarepair",
   },
   // Set with `wrangler secret put`. The R2 ones sign upload URLs: an R2 API token with Object

@@ -20,6 +20,10 @@ export type PresignPut = {
 
 /** A query-signed (SigV4) URL that PUTs `key` into `bucket` until it expires. */
 export async function presignPut(put: PresignPut): Promise<string> {
+  // A secret never put arrives empty: fail rather than sign a URL that can't work.
+  for (const field of ["accountId", "bucket", "accessKeyId", "secretAccessKey"] as const) {
+    if (!put[field]) throw new Error(`R2 ${field} is not set`);
+  }
   const client = new AwsClient({
     accessKeyId: put.accessKeyId,
     secretAccessKey: put.secretAccessKey,

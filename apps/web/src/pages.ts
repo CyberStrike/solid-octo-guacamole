@@ -154,8 +154,8 @@ export const uploadPage = (nonce: string, siteKey: string) =>
     "Upload a work",
     `<noscript><p>Uploading needs JavaScript, for its anti-spam check and to send the file. Reading works without it.</p></noscript>
 <div id="upload" hidden>
-<label for="file">The work's EPUB file, ${MAX_UPLOAD_MB} MB at most</label>
-<input id="file" type="file" name="file" accept=".epub,${EPUB_TYPE}">
+<label for="file">EPUB files, ${MAX_UPLOAD_MB} MB at most each</label>
+<input id="file" type="file" name="file" accept=".epub,${EPUB_TYPE}" multiple>
 <div class="cf-turnstile" data-sitekey="${escapeHtml(siteKey)}"></div>
 <button type="button">Upload</button>
 </div>

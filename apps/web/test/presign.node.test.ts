@@ -101,6 +101,14 @@ describe("02-upload-handshake", () => {
     expect(signature).not.toBe(expectedSignature(PUT.key, "application/epub+zip", "86400"));
   });
 
+  it("An unset R2 secret signs nothing", async () => {
+    // A secret never put arrives empty: no URL naming "undefined" or "" is handed out.
+    for (const field of ["accountId", "bucket", "accessKeyId", "secretAccessKey"] as const) {
+      const put = { ...PUT, [field]: "" };
+      await expect(presignPut(put), field).rejects.toThrow(`R2 ${field} is not set`);
+    }
+  });
+
   it("Each key gets its own signature", async () => {
     const other = { ...PUT, key: "uploads/00000000-0000-4000-8000-000000000002" };
     const url = new URL(await presignPut(other));
