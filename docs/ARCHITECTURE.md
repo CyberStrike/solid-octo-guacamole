@@ -417,7 +417,8 @@ can be snapshotted.
   nonce, so any script that gets past the sanitizer won't run. Session cookies
   are `HttpOnly`, so scripts can't read them anyway.
 - **Pages with a Turnstile check** (sign-in, upload, `/remove`, and the
-  coming-soon page at `/` while `PRELAUNCH` is on) add exactly one
+  coming-soon page at `/` while `PRELAUNCH` is on, with `/waitlist`, where a
+  refused join shows its form again) add exactly one
   allowance, `frame-src https://challenges.cloudflare.com`, for the challenge
   iframe. Turnstile's `api.js` loads through a nonced `<script>`, which
   `'strict-dynamic'` already covers. Reader and work pages never get it.
