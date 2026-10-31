@@ -190,6 +190,75 @@ export interface UploadTable {
   created_at: CreatedTimestamp;
 }
 
+export type RequestKind = "remove_work" | "opt_out";
+
+export interface ReportTable {
+  id: Generated<string>;
+  work_id: string;
+  /** Reporting needs an account. */
+  reporter_id: string;
+  /** `wrong_version` ("This version is wrong") is the only value the docs name. */
+  kind: string;
+  /** The optional details. */
+  body: string | null;
+  /** `open` until a moderator acts. */
+  status: Generated<string>;
+  created_at: CreatedTimestamp;
+}
+
+/** A DMCA notice. */
+export interface TakedownTable {
+  id: Generated<string>;
+  work_id: string;
+  requester: string;
+  basis: string;
+  /** `pending` until a moderator acts. */
+  status: Generated<string>;
+  /** The moderator who acted. */
+  resolved_by: string | null;
+  created_at: CreatedTimestamp;
+}
+
+/** A remove-my-work or opt-out request from `/remove`. */
+export interface RequestTable {
+  id: Generated<string>;
+  kind: RequestKind;
+  /** Set for `remove_work`. */
+  work_id: string | null;
+  /** `normalizePseud(pseud)`, set for `opt_out`. */
+  pseud_norm: string | null;
+  /** As given. Match with `lower()` on both sides. */
+  contact_email: string;
+  statement: string;
+  /** `pending` until a moderator acts. */
+  status: Generated<string>;
+  /** Never the raw IP. */
+  ip_hash: string;
+  created_at: CreatedTimestamp;
+}
+
+/** Checked at ingest: an active row rejects a byline whose `normalizePseud` matches. */
+export interface OptoutTable {
+  id: Generated<string>;
+  pseud_norm: string;
+  /** Set when the request names an AO3 user. */
+  ao3_user: string | null;
+  request_id: string;
+  active: boolean;
+  created_at: CreatedTimestamp;
+}
+
+/** Matches a later request by email or by IP hash, and a report by its account's email. */
+export interface RequesterBlockTable {
+  id: Generated<string>;
+  /** As given. Match with `lower()` on both sides. */
+  contact_email: string | null;
+  ip_hash: string | null;
+  /** The moderator who blocked. */
+  created_by: string;
+  created_at: CreatedTimestamp;
+}
+
 export interface Database {
   user: UserTable;
   session: SessionTable;
@@ -203,4 +272,9 @@ export interface Database {
   work_tags: WorkTagTable;
   uploads: UploadTable;
   rateLimit: RateLimitTable;
+  reports: ReportTable;
+  takedowns: TakedownTable;
+  requests: RequestTable;
+  optouts: OptoutTable;
+  requester_blocks: RequesterBlockTable;
 }

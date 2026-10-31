@@ -2,6 +2,7 @@ export { createDb, type DbConfig } from "./client";
 export { migrate } from "./migrate";
 export { authSchema } from "./auth-schema";
 export { normalizeTagName, compareTagKeys, compareCodeUnits } from "./tags";
+export { normalizePseud } from "./pseud";
 export {
   getLiveWork,
   listLiveWorksByTag,
@@ -27,4 +28,10 @@ export type {
   TagType,
   UploadStatus,
   RateLimitTable,
+  ReportTable,
+  TakedownTable,
+  RequestTable,
+  OptoutTable,
+  RequesterBlockTable,
+  RequestKind,
 } from "./schema";
