@@ -8,21 +8,26 @@
 //
 // The bucket is rarepair, the one apps/content/wrangler.jsonc binds. The operator runs this by
 // hand, once, and again whenever a rule here changes; nothing deploys it. It needs wrangler's
-// credentials: CLOUDFLARE_API_TOKEN (a token with Workers R2 Storage Write) and
-// CLOUDFLARE_ACCOUNT_ID in the environment, or a `wrangler login`. It never prints them.
+// credentials: CLOUDFLARE_API_TOKEN (a token with Workers R2 Storage Write), or a
+// `wrangler login`, and CLOUDFLARE_ACCOUNT_ID in the environment either way, since wrangler runs
+// non-interactively and cannot ask which account. It never prints them.
+//
+// Both `set` calls pass --force, which skips wrangler's prompt. On `lifecycle set` it also skips
+// R2 Data Catalog's check; the bucket has no Data Catalog, and enabling one means revisiting this.
 //
 // Every rule this bucket has lives here. `cors set` and `lifecycle set` replace the bucket's whole
 // rule set, so a rule added any other way (the dashboard, `wrangler r2 bucket lifecycle add`) is
 // deleted by the next run: add it to corsRules or lifecycleRules instead.
 //
-// --dry-run prints both rule sets and the wrangler commands, and calls nothing.
+// --dry-run prints both rule sets, the wrangler commands and the wrangler it would run, and calls
+// nothing.
 // R2_BUCKET_RULES_WRANGLER, when set, is the wrangler script to run in place of the installed
 // one; the tests point it at a stub.
 // Exits 0 when the rules are applied and printed (or the dry run printed them), and 2 on a usage
 // error or when wrangler fails: missing, unauthenticated, or refused. A run that fails part way is
 // safe to repeat.
 import { execFile } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -59,15 +64,15 @@ export function lifecycleRules() {
   };
 }
 
+const root = fileURLToPath(new URL("..", import.meta.url));
+
 // The wrangler apps/content declares, the workspace that binds the bucket, so the script runs the
-// pinned version whether or not npm hoists it to the root.
+// pinned version whether or not npm hoists it to the root. An empty override counts as none.
 const wranglerBin = () =>
-  process.env.R2_BUCKET_RULES_WRANGLER ??
+  process.env.R2_BUCKET_RULES_WRANGLER ||
   join(
     dirname(
-      createRequire(new URL("../apps/content/package.json", import.meta.url)).resolve(
-        "wrangler/package.json",
-      ),
+      createRequire(join(root, "apps/content/package.json")).resolve("wrangler/package.json"),
     ),
     "bin/wrangler.js",
   );
@@ -79,16 +84,18 @@ const listArgs = (kind) => ["r2", "bucket", kind, "list", BUCKET];
 async function main(dryRun) {
   const configs = { cors: corsRules(), lifecycle: lifecycleRules() };
   const kinds = Object.keys(configs);
+  const bin = wranglerBin();
   if (dryRun) {
     const commands = [
       ...kinds.map((kind) => setArgs(kind, `<${kind}.json>`)),
       ...kinds.map((kind) => listArgs(kind)),
     ].map((args) => ["wrangler", ...args].join(" "));
-    console.log(JSON.stringify({ ...configs, commands }, null, 2));
+    console.log(JSON.stringify({ ...configs, commands, wrangler: bin }, null, 2));
     return 0;
   }
+  // From the repo root, which has no wrangler config, so none of the apps' configs is read.
   const wrangler = async (args) =>
-    (await execFileAsync(process.execPath, [wranglerBin(), ...args], { encoding: "utf8" })).stdout;
+    (await execFileAsync(process.execPath, [bin, ...args], { cwd: root, encoding: "utf8" })).stdout;
   const dir = mkdtempSync(join(tmpdir(), "r2-bucket-rules-"));
   try {
     for (const kind of kinds) {
@@ -105,7 +112,12 @@ async function main(dryRun) {
   return 0;
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// Run as a script, not imported by the tests. Both paths are resolved, so a symlinked checkout
+// still runs.
+if (
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))
+) {
   const args = process.argv.slice(2);
   if (args.length > 1 || (args.length === 1 && args[0] !== "--dry-run")) {
     console.error("usage: node scripts/r2-bucket-rules.mjs [--dry-run]");

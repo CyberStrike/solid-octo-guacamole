@@ -2,26 +2,30 @@
 // scenario file is a top-level test and each case a subtest, awaited, as node:test's promises ask.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { corsRules, lifecycleRules } from "./r2-bucket-rules.mjs";
 
 const script = fileURLToPath(new URL("r2-bucket-rules.mjs", import.meta.url));
 const stub = fileURLToPath(new URL("test/wrangler-stub.mjs", import.meta.url));
+const root = dirname(dirname(script));
 
-// Runs the script with the stub as its wrangler. Returns the exit code, the output, and each call
-// the stub saw, in order.
-function run(args = [], fail = "") {
+// Runs the script with the stub as its wrangler (or with `wrangler` as the override, "" for none).
+// The stub fails a call whose arguments start with `fail`. Returns the exit code, the output, and
+// each call the stub saw, in order.
+function run(args = [], { fail = "", wrangler = stub } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "r2-bucket-rules-test-"));
   const log = join(dir, "calls.jsonl");
   writeFileSync(log, "");
   try {
+    // From outside the repo, as an operator in any directory would run it.
     const result = spawnSync(process.execPath, [script, ...args], {
+      cwd: dir,
       encoding: "utf8",
-      env: { ...process.env, R2_BUCKET_RULES_WRANGLER: stub, STUB_LOG: log, STUB_FAIL: fail },
+      env: { ...process.env, R2_BUCKET_RULES_WRANGLER: wrangler, STUB_LOG: log, STUB_FAIL: fail },
     });
     const calls = readFileSync(log, "utf8")
       .split("\n")
@@ -51,7 +55,9 @@ const fileFor = (calls, command) =>
 
 await test("02-upload-handshake", async (t) => {
   await t.test("Confirm is never called", () => {
-    assert.deepEqual(lifecycleRules(), expiresUploadsAfter7Days);
+    const { code, calls } = run();
+    assert.equal(code, 0);
+    assert.deepEqual(fileFor(calls, "r2 bucket lifecycle set rarepair"), expiresUploadsAfter7Days);
   });
 });
 
@@ -88,6 +94,9 @@ await test("Applying the bucket rules", async (t) => {
     );
     assert.match(stdout, /stub ran: r2 bucket cors list rarepair/);
     assert.match(stdout, /stub ran: r2 bucket lifecycle list rarepair/);
+    // From the repo root, so no app's wrangler config, wherever the operator stands, picks the
+    // account or breaks the run.
+    for (const call of calls) assert.equal(call.cwd, root);
   });
 });
 
@@ -125,10 +134,33 @@ await test("A usage error", async (t) => {
 
 await test("When wrangler fails", async (t) => {
   await t.test("Exits 2 with wrangler's error and runs nothing after it", () => {
-    const { code, stderr, calls } = run([], "r2 bucket cors set");
+    const { code, stderr, calls } = run([], { fail: "r2 bucket cors set" });
     assert.equal(code, 2);
     assert.match(stderr, /stub: r2 bucket cors set failed/);
     assert.equal(calls.length, 1);
+  });
+});
+
+await test("When wrangler fails part way", async (t) => {
+  await t.test("Exits 2, lists nothing, and leaves no rule file behind", () => {
+    const { code, calls } = run([], { fail: "r2 bucket lifecycle set" });
+    assert.equal(code, 2);
+    assert.deepEqual(
+      calls.map(({ args }) => args.slice(2, 4).join(" ")),
+      ["cors set", "lifecycle set"],
+    );
+    for (const { args } of calls) assert.equal(existsSync(args[args.indexOf("--file") + 1]), false);
+  });
+});
+
+await test("The installed wrangler", async (t) => {
+  await t.test("Is the one apps/content pins, when no override is set", () => {
+    const { code, stdout } = run(["--dry-run"], { wrangler: "" });
+    assert.equal(code, 0);
+    const { wrangler } = JSON.parse(stdout);
+    assert.ok(existsSync(wrangler), wrangler);
+    const manifest = join(dirname(dirname(wrangler)), "package.json");
+    assert.equal(JSON.parse(readFileSync(manifest, "utf8")).version, "4.156.0");
   });
 });
 
