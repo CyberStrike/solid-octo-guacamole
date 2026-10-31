@@ -236,6 +236,24 @@ describe("packages/db moderation constraints", () => {
     ).rejects.toThrow(/check constraint/i);
   });
 
+  it("A blank email or IP hash is refused", async () => {
+    const moderator = await addUser();
+    for (const values of [
+      { contact_email: "", ip_hash: "hash-of-an-ip" },
+      { contact_email: "blocked@example.test", ip_hash: "" },
+    ]) {
+      await expect(
+        t.db
+          .insertInto("requester_blocks")
+          .values({ ...values, created_by: moderator })
+          .execute(),
+      ).rejects.toThrow(/check constraint/i);
+      await expect(addRequest({ kind: "opt_out", pseud_norm: "p", ...values })).rejects.toThrow(
+        /check constraint/i,
+      );
+    }
+  });
+
   it("A requester block with neither email nor IP hash is refused", async () => {
     const moderator = await addUser();
     await expect(

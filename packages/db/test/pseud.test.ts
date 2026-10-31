@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { normalizePseud, normalizeTagName } from "../src/index";
 
+/** One character by code point, so no invisible character sits in the source. */
+const ch = (codePoint: number) => String.fromCodePoint(codePoint);
+const FULLWIDTH_M = ch(0xff2d);
+const NO_BREAK_SPACE = ch(0xa0);
+const IDEOGRAPHIC_SPACE = ch(0x3000);
+const NEXT_LINE = ch(0x85);
+const BYTE_ORDER_MARK = ch(0xfeff);
+
 describe("16 removal and opt-out", () => {
   it("Opt-out matches a pseud that differs only in case", () => {
     expect(normalizePseud("moon CHILD")).toBe("moon child");
@@ -19,16 +27,15 @@ describe("16 removal and opt-out", () => {
 
 describe("normalizePseud", () => {
   it("Compatibility forms match their plain letters", () => {
-    // Fullwidth "Ｍ" (U+FF2D) and a no-break space (U+00A0).
-    expect(normalizePseud("Ｍoon Child")).toBe("moon child");
+    expect(normalizePseud(`${FULLWIDTH_M}oon${NO_BREAK_SPACE}Child`)).toBe("moon child");
   });
 
   it("Whitespace of any kind collapses to one space", () => {
-    // A tab, and an ideographic space (U+3000).
     expect(normalizePseud("Moon\tChild")).toBe("moon child");
-    expect(normalizePseud("Moon　Child")).toBe("moon child");
-    // Next line (U+0085) is Unicode whitespace, though not in JavaScript's `\s`.
-    expect(normalizePseud("\u0085Moon\u0085Child\u0085")).toBe("moon child");
+    expect(normalizePseud(`Moon${IDEOGRAPHIC_SPACE}Child`)).toBe("moon child");
+    // Unicode whitespace, though not in JavaScript's `\s`.
+    expect(normalizePseud(`${NEXT_LINE}Moon${NEXT_LINE}Child${NEXT_LINE}`)).toBe("moon child");
+    expect(normalizePseud(`Moon${BYTE_ORDER_MARK}Child`)).toBe("moon child");
   });
 
   it("Punctuation is kept, unlike in a tag's name_norm", () => {
@@ -38,7 +45,7 @@ describe("normalizePseud", () => {
 
   it("Lowercasing is not full case folding", () => {
     expect(normalizePseud("STRASSE")).toBe("strasse");
-    expect(normalizePseud("Straße")).toBe("straße");
+    expect(normalizePseud(`Stra${ch(0xdf)}e`)).toBe(`stra${ch(0xdf)}e`);
   });
 
   it("A blank pseud normalizes to the empty string", () => {
@@ -47,7 +54,7 @@ describe("normalizePseud", () => {
   });
 
   it("Normalizing twice changes nothing", () => {
-    const once = normalizePseud("  Ｍoon CHILD_ ");
+    const once = normalizePseud(`  ${FULLWIDTH_M}oon${NO_BREAK_SPACE}CHILD_ `);
     expect(once).toBe("moon child_");
     expect(normalizePseud(once)).toBe(once);
   });

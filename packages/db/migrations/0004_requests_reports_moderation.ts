@@ -46,7 +46,10 @@ create table "requests" (
   constraint "requests_opt_out_has_pseud"
     check ("kind" <> 'opt_out' or "pseud_norm" is not null),
   -- normalizePseud gives "" for a blank pseud, which would match every blank byline.
-  constraint "requests_pseud_norm_not_blank" check ("pseud_norm" <> '')
+  constraint "requests_pseud_norm_not_blank" check ("pseud_norm" <> ''),
+  -- A blank email or hash would match every other blank one, or nothing.
+  constraint "requests_contact_email_not_blank" check ("contact_email" <> ''),
+  constraint "requests_ip_hash_not_blank" check ("ip_hash" <> '')
 );
 
 -- No unique on pseud_norm: two requests can opt one pseud out, and a reversed
@@ -68,7 +71,9 @@ create table "requester_blocks" (
   "created_by" text not null references "user" ("id"),
   "created_at" timestamptz not null default current_timestamp,
   constraint "requester_blocks_email_or_ip_hash"
-    check ("contact_email" is not null or "ip_hash" is not null)
+    check ("contact_email" is not null or "ip_hash" is not null),
+  constraint "requester_blocks_contact_email_not_blank" check ("contact_email" <> ''),
+  constraint "requester_blocks_ip_hash_not_blank" check ("ip_hash" <> '')
 );
 
 create index "reports_work_id_idx" on "reports" ("work_id");

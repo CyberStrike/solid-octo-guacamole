@@ -3,8 +3,11 @@
 // the web Worker and ingest can both load it. Deliberately not the tag rule in
 // `./tags`: punctuation is kept here.
 
-/** Unicode White_Space, which, unlike `\s`, includes next line (U+0085). */
-const WHITESPACE = /[\p{White_Space}﻿]+/gu;
+/**
+ * Unicode White_Space, which, unlike `\s`, includes next line (U+0085), plus
+ * the byte order mark (U+FEFF), which `\s` and `trim` count as whitespace.
+ */
+const WHITESPACE = /[\p{White_Space}\u{FEFF}]+/gu;
 
 /**
  * A pseud's `pseud_norm`: NFKC, lowercased, inner runs of whitespace collapsed
