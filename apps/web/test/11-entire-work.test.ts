@@ -189,7 +189,10 @@ describe("11-reader-and-csp", () => {
     );
     // No chapter select, no frame, no epub engine, no summary; a way back to the work. The
     // bar's selects are the reader settings' (R5), not a chapter select.
-    expect(html).not.toMatch(/<nav class="chapter-nav"|<select[^>]*name="n"|<iframe/i);
+    expect(html).not.toMatch(/<nav class="chapter-nav"|<iframe/i);
+    const settingsForm = chrome.match(/<form class="reader-settings"[\s\S]*?<\/form>/)?.[0] ?? "";
+    expect(chrome.replace(settingsForm, "")).not.toMatch(/<select/i);
+    for (const article of articles) expect(article).not.toMatch(/<select/i);
     expect(html).not.toContain("A seeded summary");
     expect(chrome.slice(chrome.lastIndexOf("</article>"))).toContain(`<a href="/works/${W}">`);
   });
@@ -313,6 +316,30 @@ describe("entire work", () => {
     const chunks = await readChunks(await fetchW(fullUrl(BIG)));
     expect(chunks.length).toBeGreaterThan(2);
     const html = await new Blob(chunks).text();
+    expect(articlesOf(html)).toEqual([BIG_HTML]);
+  });
+
+  it("The entire work streams the same for a reader with settings", async () => {
+    // A settings cookie sends the page through the settings rewriter (R5), which must
+    // keep each promise above: HEAD has no body, a missing chapter still errors the
+    // stream, and a large fragment still arrives in chunks with its bytes.
+    const headers = { cookie: "__Host-reader=theme=dark" };
+    const head = await fetchW(fullUrl(W), { method: "HEAD", headers });
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+
+    const missing = await fetchW(fullUrl(MISSING_LATER), { headers });
+    expect(missing.status).toBe(200);
+    const seen: Uint8Array[] = [];
+    await expect(readChunks(missing, seen)).rejects.toBeInstanceOf(Error);
+    const partial = await new Blob(seen).text();
+    expect(partial).toContain("R4-LATER-2-TEXT");
+    expect(partial).not.toContain("</main>");
+
+    const chunks = await readChunks(await fetchW(fullUrl(BIG), { headers }));
+    expect(chunks.length).toBeGreaterThan(2);
+    const html = await new Blob(chunks).text();
+    expect(html).toMatch(/^<!doctype html>\n<html lang="en" data-theme="dark">/);
     expect(articlesOf(html)).toEqual([BIG_HTML]);
   });
 });

@@ -279,8 +279,18 @@ describe("13-reader-settings-and-position", () => {
       const csp = res.headers.get("content-security-policy");
       expect(withoutNonce(csp), path).toBe(STRICT);
       const html = await res.text();
-      const tag = html.match(/<script src="([^"]+)" nonce="([^"]+)" defer><\/script>/);
+      const tag = html.match(/<script src="([^"]+)" nonce="([^"]+)" (defer|async)><\/script>/);
       expect(tag, path).not.toBeNull();
+      // The entire work streams for a long time, and a deferred script would wait for all
+      // of it: there the script comes straight after the bar and runs as soon as it loads.
+      if (path === FULL) {
+        expect(tag?.[3]).toBe("async");
+        const at = html.indexOf(tag?.[0] ?? "");
+        expect(at).toBeGreaterThan(html.indexOf('<form class="reader-settings"'));
+        expect(at).toBeLessThan(html.indexOf('<article class="chapter">'));
+      } else {
+        expect(tag?.[3]).toBe("defer");
+      }
       expect(tag?.[1]).toMatch(/^\/assets\/reader-settings\.[0-9a-f]{8}\.js$/);
       expect(tag?.[2], path).toBe(nonceOf(csp));
       src = tag?.[1] ?? "";

@@ -117,11 +117,13 @@ const returnTarget = (next: string | null | undefined) => {
 };
 
 /**
- * The settings script, for a page's head. It carries the page's nonce, which
+ * The settings script, for a page's head, deferred. It carries the page's nonce, which
  * `'strict-dynamic'` trusts wherever the file is served from (ARCHITECTURE, Reading).
+ * A page that streams for long puts it `async` straight after the reader bar instead,
+ * so it runs once the bar is parsed rather than after the whole page.
  */
-export const settingsScriptTag = (nonce: string) =>
-  `<script src="${SETTINGS_SCRIPT_PATH}" nonce="${escapeHtml(nonce)}" defer></script>`;
+export const settingsScriptTag = (nonce: string, load: "defer" | "async" = "defer") =>
+  `<script src="${SETTINGS_SCRIPT_PATH}" nonce="${escapeHtml(nonce)}" ${load}></script>`;
 
 /**
  * The reader's settings in a reader bar: the link to this page, coming back to

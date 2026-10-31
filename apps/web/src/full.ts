@@ -149,10 +149,12 @@ export async function showFull(c: ReaderContext) {
   }
 
   const workTitle = live.work.title.trim() || "Untitled work";
+  // The settings script comes straight after the bar, not deferred, so the live
+  // controls work before a long work has finished streaming.
   const { before, after } = layoutAround(
     `${workTitle}, entire work`,
-    settingsScriptTag(c.get("nonce")),
-    readerBar(workTitle, `/works/${id}/full`),
+    "",
+    `${readerBar(workTitle, `/works/${id}/full`)}\n${settingsScriptTag(c.get("nonce"), "async")}`,
   );
   // The fragments are trusted markup only because the sanitizer wrote them; they go in
   // unescaped. The chapter headings' ids stay stable: links may point at them. The
