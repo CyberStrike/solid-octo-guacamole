@@ -87,6 +87,15 @@ await test("Applying the bucket rules", async (t) => {
   });
 });
 
+await test("When wrangler fails", async (t) => {
+  await t.test("Exits 2 with wrangler's error and runs nothing after it", () => {
+    const { code, stderr, calls } = run([], { fail: "r2 bucket cors set" });
+    assert.equal(code, 2);
+    assert.match(stderr, /stub: r2 bucket cors set failed/);
+    assert.equal(calls.length, 1);
+  });
+});
+
 await test("19-surge-controls-and-quotas", async (t) => {
   await t.test("Abandoned uploads expire", () => {
     const { code, calls } = run();
