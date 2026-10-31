@@ -339,6 +339,14 @@ describe("14-browse-and-home tag listing URLs", () => {
     expect(res.headers.get("set-cookie")).toBeNull();
     expect(html).not.toMatch(/<script|<style|style=/i);
     expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(res.headers.get("strict-transport-security")).toBe(
+      "max-age=31536000; includeSubDomains",
+    );
+    const www = await fetchW("https://www.rarepair.fans/tags/fandom/harry%20potter?x=1");
+    expect(www.status).toBe(308);
+    expect(www.headers.get("location")).toBe(
+      "https://rarepair.fans/tags/fandom/harry%20potter?x=1",
+    );
   });
 });
 
