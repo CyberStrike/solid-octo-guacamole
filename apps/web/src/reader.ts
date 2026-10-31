@@ -4,9 +4,7 @@
 import { createDb, getLiveWork } from "@archive/db";
 import type { Context } from "hono";
 import type { Bindings } from "./env";
-import { getCookie } from "hono/cookie";
 import { escapeHtml, layout } from "./pages";
-import { parseSettings, SETTINGS_COOKIE, type Settings } from "./reader-settings";
 import type { SecurityVariables } from "./security";
 import { barSettings, settingsScriptTag } from "./settings";
 
@@ -63,7 +61,7 @@ export async function showChapter(c: ReaderContext) {
   const next = live.chapters[at + 1]?.n ?? null;
   const nav = (end: "top" | "bottom") => chapterNav(id, prev, next, options, end);
   const workTitle = live.work.title.trim() || "Untitled work";
-  const bar = readerBar(workTitle, chapterUrl(id, n), parseSettings(getCookie(c, SETTINGS_COOKIE)));
+  const bar = readerBar(workTitle, chapterUrl(id, n));
   // The processor takes the chapter's heading out of the fragment and keeps it as its
   // title, so the page shows it, as chrome, above the text.
   return c.html(
@@ -84,8 +82,8 @@ ${nav("bottom")}`,
  * h1, and the reader settings, coming back to `returnTo`. It scrolls away with the
  * page. The page's head needs `settingsScriptTag` for the live controls.
  */
-export const readerBar = (workTitle: string, returnTo: string, settings: Settings) =>
-  `<div class="reader-bar"><h1>${escapeHtml(workTitle)}</h1>${barSettings(returnTo, settings)}</div>`;
+export const readerBar = (workTitle: string, returnTo: string) =>
+  `<div class="reader-bar"><h1>${escapeHtml(workTitle)}</h1>${barSettings(returnTo)}</div>`;
 
 /**
  * The chapter select's target: `/works/:id/chapters?n=5` goes to chapter 5. The

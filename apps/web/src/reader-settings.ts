@@ -94,7 +94,8 @@ export const htmlAttributes = (settings: Settings) =>
 
 /**
  * The settings script, served from SETTINGS_SCRIPT_PATH and loaded with the page's
- * nonce. It shows the reader bar's hidden settings form, and on any change flips that
+ * nonce. It shows the reader bar's hidden settings form with the reader's values
+ * selected, and on any change flips that
  * attribute on <html> and writes the same cookie the form's POST sets, so the next page
  * the server renders agrees. It sets no style, writes no markup and never scrolls.
  */
@@ -108,6 +109,11 @@ export const SETTINGS_SCRIPT = `"use strict";
   const allowed = (name, value) =>
     Object.prototype.hasOwnProperty.call(LISTS, name) && LISTS[name].includes(value);
   for (const form of document.querySelectorAll("form.reader-settings")) {
+    // The reader bar is the same for every reader: show this reader's values in it.
+    for (const name of NAMES) {
+      const field = form.elements.namedItem(name);
+      if (field && allowed(name, data[name])) field.value = data[name];
+    }
     form.hidden = false;
     form.addEventListener("change", (event) => {
       const { name, value } = event.target;

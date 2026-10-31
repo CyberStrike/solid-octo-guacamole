@@ -280,9 +280,10 @@ describe("13-reader-settings-and-position", () => {
       expect(tag?.[2], path).toBe(nonceOf(csp));
       src = tag?.[1] ?? "";
       // The controls it changes: on the chapter, a form in the reader bar, hidden until the
-      // script shows it, with the current values selected.
+      // script shows it and selects the reader's values, so the bar is the same for every
+      // reader; on the settings page, the server selects them, for JS off.
       const form = settingsForm(html);
-      expect(form.selects.size?.selected, path).toBe("l");
+      expect(form.selects.size?.selected, path).toBe(path === CHAPTER ? "m" : "l");
       expect(form.hidden, path).toBe(path === CHAPTER);
     }
     const script = await fetchW(src);

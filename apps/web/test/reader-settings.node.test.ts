@@ -19,11 +19,19 @@ type Listener = (event: { target: { name: string; value: string } }) => void;
 function fakePage(dataset: Record<string, string> = {}) {
   const writes: string[] = [];
   const listeners: Listener[] = [];
+  // Each select shows the page's default until the script selects the reader's value.
+  const selects = new Map([
+    ["theme", { value: "" }],
+    ["size", { value: "m" }],
+    ["leading", { value: "normal" }],
+    ["face", { value: "serif" }],
+  ]);
   const form = {
     hidden: true,
     addEventListener(type: string, listener: Listener) {
       if (type === "change") listeners.push(listener);
     },
+    elements: { namedItem: (name: string) => selects.get(name) ?? null },
   };
   const document = {
     documentElement: { dataset },
@@ -37,10 +45,22 @@ function fakePage(dataset: Record<string, string> = {}) {
   new Function("document", SETTINGS_SCRIPT)(document);
   const change = (name: string, value: string) =>
     listeners.forEach((listener) => listener({ target: { name, value } }));
-  return { dataset, writes, form, change };
+  return { dataset, writes, form, selects, change };
 }
 
 describe("the settings script", () => {
+  it("selects the reader's values from html's attributes", () => {
+    // The reader bar is the same for every reader, so the script shows each one theirs.
+    const page = fakePage({ theme: "sepia", size: "xl" });
+    expect(Object.fromEntries(page.selects)).toEqual({
+      theme: { value: "sepia" },
+      size: { value: "xl" },
+      leading: { value: "normal" },
+      face: { value: "serif" },
+    });
+    expect(page.writes).toEqual([]);
+  });
+
   it("Settings apply live with JS", () => {
     const page = fakePage({ theme: "dark" });
     // The controls are hidden until the script runs.

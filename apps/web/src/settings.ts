@@ -85,10 +85,10 @@ export const settingsControls = (idPrefix: string, settings: Settings) =>
     const choices = options
       .map(
         ([value, text]) =>
-          `<option value="${value}"${value === current ? " selected" : ""}>${text}</option>`,
+          `<option value="${escapeHtml(value)}"${value === current ? " selected" : ""}>${escapeHtml(text)}</option>`,
       )
       .join("");
-    return `<label for="${id}">${label}</label>
+    return `<label for="${id}">${escapeHtml(label)}</label>
 <select id="${id}" name="${name}">${choices}</select>`;
   }).join("\n");
 
@@ -121,12 +121,13 @@ export const settingsScriptTag = (nonce: string) =>
 /**
  * The reader's settings in a reader bar: the link to this page, coming back to
  * `returnTo`, and the controls as a form the settings script shows. Without
- * JavaScript the form stays hidden and the link is all there is.
+ * JavaScript the form stays hidden and the link is all there is. The same for every
+ * reader: the script selects the reader's values from <html>'s attributes.
  */
-export const barSettings = (returnTo: string, settings: Settings) =>
+export const barSettings = (returnTo: string) =>
   `<a href="${SETTINGS_PATH}?next=${escapeHtml(encodeURIComponent(returnTo))}">Reader settings</a>
 <form class="reader-settings" method="post" action="${SETTINGS_PATH}" aria-label="Reader settings" hidden>
-${settingsControls("bar-", settings)}
+${settingsControls("bar-", {})}
 <input type="hidden" name="next" value="${escapeHtml(returnTo)}">
 </form>`;
 
