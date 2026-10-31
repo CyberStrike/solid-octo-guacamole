@@ -15,6 +15,7 @@ import {
   type Row,
 } from "./admin-pages";
 import type { Bindings } from "./env";
+import { notFoundPage } from "./pages";
 import type { SecurityVariables } from "./security";
 import type { SessionVariables } from "./session";
 
@@ -28,17 +29,43 @@ type AdminEnv = {
   Variables: SecurityVariables & SessionVariables & AdminVariables;
 };
 
+/** Exactly a role with moderator powers: not null, not "user", no other spelling. */
+export const isModerator = (role: string | null | undefined): role is ModeratorRole =>
+  role === "moderator" || role === "admin";
+
+type AdminContext = Context<AdminEnv>;
+
 /**
- * Sets `Cache-Control: no-store` on every /admin response: the queues hold contact
- * emails and statements, which no cache keeps.
+ * Lets a moderator or an admin through to /admin, with their role in `c.var.role`,
+ * and answers anyone else, signed out included, with the not-found page: the same
+ * status and body for every refusal, never a redirect to sign in, so /admin looks
+ * like any URL that doesn't exist (ARCHITECTURE, Decisions so far). Runs after
+ * `sessionMiddleware`. The role is read from the database on every request, so a
+ * demotion takes effect at once. Every response, the refusal included, is
+ * `no-store`: the queues hold contact emails and statements.
  */
 export const adminGate: MiddlewareHandler<AdminEnv> = async (c, next) => {
+  const userId = c.var.session?.user.id;
+  const role =
+    userId === undefined
+      ? null
+      : await withDb(c, async (db) => {
+          const user = await db
+            .selectFrom("user")
+            .select("role")
+            .where("id", "=", userId)
+            .executeTakeFirst();
+          return user?.role ?? null;
+        });
+  if (!isModerator(role)) {
+    c.header("Cache-Control", "no-store");
+    return c.html(notFoundPage(), 404);
+  }
+  c.set("role", role);
   await next();
   // After the handler: its own Response doesn't keep headers set before it.
   c.header("Cache-Control", "no-store");
 };
-
-type AdminContext = Context<AdminEnv>;
 
 /** Runs `query` on a database of its own, closed once the response is sent. */
 async function withDb<T>(c: AdminContext, query: (db: ReturnType<typeof createDb>) => Promise<T>) {
