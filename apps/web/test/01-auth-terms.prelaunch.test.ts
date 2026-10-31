@@ -18,14 +18,14 @@ describe("01-auth-magic-link before launch", () => {
     const closed = await get("/works/13001", cookie);
     expect(closed.status).toBe(302);
     expect(closed.headers.get("location")).toBe("/");
-    // An open page that isn't exempt goes to the terms page.
-    const about = await get("/about", cookie);
-    expect(about.status).toBe(302);
-    const location = new URL(about.headers.get("location")!, BASE);
+    // An open page that isn't exempt, the coming-soon page, goes to the terms page.
+    const home = await get("/", cookie);
+    expect(home.status).toBe(302);
+    const location = new URL(home.headers.get("location")!, BASE);
     expect(location.pathname).toBe("/welcome/terms");
-    expect(location.searchParams.get("next")).toBe("/about");
+    expect(location.searchParams.get("next")).toBe("/");
 
     await acceptTerms(cookie);
-    expect((await get("/about", cookie)).status).toBe(200);
+    expect((await get("/", cookie)).status).toBe(200);
   });
 });

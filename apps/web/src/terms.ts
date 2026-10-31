@@ -15,20 +15,30 @@ export const WELCOME_TERMS = "/welcome/terms";
 
 /**
  * What an account that hasn't accepted the terms can still reach: the terms page,
- * the terms and privacy pages (ARCHITECTURE, Auth), sign-in (so it can switch
- * address) and static files. The page chrome's other links, such as /about and
- * /remove, lead back to the terms page until it accepts. A path ending in `/*` covers itself and everything below it, by
- * whole segment, as Hono's `/assets/*` does.
- * Sign-out belongs here once a ticket builds it.
+ * the terms and privacy pages (ARCHITECTURE, Auth); the about page and removal
+ * requests, which anyone can make; sign-in, so it can switch address; /admin, whose
+ * own gate answers every non-moderator with the same 404 (ARCHITECTURE, Moderation),
+ * so a moderator who hasn't accepted the terms still reaches it; and static files.
+ * A path ending in `/*` covers itself and everything below it, by whole segment, as
+ * Hono's `/assets/*` does. Sign-out belongs here once a ticket builds it.
  */
 export const TERMS_EXEMPT = [
   WELCOME_TERMS,
   "/terms",
   "/privacy",
+  "/about",
+  "/remove/*",
   "/login",
   "/login/confirm",
+  "/admin/*",
   "/assets/*",
 ] as const;
+
+/**
+ * The endpoints a page's script calls, which answer JSON: a script can't follow a
+ * redirect, so these get a 401 instead (ARCHITECTURE, Surge controls, Status codes).
+ */
+const SCRIPT_ENDPOINTS = new Set(["/uploads"]);
 
 /** Whether `path` is open to an account that hasn't accepted the terms. */
 export const isTermsExempt = (path: string) =>
@@ -40,8 +50,9 @@ export const isTermsExempt = (path: string) =>
 
 /**
  * Sends a signed-in account whose `terms_accepted_at` is empty to the terms page,
- * whatever the method, as `redirectCarryingNext` does. Runs after the session
- * middleware; signed-out visitors and accepted accounts pass untouched.
+ * whatever the method, as `redirectCarryingNext` does, or refuses a script's
+ * request with a JSON 401 `{ error }`. Runs after the session middleware;
+ * signed-out visitors and accepted accounts pass untouched.
  */
 export const termsGate: MiddlewareHandler<{ Variables: SessionVariables }> = async (c, next) => {
   const user = c.var.session?.user;
@@ -50,6 +61,9 @@ export const termsGate: MiddlewareHandler<{ Variables: SessionVariables }> = asy
   }
   // Signed in: never cached shared (#108).
   c.header("Cache-Control", "no-store");
+  if (SCRIPT_ENDPOINTS.has(c.req.path)) {
+    return c.json({ error: "Accept the terms first, at /welcome/terms." }, 401);
+  }
   // A form post isn't a page to come back to after accepting.
   return redirectCarryingNext(c, WELCOME_TERMS, { carryPosted: false });
 };

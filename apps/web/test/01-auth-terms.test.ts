@@ -137,15 +137,7 @@ describe("01-auth-magic-link", () => {
   it("Before accepting, every other page and method goes to the terms page", async () => {
     const cookie = await signIn("terms-every-page@example.test");
 
-    for (const path of [
-      "/",
-      "/upload",
-      "/remove",
-      "/about",
-      "/admin",
-      "/nope",
-      "/works/13000?x=1",
-    ]) {
+    for (const path of ["/", "/upload", "/nope", "/works/13000?x=1", "/works/13000/report"]) {
       const res = await get(path, cookie);
       expectTermsRedirect(res, path);
       expect(res.headers.get("cache-control")).toBe("no-store");
@@ -161,13 +153,22 @@ describe("01-auth-magic-link", () => {
     }
   });
 
-  it("Before accepting, the terms, privacy and sign-in pages and static files still open", async () => {
+  it("Before accepting, the terms, privacy, about, removal and sign-in pages and static files still open", async () => {
     const cookie = await signIn("terms-exempt@example.test");
 
-    for (const path of ["/terms", "/privacy", "/login", "/login/confirm?token=x"]) {
+    for (const path of [
+      "/terms",
+      "/privacy",
+      "/about",
+      "/remove",
+      "/login",
+      "/login/confirm?token=x",
+    ]) {
       const res = await get(path, cookie);
       expect(res.status, path).toBe(200);
     }
+    // Anyone can ask for a removal: below /remove is not sent to the terms page either.
+    expect((await get("/remove/x", cookie)).headers.get("location")).toBeNull();
     // The stylesheet every page links to, the terms page's own included.
     const page = await (await get("/terms", cookie)).text();
     const stylesheet = page.match(/<link rel="stylesheet" href="([^"]+)"/)![1]!;
@@ -258,14 +259,44 @@ describe("01-auth-magic-link", () => {
     expect(await from(`/welcome/terms?next=${encodeURIComponent(WORK_PAGE)}`)).toBe(WORK_PAGE);
   });
 
+  it("Before accepting, /admin answers its own 404, as for any other non-moderator", async () => {
+    const cookie = await signIn("terms-admin@example.test");
+    const notFound = await (await fetchW("/nope")).text();
+
+    for (const path of ["/admin", "/admin/reports"]) {
+      const res = await get(path, cookie);
+      expect(res.status, path).toBe(404);
+      expect(res.headers.get("location")).toBeNull();
+      expect(await res.text()).toBe(notFound);
+    }
+
+    // A moderator who hasn't accepted the terms still reaches /admin.
+    const moderator = "terms-moderator@example.test";
+    const modCookie = await signIn(moderator);
+    await db
+      .updateTable("user")
+      .set({ role: "moderator" })
+      .where("email", "=", moderator)
+      .execute();
+    expect((await get("/admin", modCookie)).status).toBe(200);
+    expect(await termsAcceptedAt(moderator)).toBeNull();
+  });
+
   it("Before accepting, an upload request gets no row and no URL", async () => {
     const email = "terms-upload@example.test";
     const cookie = await signIn(email);
     const fields = { size: "1000", "cf-turnstile-response": PASSING_TOKEN };
 
+    // The upload page's script can't follow a redirect, so it gets a 401 to act on.
     const res = await postLogin(fields, { url: "/uploads", headers: { cookie } });
-    expect(res.status).toBe(303);
-    expect(res.headers.get("location")).toBe("/welcome/terms");
+    expect(res.status).toBe(401);
+    expect(res.headers.get("location")).toBeNull();
+    expect(res.headers.get("content-type")).toMatch(/^application\/json/);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    // SAFETY: the refusal is JSON, as POST /uploads's own are.
+    const body = (await res.json()) as { error?: string };
+    expect(Object.keys(body)).toEqual(["error"]);
+    expect(body.error).toMatch(/terms/);
     // Cross-site is still refused first, as the upload page's script expects.
     const crossSite = await postLogin(fields, {
       url: "/uploads",
