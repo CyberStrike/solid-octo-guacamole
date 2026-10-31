@@ -32,7 +32,8 @@ const TAG_LABELS: Record<LinkedType, string> = {
 const tagLink = (tag: Tag & { type: LinkedType }) =>
   `<span class="visually-hidden">${TAG_LABELS[tag.type]}: </span><a href="${tagHref(tag.type, tag.name_norm)}">${escapeHtml(tag.name)}</a>`;
 
-const isLinked = (tag: Tag): tag is Tag & { type: LinkedType } => tag.type in TAG_LABELS;
+const isLinked = (tag: Tag): tag is Tag & { type: LinkedType } =>
+  Object.hasOwn(TAG_LABELS, tag.type);
 
 /**
  * The original epub on the content host, `originals/<one segment>` as apps/content
