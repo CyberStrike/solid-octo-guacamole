@@ -26,4 +26,14 @@ describe("17-reports-and-dmca", () => {
     // Removed for another reason: only a notice that removed the work lists it.
     expectNotOptedOut(await reuploadAfterNotice("removed", "pending"));
   });
+
+  it("does not block a work restored after its takedown", async () => {
+    // The list holds removed works: a moderator who restores one takes it off.
+    expectNotOptedOut(await reuploadAfterNotice("live", TAKEDOWN_REMOVED));
+  });
+
+  it("finds no takedown for an AO3 work ID past int4", async () => {
+    // No work can have it, so it is on no list, and Postgres is never asked about it.
+    expectNotOptedOut(await ingestEpub(2_147_483_648));
+  });
 });
