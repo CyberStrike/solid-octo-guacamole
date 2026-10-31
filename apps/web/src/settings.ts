@@ -1,0 +1,138 @@
+// /settings/reader: the reader settings form, which works with JavaScript off. It
+// sets the settings cookie and a flash, then sends the reader back where they came
+// from. No account is needed, and nothing is stored but the cookie.
+
+import type { Context } from "hono";
+import { getCookie } from "hono/cookie";
+import type { Bindings } from "./env";
+import { readForm } from "./login";
+import { escapeHtml, forbiddenPage, layout } from "./pages";
+import {
+  flashCookie,
+  isSettingValue,
+  parseSettings,
+  SETTING_NAMES,
+  SETTINGS_COOKIE,
+  settingsCookie,
+  type SettingName,
+  type Settings,
+} from "./reader-settings";
+import type { SecurityVariables } from "./security";
+import { isSameOrigin, safeNext } from "./signin";
+
+type SettingsContext = Context<{ Bindings: Bindings; Variables: SecurityVariables }>;
+
+/** The settings form's path, the form's action and the reader bar's link. */
+export const SETTINGS_PATH = "/settings/reader";
+
+// Each control's label and its options' labels, in the order shown. Draft copy for the
+// operator to proof. The theme's empty value stores no theme, so the device decides.
+const CONTROLS: Record<SettingName, { label: string; options: [string, string][] }> = {
+  theme: {
+    label: "Theme",
+    options: [
+      ["", "Match my device"],
+      ["light", "Light"],
+      ["dark", "Dark"],
+      ["sepia", "Sepia"],
+    ],
+  },
+  size: {
+    label: "Text size",
+    options: [
+      ["s", "Small"],
+      ["m", "Medium"],
+      ["l", "Large"],
+      ["xl", "Extra large"],
+    ],
+  },
+  leading: {
+    label: "Line spacing",
+    options: [
+      ["compact", "Compact"],
+      ["normal", "Normal"],
+      ["relaxed", "Relaxed"],
+    ],
+  },
+  face: {
+    label: "Reading face",
+    options: [
+      ["serif", "Serif"],
+      ["sans", "Sans-serif"],
+    ],
+  },
+};
+
+// What each control shows when the cookie doesn't set it: what the stylesheet does then.
+const DEFAULTS: Record<SettingName, string> = {
+  theme: "",
+  size: "m",
+  leading: "normal",
+  face: "serif",
+};
+
+/**
+ * A label and select for each setting, the current value selected. Ids start with
+ * `idPrefix`, so the reader bar's controls never clash with the page's own.
+ */
+export const settingsControls = (idPrefix: string, settings: Settings) =>
+  SETTING_NAMES.map((name) => {
+    const { label, options } = CONTROLS[name];
+    const current = settings[name] ?? DEFAULTS[name];
+    const id = `${idPrefix}${name}`;
+    const choices = options
+      .map(
+        ([value, text]) =>
+          `<option value="${value}"${value === current ? " selected" : ""}>${text}</option>`,
+      )
+      .join("");
+    return `<label for="${id}">${label}</label>
+<select id="${id}" name="${name}">${choices}</select>`;
+  }).join("\n");
+
+/** The settings page: the form, posting back here, with `next` to return to. */
+const settingsPage = (settings: Settings, next: string) =>
+  layout(
+    "Reader settings",
+    `<form class="reader-settings" method="post" action="${SETTINGS_PATH}">
+${settingsControls("settings-", settings)}
+<input type="hidden" name="next" value="${escapeHtml(next)}">
+<button type="submit">Save settings</button>
+</form>
+<p><a href="${escapeHtml(next)}">Back</a></p>`,
+  );
+
+/** `GET /settings/reader`: the form, showing the reader's current settings. */
+export const showSettings = (c: SettingsContext) =>
+  c.html(
+    settingsPage(
+      parseSettings(getCookie(c, SETTINGS_COOKIE)),
+      safeNext(c.req.query("next") ?? null),
+    ),
+  );
+
+/**
+ * `POST /settings/reader`: the origin check before the body, as on the sign-in forms;
+ * then each submitted setting that is in its list replaces the cookie's, and any other
+ * is ignored, the cookie's value kept. A 303 back to `next`, reduced to a same-site
+ * path, with the flash.
+ */
+export async function saveSettings(c: SettingsContext) {
+  if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);
+  const form = await readForm(c.req.raw);
+  if (form === null) return c.body(null, 413);
+
+  const settings = parseSettings(getCookie(c, SETTINGS_COOKIE));
+  for (const name of SETTING_NAMES) {
+    const value = form.get(name);
+    // SAFETY: isSettingValue has checked the value is in this setting's list.
+    if (isSettingValue(name, value)) (settings as Record<string, string>)[name] = value;
+    // "Match my device": no theme.
+    else if (name === "theme" && value === "") delete settings.theme;
+  }
+
+  c.header("Set-Cookie", settingsCookie(settings), { append: true });
+  c.header("Set-Cookie", flashCookie("settings-saved"), { append: true });
+  c.header("Cache-Control", "no-store");
+  return c.redirect(safeNext(form.get("next")), 303);
+}

@@ -50,6 +50,47 @@ const rulesFor = (css: string, selector: string) =>
     selectors.split(",").some((s) => s.trim() === selector) ? [body] : [],
   );
 
+/** The headers a browser on rarepair.fans sends with a form post. */
+const FORM_HEADERS = {
+  "content-type": "application/x-www-form-urlencoded",
+  origin: "https://rarepair.fans",
+  "sec-fetch-site": "same-origin",
+};
+
+/** A `Cookie` header from `Set-Cookie` values, as a browser would send them back. */
+const cookieHeader = (setCookies: string[]) => setCookies.map((c) => c.split(";")[0]).join("; ");
+
+/** The settings form on a page: how it posts, its selects and its hidden fields. */
+const settingsForm = (html: string) => {
+  const [, attrs = "", inner = ""] =
+    html.match(/<form\b([^>]*\baction="\/settings\/reader"[^>]*)>([\s\S]*?)<\/form>/) ?? [];
+  const attr = (name: string) => attrs.match(new RegExp(`\\b${name}="([^"]*)"`))?.[1] ?? "";
+  const selects: Record<string, { values: string[]; selected: string | null }> = {};
+  for (const [, name = "", options = ""] of inner.matchAll(
+    /<select\b[^>]*\bname="([^"]+)"[^>]*>([\s\S]*?)<\/select>/g,
+  )) {
+    const values = [...options.matchAll(/<option value="([^"]*)"/g)].map((m) => m[1] ?? "");
+    const selected = options.match(/<option value="([^"]*)" selected>/)?.[1] ?? null;
+    selects[name] = { values, selected };
+  }
+  const fields: Record<string, string> = {};
+  for (const [, name = "", value = ""] of inner.matchAll(
+    /<input type="hidden" name="([^"]+)" value="([^"]*)">/g,
+  )) {
+    fields[name] = value;
+  }
+  // Every select submits its selected option, or its first.
+  for (const [name, s] of Object.entries(selects)) fields[name] = s.selected ?? s.values[0] ?? "";
+  return {
+    method: attr("method"),
+    action: attr("action"),
+    hidden: /\shidden\b/.test(attrs),
+    selects,
+    fields,
+    hasSubmit: /<button type="submit"/.test(inner),
+  };
+};
+
 /** The page's <html> start tag. */
 const htmlTag = (html: string) => html.match(/<html\b[^>]*>/)?.[0] ?? null;
 
@@ -147,5 +188,96 @@ describe("13-reader-settings-and-position", () => {
         `<html lang="en" data-leading="${name}">`,
       );
     }
+  });
+
+  it("Settings form works without JS", async () => {
+    // The reader's settings link from the chapter carries the chapter as `next`.
+    const settingsPath = `/settings/reader?next=${encodeURIComponent(CHAPTER)}`;
+    const page = await fetchW(settingsPath, { headers: { cookie: "__Host-reader=size=l" } });
+    expect(page.status).toBe(200);
+    const form = settingsForm(await page.text());
+    expect(form.method).toBe("post");
+    expect(form.hidden).toBe(false);
+    // A control for each of the four settings, the current value selected.
+    expect(Object.keys(form.selects).toSorted()).toEqual(["face", "leading", "size", "theme"]);
+    expect(form.selects.size?.selected).toBe("l");
+    const themeField = Object.entries(form.selects).find(([, s]) => s.values.includes("sepia"));
+    expect(themeField).toBeDefined();
+    expect(form.fields.next).toBe(CHAPTER);
+    expect(form.hasSubmit).toBe(true);
+
+    // Submitted as a browser would, with only the theme changed.
+    const res = await fetchW(form.action, {
+      method: "POST",
+      headers: { ...FORM_HEADERS, cookie: "__Host-reader=size=l" },
+      body: new URLSearchParams({ ...form.fields, [themeField?.[0] ?? "theme"]: "sepia" }),
+    });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(CHAPTER);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const cookies = res.headers.getSetCookie();
+    expect(cookies).toContain(
+      "__Host-reader=theme=sepia&size=l&leading=normal&face=serif; Max-Age=31536000; Path=/; SameSite=Lax; Secure",
+    );
+    expect(cookies).toContain(
+      "__Host-flash=settings-saved; Max-Age=60; Path=/; SameSite=Lax; Secure; HttpOnly",
+    );
+
+    // Back on the chapter, with the cookie the browser now holds.
+    const back = await fetchW(CHAPTER, { headers: { cookie: cookieHeader(cookies) } });
+    expect(htmlTag(await back.text())).toMatch(/^<html lang="en" data-theme="sepia" /);
+  });
+
+  it("Settings form refuses cross-site posts and off-site redirects", async () => {
+    const post = (headers: Record<string, string>, body: string) =>
+      fetchW("/settings/reader", { method: "POST", headers, body });
+    const body = new URLSearchParams({ theme: "dark", next: CHAPTER }).toString();
+    for (const headers of [
+      { ...FORM_HEADERS, origin: "https://evil.example", "sec-fetch-site": "cross-site" },
+      { "content-type": FORM_HEADERS["content-type"] },
+    ]) {
+      const res = await post(headers, body);
+      expect(res.status).toBe(403);
+      expect(res.headers.getSetCookie()).toEqual([]);
+    }
+    for (const next of ["https://evil.example/", "//evil.example", "/\\evil.example"]) {
+      const res = await post(FORM_HEADERS, new URLSearchParams({ theme: "dark", next }).toString());
+      expect(res.status, next).toBe(303);
+      expect(res.headers.get("location"), next).toBe("/");
+    }
+    // A body too large to be the form sets nothing.
+    const huge = await post(FORM_HEADERS, `theme=dark&next=/&pad=${"x".repeat(20_000)}`);
+    expect(huge.headers.getSetCookie()).toEqual([]);
+    expect(huge.status).toBe(413);
+  });
+
+  it("Invalid settings values are ignored and the rest kept", async () => {
+    const res = await fetchW("/settings/reader", {
+      method: "POST",
+      headers: { ...FORM_HEADERS, cookie: "__Host-reader=theme=dark&size=s" },
+      body: new URLSearchParams({ theme: "neon", size: "xl", face: "<b>", next: "/about" }),
+    });
+    expect(res.status).toBe(303);
+    expect(res.headers.getSetCookie()).toContain(
+      "__Host-reader=theme=dark&size=xl; Max-Age=31536000; Path=/; SameSite=Lax; Secure",
+    );
+  });
+
+  it("Settings work for signed-out readers", async () => {
+    // No session cookie at all: the page and the POST need none, and nothing sends the
+    // reader to sign in.
+    const page = await fetchW("/settings/reader");
+    expect(page.status).toBe(200);
+    const res = await fetchW("/settings/reader", {
+      method: "POST",
+      headers: FORM_HEADERS,
+      body: new URLSearchParams({ size: "xl", next: CHAPTER }),
+    });
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe(CHAPTER);
+    const cookies = res.headers.getSetCookie();
+    expect(cookies.some((c) => c.startsWith("__Host-reader=size=xl;"))).toBe(true);
+    const back = await fetchW(CHAPTER, { headers: { cookie: cookieHeader(cookies) } });
+    expect(htmlTag(await back.text())).toBe('<html lang="en" data-size="xl">');
   });
 });

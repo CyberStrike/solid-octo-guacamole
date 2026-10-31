@@ -14,6 +14,7 @@ import {
   wwwToBareDomain,
   type SecurityVariables,
 } from "./security";
+import { saveSettings, SETTINGS_PATH, showSettings } from "./settings";
 import { STYLESHEET, STYLESHEET_PATH } from "./styles";
 import { joinWaitlist } from "./waitlist";
 import { comingSoonPage } from "./waitlist-pages";
@@ -53,6 +54,10 @@ app.get("/remove", (c) => c.html(turnstilePage("Request removal", c.get("nonce")
 // The reader. Closed before launch, like every /works/ page.
 app.get("/works/:id/chapters/:n", showChapter);
 app.get("/works/:id/chapters", jumpToChapter);
+
+// Reader settings, signed in or not. Closed before launch, like the reader.
+app.get(SETTINGS_PATH, showSettings);
+app.post(SETTINGS_PATH, saveSettings);
 
 app.get("/about", (c) => c.html(aboutPage()));
 app.get("/terms", (c) => c.html(termsPage()));
