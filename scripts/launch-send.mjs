@@ -2,8 +2,9 @@
 // The wait list's launch send (ARCHITECTURE, Wait list): the operator runs it once, locally. It
 // claims confirmed wait list rows with notified_at empty, a batch at a time, in one statement that
 // also stores each row's unsubscribe token hash, and puts a launch email for each on the
-// `email-bulk` queue through the Cloudflare Queues HTTP API. A batch whose push fails has
-// notified_at cleared again, and the run stops. Rerunning it, or running two at once, queues no
+// `email-bulk` queue through the Cloudflare Queues HTTP API. The claim stays uncommitted until the
+// push has succeeded, so a batch whose push fails, or a run that dies, leaves notified_at empty
+// again, and a failed push stops the run. Rerunning it, or running two at once, queues no
 // address twice. It prints how many confirmed addresses are still waiting.
 //
 //   DATABASE_URL=... CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... \
@@ -12,8 +13,9 @@
 // Every secret comes from the environment: no .env file, no flag. The API token needs Queues
 // Write. The script prints counts, an HTTP status or a Cloudflare error code, and nothing else:
 // no address, link, token or raw error, since any of those can carry one.
-// Exits 0 when no confirmed address is left waiting, 1 when the run stopped on an error, and 2
-// when an environment variable is missing, before anything is touched.
+// Exits 0 only when no confirmed address is left waiting, 1 when the run stopped on an error or
+// any address is still waiting, and 2 when an environment variable is missing, before anything is
+// touched.
 import { createHash, randomBytes } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import pg from "pg";
@@ -90,7 +92,7 @@ export async function launchSend({
   log = console.log,
   signal,
 }) {
-  const client = new pg.Client({ connectionString });
+  const client = new pg.Client({ connectionString, connectionTimeoutMillis: 15_000 });
   // A dropped connection is reported by the statement that was using it; without a listener the
   // client would also throw it unhandled.
   client.on("error", () => {});
@@ -100,16 +102,24 @@ export async function launchSend({
     await client.connect();
     while (error === null && !signal?.aborted) {
       const tokens = Array.from({ length: batchSize }, newToken);
-      const claimed = await client.query(CLAIM, [tokens.map(hashToken), batchSize]);
-      if (claimed.rows.length === 0) break;
-      const byHash = new Map(tokens.map((token) => [hashToken(token), token]));
-      const rows = claimed.rows.map((row) => ({
-        to: row.email,
-        token: byHash.get(row.unsubscribe_token_hash),
-      }));
-      let pushed = false;
+      // The claim, the push and the commit are one transaction: if the push fails, or the process
+      // or its connection dies at any point before the commit, the database rolls the claim back
+      // and the rows wait again. The rows stay locked meanwhile, so `skip locked` keeps a second
+      // run off them.
+      await client.query("begin");
+      let committed = false;
+      let count = 0;
       try {
-        const body = {
+        const claimed = await client.query(CLAIM, [tokens.map(hashToken), batchSize]);
+        const byHash = new Map(tokens.map((token) => [hashToken(token), token]));
+        const rows = claimed.rows.map((row) => ({
+          to: row.email,
+          token: byHash.get(row.unsubscribe_token_hash),
+        }));
+        if (rows.length === 0) break;
+        if (rows.some((row) => row.token === undefined)) throw new Error("claim mismatch");
+        count = rows.length;
+        error = await push({
           messages: rows.map(({ to, token }) => ({
             body: {
               kind: "waitlist-launch",
@@ -118,15 +128,18 @@ export async function launchSend({
             },
             content_type: "json",
           })),
-        };
-        error = await push(body);
-        pushed = error === null;
+        });
+        if (error === null) {
+          await client.query("commit");
+          committed = true;
+        }
       } finally {
-        // Whatever stopped the push, even a throw, the batch's rows go back to waiting.
-        if (!pushed) await release(client, rows, log);
+        // Whatever stopped it, even a throw, the batch's rows go back to waiting. If this fails,
+        // the connection is gone and the server rolls the transaction back itself.
+        if (!committed) await client.query("rollback").catch(() => {});
       }
-      if (pushed) {
-        queued += rows.length;
+      if (committed) {
+        queued += count;
         log(`queued ${queued} so far, ${await remainingOf(client)} still waiting`);
       }
     }
@@ -179,21 +192,6 @@ export async function launchSend({
   }
 }
 
-// Puts a batch's rows back to waiting, so the next run claims them again. The hash stays: the next
-// claim overwrites it. If this fails too, the rows stay marked notified with nothing queued:
-// ARCHITECTURE, Wait list, has the statement that recovers them.
-async function release(client, rows, log) {
-  try {
-    await client.query("update waitlist set notified_at = null where email = any($1::text[])", [
-      rows.map((row) => row.to),
-    ]);
-  } catch (caught) {
-    log(
-      `could not release ${rows.length} claimed addresses (${codeOf(caught)}): see ARCHITECTURE, Wait list`,
-    );
-  }
-}
-
 async function remainingOf(client) {
   try {
     const { rows } = await client.query(
@@ -219,18 +217,26 @@ async function main() {
     console.error(`usage: ${NAMES.join("=... ")}=... node scripts/launch-send.mjs`);
     return 2;
   }
-  // A stop arrives as an abort, so the batch in flight is cleared before the process ends.
+  // A stop arrives as an abort, so the batch in flight is rolled back before the process ends. A
+  // second one ends the process at once: the database rolls back an open transaction itself.
   const stop = new AbortController();
-  for (const name of ["SIGINT", "SIGTERM"]) process.on(name, () => stop.abort());
-  const { error } = await launchSend({
+  for (const name of ["SIGINT", "SIGTERM", "SIGHUP"]) {
+    process.on(name, () => {
+      if (stop.signal.aborted) process.exit(1);
+      stop.abort();
+    });
+  }
+  const { error, remaining } = await launchSend({
     connectionString: process.env.DATABASE_URL ?? "",
     accountId: process.env.CLOUDFLARE_ACCOUNT_ID ?? "",
     apiToken: process.env.CLOUDFLARE_API_TOKEN ?? "",
     queueId: process.env.EMAIL_BULK_QUEUE_ID ?? "",
     signal: stop.signal,
   });
-  if (error === null && !stop.signal.aborted) return 0;
-  console.error(`launch-send: stopped: ${error ?? "interrupted"}`);
+  if (error === null && remaining === 0) return 0;
+  // Not 0 while anything waits: a run that ended with rows held by another run, or interrupted
+  // between batches, has not finished the list.
+  console.error(`launch-send: stopped: ${error ?? "addresses are still waiting, run it again"}`);
   return 1;
 }
 

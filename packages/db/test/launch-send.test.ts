@@ -162,7 +162,12 @@ describe("22-waitlist launch send script", () => {
     const sent = pushed[0]!.messages.map((m) => m.body.to);
     const failed = pushed[1]!.messages.map((m) => m.body.to);
     for (const to of sent) expect((await rowOf(to)).notified_at).not.toBeNull();
-    for (const to of failed) expect((await rowOf(to)).notified_at).toBeNull();
+    for (const to of failed) {
+      // Nothing of the failed claim is left: not the time, and not the hash of a token no email carries.
+      const row = await rowOf(to);
+      expect(row.notified_at).toBeNull();
+      expect(row.unsubscribe_token_hash).toBeNull();
+    }
     // The unreached address is untouched.
     expect((await rowOf(confirmed(4))).notified_at).toBeNull();
     for (const line of [...lines, first.error ?? ""]) expect(line).not.toMatch(/@|example\.test/);
@@ -238,6 +243,27 @@ describe("22-waitlist launch send script", () => {
     expect(result.error).toBe("request failed (AbortError)");
     const rows = await t.db.selectFrom("waitlist").select("notified_at").execute();
     expect(rows.every((r) => r.notified_at === null)).toBe(true);
+  });
+
+  it("The launch send emails each confirmed address once: a stop signal between batches keeps what was queued", async () => {
+    await seed(4);
+    const stop = new AbortController();
+    const first = queueStub(() => {
+      stop.abort();
+      return ok();
+    });
+
+    const result = await launchSend(options(first.stub, { batchSize: 2, signal: stop.signal }));
+
+    expect(result).toEqual({ queued: 2, remaining: 2, error: null });
+    expect(first.pushed).toHaveLength(1);
+    const queuedTo = first.pushed.flatMap((p) => p.messages.map((m) => m.body.to));
+    for (const to of queuedTo) expect((await rowOf(to)).notified_at).not.toBeNull();
+    const rest = queueStub();
+    await launchSend(options(rest.stub, { batchSize: 2 }));
+    const again = rest.pushed.flatMap((p) => p.messages.map((m) => m.body.to));
+    expect(again.filter((to) => queuedTo.includes(to))).toEqual([]);
+    expect(again).toHaveLength(2);
   });
 
   it("The launch send script resumes where it stopped", async () => {

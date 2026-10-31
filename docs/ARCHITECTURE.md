@@ -690,24 +690,22 @@ markup: its inline `style` attributes become stylesheet rules, because
   once. It takes its secrets from the environment only (`DATABASE_URL`,
   `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` with Queues Write, and
   `EMAIL_BULK_QUEUE_ID`), and prints counts, an HTTP status or a Cloudflare
-  error code, never an address. It claims up to 100 confirmed rows with
-  `notified_at` empty in one statement that sets `notified_at` and each row's
-  `unsubscribe_token_hash` (`for update skip locked`), so no address is
-  claimed twice, whether the script is rerun or two copies run at once. It
-  puts the batch on `email-bulk` through the Queues HTTP API; if that fails
-  or times out, it clears the batch's `notified_at` and stops with a non-zero
-  exit, and the operator reruns it. It prints how many confirmed addresses
-  are still waiting after each batch and at the end, and a run stopped by
-  SIGINT or SIGTERM clears the batch in flight first. Two gaps stay. A hard
-  kill, or a lost database connection at the clear, leaves up to 100
-  addresses marked notified with nothing queued, and a rerun skips them. A
-  batch's rows all get the same `notified_at`, so once nothing else is
-  running, find the killed batch as the newest time (`select notified_at,
-  count(*) from waitlist group by 1 order by 1 desc limit 3`), and if it
-  holds 100 rows or fewer and its push is not known to have succeeded, clear
-  it with `update waitlist set notified_at = null where notified_at = '<that
-  time>'`. And a push that timed out after Cloudflare accepted it is cleared and
-  queued again, so those addresses get two emails: delivery is at least once.
+  error code, never an address. Each batch is one transaction: it claims up
+  to 100 confirmed rows with `notified_at` empty in one statement that sets
+  `notified_at` and each row's `unsubscribe_token_hash` (`for update skip
+  locked`), puts the batch on `email-bulk` through the Queues HTTP API, and
+  commits only once the push has succeeded. So no address is claimed twice,
+  whether the script is rerun or two copies run at once, and a failed push, a
+  timeout, a stop signal (SIGINT, SIGTERM, SIGHUP) or a hard kill leaves the
+  batch's `notified_at` empty again, because the database rolls the claim
+  back. A failed push stops the run with a non-zero exit, and the operator
+  reruns it. The script prints how many confirmed addresses are still
+  waiting after each batch and at the end, and exits 0 only when none is. One
+  gap stays, and it errs towards a second email, never a lost one: a push
+  that Cloudflare accepted but whose answer never arrived (a timeout), or a
+  failure of the commit itself, is rolled back and queued again by the next
+  run, so those up to 100 addresses get two launch emails (delivery is at
+  least once) and only the second email's unsubscribe link works.
   The mailer sends at the configured rate, so the emails, and the visits
   they bring, arrive over hours. A launch email that both providers refuse
   is dead-lettered to `email-bulk-dlq`, which the web Worker consumes: it
