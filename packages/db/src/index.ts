@@ -9,6 +9,8 @@ export {
   tagNameKeys,
   insertUpload,
   type ListedWork,
+  type ListingOptions,
+  type TagListing,
   type LiveWork,
   type WorkSummary,
 } from "./queries";

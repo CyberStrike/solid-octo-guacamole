@@ -1,6 +1,6 @@
 // Typed reads and writes over the catalogue and uploads. Each takes the
 // caller's Kysely, so a Worker passes the one it made for the request.
-import type { Kysely, Selectable } from "kysely";
+import type { ExpressionBuilder, Kysely, Selectable } from "kysely";
 import { jsonArrayFrom } from "kysely/helpers/postgres";
 import type {
   ChapterTable,
@@ -169,18 +169,52 @@ export function tagNameKeys(type: TagType, name: string): string[] {
   return nameNorm === name ? [name] : [nameNorm, name];
 }
 
+/** A page of a tag listing, and how many works the listing holds in all. */
+export interface TagListing {
+  works: ListedWork[];
+  total: number;
+}
+
+/** Which page of a listing to read. Pages count from 1. */
+export interface ListingOptions {
+  page?: number;
+  pageSize?: number;
+}
+
 /**
  * The `live` works carrying a tag of this type that matches `name` under the
  * tag rule (`tagNameKeys`), however each work spelled it, with their bylines
- * and tags. By AO3 work ID, and every one of them: B2 adds paging and sorting.
+ * and tags: one page of them, and how many there are in all.
  */
 export async function listLiveWorksByTag(
   db: Kysely<Database>,
   type: TagType,
   name: string,
-): Promise<ListedWork[]> {
+  { page = 1, pageSize = 20 }: ListingOptions = {},
+): Promise<TagListing> {
   const keys = tagNameKeys(type, name);
-  if (keys.length === 0) return [];
+  if (keys.length === 0) return { works: [], total: 0 };
+  const listed = (eb: ExpressionBuilder<Database, "works">) =>
+    eb.and([
+      eb("works.status", "=", "live"),
+      eb.exists(
+        eb
+          .selectFrom("work_tags")
+          .innerJoin("tags", "tags.id", "work_tags.tag_id")
+          .select("work_tags.tag_id")
+          .whereRef("work_tags.work_id", "=", "works.id")
+          .where("tags.name_norm", "in", keys)
+          .where("tags.type", "=", type),
+      ),
+    ]);
+  const { count } = await db
+    .selectFrom("works")
+    .select((eb) => eb.fn.countAll<string>().as("count"))
+    .where(listed)
+    .executeTakeFirstOrThrow();
+  const total = Number(count);
+  const offset = (page - 1) * pageSize;
+  if (offset >= total) return { works: [], total };
   const rows = await db
     .selectFrom("works")
     .select(SUMMARY)
@@ -199,22 +233,14 @@ export async function listLiveWorksByTag(
           .whereRef("work_tags.work_id", "=", "works.id"),
       ).as("tags"),
     ])
-    .where("works.status", "=", "live")
-    .where((eb) =>
-      eb.exists(
-        eb
-          .selectFrom("work_tags")
-          .innerJoin("tags", "tags.id", "work_tags.tag_id")
-          .select("work_tags.tag_id")
-          .whereRef("work_tags.work_id", "=", "works.id")
-          .where("tags.name_norm", "in", keys)
-          .where("tags.type", "=", type),
-      ),
-    )
+    .where(listed)
+    // AO3 work ID last, so a page never repeats or skips a work.
     .orderBy("works.ao3_work_id")
+    .limit(pageSize)
+    .offset(offset)
     .execute();
   // As in getLiveWork, json_agg's order isn't promised, so the lists are sorted here.
-  return rows.map(({ authors, tags, ...work }) => ({
+  const works = rows.map(({ authors, tags, ...work }) => ({
     work,
     authors: authors
       .sort((a, b) => a.position - b.position)
@@ -223,6 +249,7 @@ export async function listLiveWorksByTag(
       .sort((a, b) => a.position - b.position)
       .map(({ id, type, name, name_norm }) => ({ id, type, name, name_norm })),
   }));
+  return { works, total };
 }
 
 /**

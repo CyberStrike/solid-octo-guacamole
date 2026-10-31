@@ -23,7 +23,7 @@ describe("14 browse and home", () => {
       tags: [{ type: "fandom", name: "Harry Potter" }],
     });
 
-    const works = await listLiveWorksByTag(t.db, "fandom", "Harry Potter");
+    const { works } = await listLiveWorksByTag(t.db, "fandom", "Harry Potter");
 
     expect(works.map((w) => w.work.id).sort()).toEqual([a.workId, b.workId].sort());
     const names = await Promise.all(
@@ -31,14 +31,41 @@ describe("14 browse and home", () => {
     );
     expect(names).toEqual(["Harry Potter", "harry  potter!"]);
   });
+
+  it("Tag listing shows paged works", async () => {
+    const seeded: number[] = [];
+    for (let i = 0; i < 45; i++) {
+      const s = await seedWork(t.db, { tags: [{ type: "fandom", name: "Paged Db Fandom" }] });
+      seeded.push(s.ao3WorkId);
+    }
+    await seedWork(t.db, {
+      status: "hidden",
+      hiddenCause: "reports",
+      tags: [{ type: "fandom", name: "Paged Db Fandom" }],
+    });
+    const page = (n: number) =>
+      listLiveWorksByTag(t.db, "fandom", "Paged Db Fandom", { page: n, pageSize: 20 });
+
+    const pages = [await page(1), await page(2), await page(3)];
+
+    expect(pages.map((p) => p.works.length)).toEqual([20, 20, 5]);
+    expect(pages.map((p) => p.total)).toEqual([45, 45, 45]);
+    // One updated date for all: AO3 work ID breaks the tie, so no work is on two pages or none.
+    expect(pages.flatMap((p) => p.works.map((w) => w.work.ao3_work_id))).toEqual(
+      seeded.sort((a, b) => a - b),
+    );
+    expect(await page(4)).toEqual({ works: [], total: 45 });
+  });
 });
+
+const NONE = { works: [], total: 0 };
 
 describe("packages/db tag listing", () => {
   it("A tag listing holds only tags of its own type", async () => {
     const fandom = await seedWork(t.db, { tags: [{ type: "fandom", name: "Listing Sherlock" }] });
     await seedWork(t.db, { tags: [{ type: "character", name: "Listing Sherlock" }] });
 
-    const works = await listLiveWorksByTag(t.db, "fandom", "listing sherlock");
+    const { works } = await listLiveWorksByTag(t.db, "fandom", "listing sherlock");
 
     expect(normalizeTagName("character", "Listing Sherlock")).toBe("listing sherlock");
     expect(works.map((w) => w.work.id)).toEqual([fandom.workId]);
@@ -61,7 +88,7 @@ describe("packages/db tag listing", () => {
       tags: [{ type: "fandom", name: "Listing Byline" }],
     });
 
-    const works = await listLiveWorksByTag(t.db, "fandom", "Listing Byline");
+    const { works } = await listLiveWorksByTag(t.db, "fandom", "Listing Byline");
 
     const byId = [s, anon].sort((x, y) => x.ao3WorkId - y.ao3WorkId);
     expect(works.map((w) => w.work.id)).toEqual(byId.map((x) => x.workId));
@@ -86,19 +113,19 @@ describe("packages/db tag listing", () => {
     const stored = normalizeTagName("fandom", name);
     expect(normalizeTagName("fandom", stored)).not.toBe(stored);
 
-    const works = await listLiveWorksByTag(t.db, "fandom", stored);
+    const { works } = await listLiveWorksByTag(t.db, "fandom", stored);
 
     expect(works.map((w) => w.work.id)).toEqual([s.workId]);
   });
 
   it("A name holding a NUL lists no works", async () => {
-    expect(await listLiveWorksByTag(t.db, "fandom", "a\u0000b")).toEqual([]);
+    expect(await listLiveWorksByTag(t.db, "fandom", "a\u0000b")).toEqual(NONE);
   });
 
   it("A name with nothing left once folded lists no works", async () => {
     await seedWork(t.db, { tags: [{ type: "freeform", name: "???" }] });
-    expect(await listLiveWorksByTag(t.db, "freeform", "!!!")).toEqual([]);
-    expect(await listLiveWorksByTag(t.db, "freeform", "")).toEqual([]);
+    expect(await listLiveWorksByTag(t.db, "freeform", "!!!")).toEqual(NONE);
+    expect(await listLiveWorksByTag(t.db, "freeform", "")).toEqual(NONE);
   });
 });
 

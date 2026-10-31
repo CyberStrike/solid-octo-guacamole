@@ -27,7 +27,7 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
   // One query, on one connection.
   const db = createDb({ connectionString: c.env.HYPERDRIVE.connectionString, max: 1 });
   try {
-    const works = await listLiveWorksByTag(db, type, name);
+    const { works } = await listLiveWorksByTag(db, type, name);
     return c.html(tagListingPage(headingOf(works, type, keys), works));
   } finally {
     c.executionCtx.waitUntil(db.destroy());
