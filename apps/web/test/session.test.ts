@@ -57,11 +57,13 @@ async function makeDueForRefresh(email: string) {
     .select("id")
     .where("email", "=", email)
     .executeTakeFirstOrThrow();
+  const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60_000);
   await db
     .updateTable("session")
-    .set({ expires_at: new Date(Date.now() + 5 * 24 * 60 * 60_000) })
+    .set({ expires_at: expiresAt })
     .where("user_id", "=", user.id)
     .execute();
+  return { userId: user.id, expiresAt };
 }
 
 describe("session middleware", () => {
@@ -89,30 +91,23 @@ describe("session middleware", () => {
   it("A session due for refresh is extended, and its cookie set again", async () => {
     const email = "middleware-refresh@example.test";
     const cookie = await signIn(email);
-    // Better Auth extends a session once a day (its default updateAge) of its seven:
-    // make this one two days old.
-    const user = await db
-      .selectFrom("user")
-      .select("id")
-      .where("email", "=", email)
-      .executeTakeFirstOrThrow();
-    const fiveDays = new Date(Date.now() + 5 * 24 * 60 * 60_000);
-    await db
-      .updateTable("session")
-      .set({ expires_at: fiveDays })
-      .where("user_id", "=", user.id)
-      .execute();
+    const { userId, expiresAt } = await makeDueForRefresh(email);
 
     const { email: found, setCookies } = await whoIs(cookie);
     expect(found).toBe(email);
     expect(setCookies).toHaveLength(1);
     expect(setCookies[0]).toMatch(/^__Secure-better-auth\.session_token=/);
-    expect(setCookies[0]).toMatch(/;\s*max-age=604800/i);
+    // The refreshed cookie keeps the attributes ARCHITECTURE fixes, and a fresh seven days.
+    const attributes = setCookies[0]!.split(/;\s*/).slice(1);
+    expect(attributes.map((a) => a.toLowerCase())).toEqual(
+      expect.arrayContaining(["httponly", "secure", "samesite=lax", "path=/", "max-age=604800"]),
+    );
+    expect(attributes.some((a) => /^domain=/i.test(a))).toBe(false);
     const session = await db
       .selectFrom("session")
       .select("expires_at")
-      .where("user_id", "=", user.id)
+      .where("user_id", "=", userId)
       .executeTakeFirstOrThrow();
-    expect(session.expires_at.getTime()).toBeGreaterThan(fiveDays.getTime());
+    expect(session.expires_at.getTime()).toBeGreaterThan(expiresAt.getTime());
   });
 });

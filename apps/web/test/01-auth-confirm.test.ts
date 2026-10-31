@@ -83,11 +83,11 @@ describe("01-auth-magic-link", () => {
     expect(await tokensFor(email)).toEqual([row]);
     expect(await sessionCount(email)).toBe(0);
 
-    // The token is in the URL: it is never cached, nor sent to another site as a
-    // referrer. Not no-referrer: under it a browser sends the page's own POST with
+    // The token is in the URL: it is never cached, and a referrer carries only the
+    // origin. Not no-referrer: under it a browser sends the page's own POST with
     // `Origin: null` (Fetch, "append a request Origin header"), which the origin check refuses.
     expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(res.headers.get("referrer-policy")).toBe("same-origin");
+    expect(res.headers.get("referrer-policy")).toBe("strict-origin");
     expect(withoutNonce(res.headers.get("content-security-policy"))).toBe(STRICT);
   });
 

@@ -18,11 +18,11 @@ export function showConfirm(c: ConfirmContext) {
   const token = c.req.query("token") ?? "";
   if (token === "") return c.redirect(REFUSED, 302);
   return c.html(confirmPage(token, safeNext(c.req.query("next") ?? null)), 200, {
-    // The token is in the URL: keep it out of caches and out of any other site's
-    // Referer. Not no-referrer: under it the browser sends the page's own POST with
+    // The token is in the URL: keep it out of caches, and let a Referer carry only
+    // the origin. Not no-referrer: under it the browser sends the page's own POST with
     // `Origin: null` (Fetch, "append a request Origin header"), which isSameOrigin refuses.
     "Cache-Control": "no-store",
-    "Referrer-Policy": "same-origin",
+    "Referrer-Policy": "strict-origin",
   });
 }
 

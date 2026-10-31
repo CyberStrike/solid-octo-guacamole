@@ -26,6 +26,9 @@ export function makeAuth(env: Bindings, db: Kysely<Database>) {
     secret: env.BETTER_AUTH_SECRET,
     database: { db, type: "postgres" },
     telemetry: { enabled: false },
+    // Its logger prints a caught error whole, and one from Postgres can quote the row,
+    // an address included. What it would log is thrown on to app.onError, which logs the name.
+    logger: { disabled: true },
     // Counters in Postgres, not in this isolate's memory. Only `auth.handler`
     // requests are counted, so `auth.api` calls from our routes never are: their
     // own per-IP and per-email limits use the Workers rate-limiting binding (A3, #23).
