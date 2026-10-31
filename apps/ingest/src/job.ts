@@ -1,7 +1,7 @@
 import type { Database } from "@archive/db";
-import type { ParsedWork } from "@archive/epub";
+import { EpubError, type ParsedWork } from "@archive/epub";
 import type { Kysely } from "kysely";
-import { claimLease, type Lease } from "./lease";
+import { claimLease, endLease, type Lease } from "./lease";
 
 /** What a job needs from outside: the request's Kysely, the bucket and the two steps. */
 export interface JobDeps {
@@ -22,7 +22,18 @@ export async function runJob(deps: JobDeps, uploadId: string): Promise<Verdict> 
   if (lease === null) return "ack";
   const object = await deps.bucket.get(lease.r2Key);
   if (object === null) return "ack";
-  const work = await deps.process(new Uint8Array(await object.arrayBuffer()));
+  let work: ParsedWork;
+  try {
+    work = await deps.process(new Uint8Array(await object.arrayBuffer()));
+  } catch (error) {
+    if (!(error instanceof EpubError)) throw error;
+    // A rejection is final for these bytes: recorded at once, never retried.
+    await endLease(deps.db, lease, {
+      status: error.code,
+      failure: { stage: "process", error: error.code },
+    });
+    return "ack";
+  }
   await deps.save(lease, work);
   return "ack";
 }
