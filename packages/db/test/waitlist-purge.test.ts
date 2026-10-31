@@ -1,3 +1,4 @@
+import { sql } from "kysely";
 import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { waitlistPurge } from "../../../scripts/waitlist-purge.mjs";
@@ -31,20 +32,13 @@ async function seed(...rows: Seed[]) {
   for (const row of rows) {
     await t.db
       .insertInto("waitlist")
-      .values({ email: row.email, confirmed_at: row.confirmed === false ? null : CONFIRMED })
+      .values({
+        email: row.email,
+        confirmed_at: row.confirmed === false ? null : CONFIRMED,
+        notified_at:
+          row.notifiedAgo === undefined ? null : sql<Date>`now() - ${row.notifiedAgo}::interval`,
+      })
       .execute();
-    if (row.notifiedAgo !== undefined) {
-      const client = new pg.Client({ connectionString: t.connectionString });
-      await client.connect();
-      try {
-        await client.query(
-          `update waitlist set notified_at = now() - $1::interval where email = $2`,
-          [row.notifiedAgo, row.email],
-        );
-      } finally {
-        await client.end();
-      }
-    }
   }
 }
 
