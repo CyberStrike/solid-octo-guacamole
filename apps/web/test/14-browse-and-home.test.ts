@@ -196,6 +196,12 @@ describe("14-browse-and-home", () => {
       summary: null,
       tags: [{ type: "fandom", name: "Clamped Summary Fandom" }],
     });
+    // Markup with nothing to read is no summary either.
+    await seedWork(db, {
+      ao3WorkId: 30042,
+      summary: "<p> </p><br>",
+      tags: [{ type: "fandom", name: "Clamped Summary Fandom" }],
+    });
 
     const html = await htmlOf("/tags/fandom/clamped%20summary%20fandom");
 
@@ -209,6 +215,9 @@ describe("14-browse-and-home", () => {
     const noSummary = cardOf(html, 30041);
     expect(noSummary).toContain('href="/works/30041"');
     expect(noSummary).not.toContain(">more</a>");
+    const blank = cardOf(html, 30042);
+    expect(blank).toContain('href="/works/30042"');
+    expect(blank).not.toMatch(/card-summary|>more<\/a>/);
     const rules = rulesFor(await stylesheetOf(html), "card-summary");
     expect(rules).toMatch(/(^|[^-])line-clamp:\s*3/);
     expect(rules).toMatch(/-webkit-line-clamp:\s*3/);
@@ -391,9 +400,9 @@ describe("14-browse-and-home tag listing URLs", () => {
       const html = await res.text();
 
       expect(res.status, name).toBe(200);
-      expect(html.match(/<h1>([^<]*)<\/h1>/g), name).toEqual([
-        `<h1>${decodeURIComponent(name)}</h1>`,
-      ]);
+      // A fixed heading: the page repeats nothing a URL can say.
+      expect(html.match(/<h1>([^<]*)<\/h1>/g), name).toEqual(["<h1>No works with this tag</h1>"]);
+      expect(html).not.toContain(decodeURIComponent(name));
       expect(html).toContain("No works");
       expect(html).not.toContain("work-card");
     }
@@ -430,7 +439,8 @@ describe("14-browse-and-home tag listing URLs", () => {
     expect(css).not.toMatch(/\.work-card (h2|p)\b/);
     expect(css).toMatch(/\.card-summary :is\(h1, h2, h3, h4, h5, h6\) \{[^}]*font-size: inherit/);
     // An image is scaled to the clamp, not shown at its own height.
-    expect(css).toMatch(/\.card-summary img \{[^}]*max-height: 4\.35em/);
+    // An image takes one of the three lines, not its own height.
+    expect(css).toMatch(/\.card-summary img \{[^}]*max-height: 1\.45em/);
     // A list styled without bullets keeps its list semantics in Safari.
     expect(html).toContain('<ol class="work-list" role="list">');
   });

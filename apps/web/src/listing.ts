@@ -38,14 +38,15 @@ export async function showTagListing(c: Context<{ Bindings: Bindings }>) {
 
 /**
  * The first spelling of the tag a listed work uses, by code unit. Only live
- * works count: a hidden or removed work's spelling is never shown, so a tag
- * only they use reads like one nobody has used, headed by its folded name.
+ * works count: a hidden or removed work's spelling is never shown. With no live
+ * work the heading is fixed, so a tag only they use reads like one nobody has
+ * used, and the page repeats nothing from its URL.
  */
 function headingOf(works: ListedWork[], type: TagType, nameNorm: string): string {
   const spellings = works.flatMap((w) =>
     w.tags.flatMap((t) => (t.type === type && t.name_norm === nameNorm ? [t.name] : [])),
   );
-  return spellings.sort(compareCodeUnits)[0] ?? nameNorm;
+  return spellings.sort(compareCodeUnits)[0] ?? "No works with this tag";
 }
 
 const tagListingPage = (heading: string, works: ListedWork[]) =>
@@ -55,6 +56,10 @@ const tagListingPage = (heading: string, works: ListedWork[]) =>
       ? "<p>No works have this tag yet.</p>"
       : `<ol class="work-list" role="list">\n${works.map(workCard).join("\n")}\n</ol>`,
   );
+
+/** Whether a summary has anything to read: text or an image. */
+const hasContent = (html: string) =>
+  /<img\b/.test(html) || /[^\s]/.test(html.replace(/<[^>]*>/g, "").replaceAll("&nbsp;", ""));
 
 // A tag that folds to nothing has no listing, so it is shown without a link.
 const tagLinks = (tags: ListedWork["tags"]) =>
@@ -93,7 +98,7 @@ const cardTags = (
  * lines. The server can't tell how many lines it takes, so "more" always follows.
  */
 const summary = (html: string | null, href: string, title: string) =>
-  html
+  html && hasContent(html)
     ? `<div class="card-summary">${html}</div>\n<p class="card-more"><a href="${href}" aria-label="more of ${escapeHtml(title)}">more</a></p>`
     : "";
 
