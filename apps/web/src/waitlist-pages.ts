@@ -74,6 +74,35 @@ export const waitlistForbiddenPage = () =>
     `<p>That request didn't come from rarepair. <a href="/">Join the wait list here</a>.</p>`,
   );
 
+/**
+ * The emailed link's page: only a button that posts the token. Opening the link uses
+ * nothing up, so a mail scanner's prefetch can't spend it. No script, so it works with
+ * JavaScript off. The token is the one thing the page echoes, escaped.
+ */
+export const waitlistConfirmPage = (token: string) =>
+  waitlistPage(
+    "Confirm your address",
+    `<form class="waitlist" method="post" action="/waitlist/confirm">
+<input type="hidden" name="token" value="${escapeHtml(token)}">
+<p>Press the button to put your address on the wait list.</p>
+<button type="submit">Confirm</button>
+</form>`,
+  );
+
+/** After a confirmation that matched. It never shows the address. */
+export const waitlistConfirmedPage = () =>
+  waitlistPage(
+    "You're on the list",
+    `<p>One email will follow when rarepair opens, and nothing else.</p>`,
+  );
+
+/** A used, expired or unknown confirmation link, or none at all. */
+export const waitlistLinkRefusedPage = () =>
+  waitlistPage(
+    "That link doesn't work",
+    `<p>That confirmation link has already been used or has expired, or it was never valid. Links work once, for 7 days. <a href="/">Join the wait list again</a> for a new one.</p>`,
+  );
+
 /** The confirmation email couldn't be queued, and nothing was kept. */
 export const waitlistUnavailablePage = () =>
   waitlistPage(
