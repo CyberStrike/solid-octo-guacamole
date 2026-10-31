@@ -146,12 +146,14 @@ footer {
 }
 
 /* Layout containment makes the chapter the containing block of anything positioned
-   inside it, so no fragment can lay itself over the page. */
+   inside it, so no fragment can lay itself over the page. Paint containment clips what
+   overflows it, so anything too wide scrolls inside the chapter instead. */
 article.chapter {
   font-family: var(--reading);
   line-height: 1.6;
   max-width: 66ch;
   contain: content;
+  overflow-x: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -164,16 +166,11 @@ article.chapter {
   }
 }
 
-/* The chapter reader (R2). Long words break through main's overflow-wrap. Paint containment clips what overflows the chapter, so wide content fits or scrolls. */
+/* The chapter reader (R2). Long words break through main's overflow-wrap, and images
+   shrink to fit; anything else too wide scrolls inside the chapter. */
 article.chapter img {
   max-width: 100%;
   height: auto;
-}
-
-article.chapter table {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
 }
 
 /* The slim top bar scrolls away with the page: it is never sticky or fixed. */
