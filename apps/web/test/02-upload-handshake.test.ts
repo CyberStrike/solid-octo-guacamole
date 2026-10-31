@@ -60,6 +60,7 @@ async function expectRefused(res: Response, status: number) {
   expect(res.status).toBe(status);
   expect(res.headers.get("location")).toBeNull();
   expect(res.headers.get("content-type")).toMatch(/^application\/json/);
+  expect(res.headers.get("cache-control")).toBe("no-store");
   // SAFETY: POST /uploads answers JSON.
   const body = (await res.json()) as Reply;
   expect(body.url).toBeUndefined();
@@ -73,6 +74,7 @@ describe("01-auth-magic-link", () => {
     const page = await fetchW("/upload");
     expect(page.status).toBe(302);
     expect(page.headers.get("location")).toBe("/login?next=%2Fupload");
+    expect(page.headers.get("cache-control")).toBe("no-store");
 
     const res = await requestUpload({ size: "1000", "cf-turnstile-response": PASSING_TOKEN });
     await expectRefused(res, 401);
@@ -87,6 +89,8 @@ describe("02-upload-handshake", () => {
       { cookie },
     );
     expect(res.status).toBe(200);
+    // The URL can write to the bucket: no cache may keep it.
+    expect(res.headers.get("cache-control")).toBe("no-store");
     // SAFETY: POST /uploads answers JSON.
     const { id, url } = (await res.json()) as Reply;
 
@@ -182,6 +186,7 @@ describe("02-upload-handshake", () => {
     const { cookie } = await signIn("u1-noscript@example.test");
     const res = await fetchW("/upload", { headers: { cookie } });
     expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
     const csp = res.headers.get("content-security-policy");
     expect(withoutNonce(csp)).toBe(TURNSTILE);
 

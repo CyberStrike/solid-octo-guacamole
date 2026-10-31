@@ -59,7 +59,8 @@
     "R2_BUCKET": "rarepair",
   },
   // Set with `wrangler secret put`. The R2 ones sign upload URLs: an R2 API token with Object
-  // Read and Write on the rarepair bucket only, and the account id, kept out of this public repo.
+  // Read and Write on the rarepair bucket only. Only its secret key is secret: every issued URL
+  // shows the access key id and the account id, which are here only to keep them out of the repo.
   "secrets": {
     "required": [
       "BETTER_AUTH_SECRET",

@@ -29,11 +29,17 @@ const SIZE = /^[1-9][0-9]*$/;
 // No cache keeps a reply: a URL in one can write to the bucket.
 const NO_STORE = { "Cache-Control": "no-store" };
 
-/** `GET /upload`: the upload page, or sign in first and come back. */
-export const showUpload = (c: UploadContext) =>
-  c.var.session === null
+/**
+ * `GET /upload`: the upload page, or sign in first and come back. Neither is
+ * cached: which one is sent depends on the cookie, and the page can carry a
+ * refreshed session cookie.
+ */
+export const showUpload = (c: UploadContext) => {
+  c.header("Cache-Control", NO_STORE["Cache-Control"]);
+  return c.var.session === null
     ? c.redirect(`/login?next=${encodeURIComponent("/upload")}`, 302)
     : c.html(uploadPage(c.get("nonce"), c.env.TURNSTILE_SITE_KEY));
+};
 
 /**
  * Refuses a `POST /uploads` from anywhere but a page on the site, with a JSON 403.
