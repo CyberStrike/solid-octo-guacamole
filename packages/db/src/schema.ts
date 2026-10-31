@@ -175,9 +175,6 @@ export interface UploadTable {
   created_at: CreatedTimestamp;
 }
 
-/** A status column with a default. The docs name no full set of values, so it is plain text. */
-type DefaultedStatus = ColumnType<string, string | undefined, string>;
-
 export type RequestKind = "remove_work" | "opt_out";
 
 export interface ReportTable {
@@ -190,7 +187,7 @@ export interface ReportTable {
   /** The optional details. */
   body: string | null;
   /** `open` until a moderator acts. */
-  status: DefaultedStatus;
+  status: Generated<string>;
   created_at: CreatedTimestamp;
 }
 
@@ -201,7 +198,7 @@ export interface TakedownTable {
   requester: string;
   basis: string;
   /** `pending` until a moderator acts. */
-  status: DefaultedStatus;
+  status: Generated<string>;
   /** The moderator who acted. */
   resolved_by: string | null;
   created_at: CreatedTimestamp;
@@ -219,7 +216,7 @@ export interface RequestTable {
   contact_email: string;
   statement: string;
   /** `pending` until a moderator acts. */
-  status: DefaultedStatus;
+  status: Generated<string>;
   /** Never the raw IP. */
   ip_hash: string;
   created_at: CreatedTimestamp;
