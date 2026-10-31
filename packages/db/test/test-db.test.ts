@@ -1,4 +1,5 @@
 import net from "node:net";
+import { setTimeout } from "node:timers/promises";
 import { sql } from "kysely";
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -89,7 +90,7 @@ describe("createTestDb", () => {
         .query<{ count: number }>("select count(*)::int as count from client_turns where n = -1")
         .finally(() => (settled = true));
 
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await setTimeout(50);
       expect(settled).toBe(false);
       await holder.query("rollback");
 
@@ -132,8 +133,6 @@ describe("createTestDb", () => {
     const dropped = await rawClient();
     // A Parse with no Sync after it: the query's cycle is open when the client goes.
     await dropped.parseOnly("select 1");
-    // Long enough for the server to take the Parse before the client goes.
-    await new Promise((resolve) => setTimeout(resolve, 100));
     dropped.socket.destroy();
 
     const c = await client();
@@ -159,27 +158,34 @@ describe("createTestDb's close", () => {
   });
 });
 
+// Server message types the raw client waits for.
+const READY_FOR_QUERY = 0x5a;
+const PARSE_COMPLETE = 0x31;
+
 /**
- * A client that speaks the simple query protocol over a bare socket, so a test can
- * drop it at any point. Each `query` resolves at the server's ReadyForQuery.
+ * A client that speaks the wire protocol over a bare socket, so a test can drop it at
+ * any point. Each `query` resolves at the server's ReadyForQuery.
  */
 async function rawClient() {
   const { hostname, port } = new URL(t.connectionString);
   const socket = net.connect(Number(port), hostname);
   let received = Buffer.alloc(0);
-  let ready = () => {};
+  let awaited = { type: READY_FOR_QUERY, arrived: () => {} };
   socket.on("data", (chunk) => {
     received = Buffer.concat([received, chunk]);
     // Each server message: a type byte, then an int32 length that counts itself.
-    while (received.length >= 5 && received.length >= 1 + received.readInt32BE(1)) {
+    while (received.length >= 5) {
+      const end = 1 + received.readInt32BE(1);
+      if (received.length < end) break;
       const type = received[0];
-      received = received.subarray(1 + received.readInt32BE(1));
-      if (type === 0x5a) ready();
+      received = received.subarray(end);
+      if (type === awaited.type) awaited.arrived();
     }
   });
-  const send = (bytes: Buffer) =>
+  /** Sends `bytes`, and resolves when a server message of type `until` arrives. */
+  const send = (bytes: Buffer, until = READY_FOR_QUERY) =>
     new Promise<void>((resolve) => {
-      ready = resolve;
+      awaited = { type: until, arrived: resolve };
       socket.write(bytes);
     });
   const message = (type: string, body: Buffer) => {
@@ -196,11 +202,17 @@ async function rawClient() {
   return {
     socket,
     query: (text: string) => send(message("Q", Buffer.from(`${text}\0`))),
-    /** Sends a Parse of `text` on the unnamed statement, with no Sync to end it. */
+    /**
+     * Sends a Parse of `text` on the unnamed statement and a Flush, with no Sync to end
+     * the cycle, and resolves once the server has parsed it.
+     */
     parseOnly: (text: string) =>
-      new Promise<void>((resolve) => {
-        // The server answers nothing before a Sync or Flush, so there is no reply to await.
-        socket.write(message("P", Buffer.from(`\0${text}\0\0\0`)), () => resolve());
-      }),
+      send(
+        Buffer.concat([
+          message("P", Buffer.from(`\0${text}\0\0\0`)),
+          message("H", Buffer.alloc(0)),
+        ]),
+        PARSE_COMPLETE,
+      ),
   };
 }
