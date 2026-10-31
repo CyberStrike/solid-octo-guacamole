@@ -64,9 +64,19 @@ export interface VerificationTable {
   updated_at: CreatedTimestamp;
 }
 
+/** Better Auth's rate-limit counters, one row per limited key. */
+export interface RateLimitTable {
+  id: string;
+  key: string;
+  count: number;
+  /** Milliseconds since the epoch. A bigint, so pg reads it as a string. */
+  last_request: ColumnType<string, number | string, number | string>;
+}
+
 export interface Database {
   user: UserTable;
   session: SessionTable;
   account: AccountTable;
   verification: VerificationTable;
+  rateLimit: RateLimitTable;
 }
