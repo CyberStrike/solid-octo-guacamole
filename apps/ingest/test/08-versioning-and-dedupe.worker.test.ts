@@ -12,7 +12,7 @@ import {
 
 describe("08-versioning-and-dedupe", () => {
   it("First upload creates the work", async () => {
-    // The scenario's 67890 stands for an ID no work has: here, one no other test uses, since a
+    // The scenario's 67890 stands for an ID no work has: here, a fresh random one, since a
     // rerun on the same database (vitest watch) would find a fixed ID's work from the first run.
     const workId = freshAo3WorkId();
     const id = await pendingUpload(

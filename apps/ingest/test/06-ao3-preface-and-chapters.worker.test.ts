@@ -222,6 +222,22 @@ describe("06-ao3-preface-and-chapters", () => {
     expect(await workExists(workId)).toBe(false);
   });
 
+  it("writes nothing for an opted-out pseud, with the real save in place", async () => {
+    const t = token();
+    await addOptOut(`moon child ${t}`);
+    const work = parsedWork({ authors: [{ pseud: `Moon Child ${t}`, user: null }] });
+    const workId = Number(work.ao3WorkId);
+    const id = await pendingUpload(ao3Epub({ workId }));
+    const { handler } = watchedWorker({ process: async () => work });
+
+    await deliver([{ upload_id: id }], { handler });
+
+    expect((await uploadRow(id)).status).toBe("opted_out");
+    expect(await savedRows(workId, id)).toMatchObject({ works: [], versions: [] });
+    expect(await bucketKeys(`works/${workId}/`)).toEqual([]);
+    expect(await bucketKeys(`originals/${id}`)).toEqual([]);
+  });
+
   it("Work under takedown is rejected", async () => {
     const removed = await seededWork({ status: "removed" });
     await addTakedown(removed.workId, TAKEDOWN_REMOVED);

@@ -192,10 +192,11 @@ export const token = () => crypto.randomUUID().slice(0, 8);
 export const freshAo3WorkId = () => 100_000_000 + Math.floor(Math.random() * 2_000_000_000);
 
 /**
- * Uploads a synthetic epub of AO3 work `workId` and ingests it, with the byline `pseuds` over
- * the epub's own (the synthetic epubs all carry one byline), or the epub's own when none are
- * given. Returns the upload's id and row, the queue's result, and `saved`: the id of each
- * upload the job saved.
+ * Uploads a synthetic epub of AO3 work `workId` and runs its job up to the save step, with the
+ * byline `pseuds` over the epub's own (the synthetic epubs all carry one byline), or the epub's
+ * own when none are given. The save step is a stub that writes nothing: it records the id of
+ * each upload that reached it, in `saved`. Returns that, the upload's id and row, and the
+ * queue's result.
  */
 export async function ingestEpub(workId: number, ...pseuds: string[]) {
   const id = await pendingUpload(ao3Epub({ workId }));
@@ -229,7 +230,7 @@ export function expectOptedOut({ row, saved, result }: Ingested) {
   expect(result.retryMessages).toEqual([]);
 }
 
-/** Expects the upload not rejected as `opted_out`: the job went on to save it. */
+/** Expects the upload not rejected as `opted_out`: the job went on to the save step. */
 export function expectNotOptedOut({ id, row, saved }: Ingested) {
   expect(row.status).not.toBe("opted_out");
   expect(saved).toEqual([id]);
