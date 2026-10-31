@@ -93,7 +93,9 @@ export async function launchSend({
   signal,
 }) {
   // The queue takes at most 100 messages a call.
-  const size = Math.min(Math.max(1, Math.floor(batchSize)), BATCH_SIZE);
+  const size = Number.isFinite(batchSize)
+    ? Math.min(Math.max(1, Math.floor(batchSize)), BATCH_SIZE)
+    : BATCH_SIZE;
   /** @type {pg.Client} */
   let client;
   try {

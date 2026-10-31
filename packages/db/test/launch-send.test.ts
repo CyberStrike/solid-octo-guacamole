@@ -184,12 +184,16 @@ describe("22-waitlist launch send script", () => {
   it("The launch send emails each confirmed address once: a push that throws or answers an error status also clears its batch", async () => {
     await seed(2);
     const thrown = queueStub(() => new TypeError("connect ECONNREFUSED a@example.test"));
-    const first = await launchSend(options(thrown.stub));
+    const lines: string[] = [];
+    const log = (l: string) => lines.push(l);
+    const first = await launchSend(options(thrown.stub, { log }));
     expect(first).toEqual({ queued: 0, remaining: 2, error: "request failed (TypeError)" });
 
     const status = queueStub(() => new Response("not json a@example.test", { status: 503 }));
-    const second = await launchSend(options(status.stub));
+    const second = await launchSend(options(status.stub, { log }));
     expect(second).toEqual({ queued: 0, remaining: 2, error: "HTTP 503" });
+    // Neither the thrown error's text nor the reply's body reaches the output.
+    for (const line of lines) expect(line).not.toMatch(/@|example\.test/);
     for (const email of [confirmed(0), confirmed(1)]) {
       expect((await rowOf(email)).notified_at).toBeNull();
     }
