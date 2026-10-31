@@ -27,4 +27,10 @@ export type {
   HiddenCause,
   TagType,
   UploadStatus,
+  ReportTable,
+  TakedownTable,
+  RequestTable,
+  OptoutTable,
+  RequesterBlockTable,
+  RequestKind,
 } from "./schema";
