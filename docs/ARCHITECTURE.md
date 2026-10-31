@@ -649,6 +649,11 @@ pages, sign-in, `/welcome/terms`, sign-out and `/admin`, so an admin can sign
 in for the first time and run the launch send. Turning `PRELAUNCH` off opens the archive: `/`
 becomes the home page and `POST /waitlist` answers 404.
 
+The coming-soon page is the one page with web fonts: Fraunces and IBM Plex
+Mono, self-hosted as woff2 on `rarepair.fans` (FRONTEND-DISCOVERY, *Decisions
+so far*). `default-src 'self'` already covers them, so its CSP gains only the
+Turnstile frame.
+
 - **Joining.** `POST /waitlist` is a plain form with Turnstile, with the same
   `Origin` / `Sec-Fetch-Site` check as `POST /login` (403) and rate limits
   per IP and per email (429). It stores the address and queues one
