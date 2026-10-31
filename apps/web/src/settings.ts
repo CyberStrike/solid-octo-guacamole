@@ -106,10 +106,15 @@ ${next === SETTINGS_PATH ? "" : `<p><a href="${escapeHtml(next)}">Back</a></p>`}
   );
 
 /**
- * Where saving goes back to: `next`, reduced to a same-site path, or this page when
- * there is none, since the reader came here directly.
+ * Where saving goes back to: `next`, reduced to a same-site path. This page when there
+ * is none, since the reader came here directly, and when `next` was refused, so the
+ * reader lands on a page that shows the flash.
  */
-const returnTarget = (next: string | null | undefined) => (next ? safeNext(next) : SETTINGS_PATH);
+const returnTarget = (next: string | null | undefined) => {
+  if (!next) return SETTINGS_PATH;
+  const safe = safeNext(next);
+  return safe === "/" && next !== "/" ? SETTINGS_PATH : safe;
+};
 
 /**
  * The settings script, for a page's head. It carries the page's nonce, which
@@ -143,9 +148,9 @@ export const showSettings = (c: SettingsContext) =>
 
 /**
  * `POST /settings/reader`: the origin check before the body, as on the sign-in forms;
- * then each submitted setting that is in its list replaces the cookie's, and any other
- * is ignored, the cookie's value kept. A 303 back to `next`, reduced to a same-site
- * path, with the flash.
+ * then each submitted setting that is in its list replaces the cookie's, an empty theme
+ * ("Match my device") removes it, and any other value is ignored, the cookie's kept. A
+ * 303 back to `returnTarget`, with the flash.
  */
 export async function saveSettings(c: SettingsContext) {
   if (!isSameOrigin(c.req.raw.headers)) return c.html(forbiddenPage(), 403);

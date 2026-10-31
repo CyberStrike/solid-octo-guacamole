@@ -243,7 +243,7 @@ describe("13-reader-settings-and-position", () => {
     for (const next of ["https://evil.example/", "//evil.example", "/\\evil.example"]) {
       const res = await post(FORM_HEADERS, new URLSearchParams({ theme: "dark", next }).toString());
       expect(res.status, next).toBe(303);
-      expect(res.headers.get("location"), next).toBe("/");
+      expect(res.headers.get("location"), next).toBe("/settings/reader");
     }
     // A body too large to be the form sets nothing.
     const huge = await post(FORM_HEADERS, `theme=dark&next=/&pad=${"x".repeat(20_000)}`);

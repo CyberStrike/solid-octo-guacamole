@@ -341,7 +341,7 @@ main {
   --accent: #7ab4f0;
 }
 
-/* Draft palette for the operator to proof; each colour passes AA on the paper. */
+/* Draft palette for the operator to proof; text, muted text and links pass AA on the paper. */
 :root[data-theme="sepia"] {
   color-scheme: light;
   --ink: #433422;

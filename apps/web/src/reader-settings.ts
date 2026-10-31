@@ -145,7 +145,7 @@ export type FlashCode = "settings-saved";
 export const flashMessage = (code: string | undefined) =>
   (code === undefined ? undefined : FLASHES.get(code)) ?? null;
 
-/** Sets the flash for the page a redirect lands on, for a minute at most. */
+/** Sets the flash, for the next page that can show it, within a minute: usually the one the redirect lands on. */
 export const flashCookie = (code: FlashCode) =>
   `${FLASH_COOKIE}=${code}; Max-Age=60${FLASH_ATTRIBUTES}`;
 
