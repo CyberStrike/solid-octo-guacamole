@@ -37,12 +37,14 @@ const SPLIT = [
   "Three Parts_split_002.xhtml",
 ] as const;
 
-/** Markup appended to a paragraph of each chapter, or to the summary. */
+/** Markup appended to a paragraph of each chapter, or the summary, notes and end notes. */
 interface Links {
   c1?: string;
   c2?: string;
   c3?: string;
   summary?: string;
+  notes?: string;
+  endNotes?: string;
   workId?: number;
 }
 
@@ -50,6 +52,8 @@ const threeChapters = (links: Links = {}) =>
   ao3Epub({
     workId: links.workId,
     summary: links.summary,
+    notes: links.notes,
+    endNotes: links.endNotes,
     stats: "Published: 2020-01-01 Chapters: 3/3 Words: 9",
     files: [
       {
@@ -458,5 +462,50 @@ describe("chapter links", () => {
     expect(work.chapters).toHaveLength(3);
     expect(work.chapters[0]!.html).toContain(`<a href="/works/1000001/chapters/3">to-f3</a>`);
     expect(work.chapters[0]!.html).toContain(`<a href="/works/1000001/chapters/2">to-f2</a>`);
+  });
+
+  it("a link to the chapter it is in stays text, even across a file split", async () => {
+    const work = await processEpub(
+      threeChapters({
+        c2: `<a href="Three%20Parts_split_001.xhtml#in-c2">same-two</a> <a href="#c2">own-heading</a>`,
+      }),
+    );
+    const c2 = work.chapters[1]!.html;
+    expect(c2).not.toContain("<a");
+    expect(c2).toContain("same-two own-heading");
+  });
+
+  it("links that reach no chapter stay text", async () => {
+    const work = await processEpub(
+      threeChapters({
+        c1: [
+          `<a href="Three%20Parts_split_001.xhtml#no-such-id">t-missing</a>`,
+          `<a href="not-in-spine.xhtml#c3">t-not-spine</a>`,
+          `<a href="Synthetic_afterword.xhtml#endnotes">t-afterword</a>`,
+          `<a href="Synthetic_afterword.xhtml">t-afterword-file</a>`,
+          `<a href="Synthetic_preface.xhtml#calibre_toc_2">t-preface</a>`,
+          `<a href="stylesheet.css">t-css</a>`,
+          `<a href="../Three%20Parts_split_001.xhtml#c3">t-above-root</a>`,
+        ].join(" "),
+      }),
+    );
+    const c1 = work.chapters[0]!.html;
+    expect(c1).not.toContain("<a");
+    for (const t of ["missing", "not-spine", "afterword", "afterword-file", "preface", "css"])
+      expect(c1).toContain(`t-${t}`);
+    expect(c1).toContain("t-above-root");
+  });
+
+  it("links in the summary, notes and end notes to a chapter are rewritten", async () => {
+    const work = await processEpub(
+      threeChapters({
+        summary: `<p>see <a href="Three%20Parts_split_001.xhtml#c3">sum-three</a></p>`,
+        notes: `<p>see <a href="Three%20Parts_split_000.xhtml#c2">notes-two</a></p>`,
+        endNotes: `<p>see <a href="Three%20Parts_split_000.xhtml">end-one</a></p>`,
+      }),
+    );
+    expect(work.summaryHtml).toContain(`<a href="/works/1000001/chapters/3">sum-three</a>`);
+    expect(work.notesHtml).toContain(`<a href="/works/1000001/chapters/2">notes-two</a>`);
+    expect(work.endNotesHtml).toContain(`<a href="/works/1000001/chapters/1">end-one</a>`);
   });
 });
