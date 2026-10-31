@@ -31,30 +31,33 @@ export const pageState: MiddlewareHandler = async (c, next) => {
   if (attributes.length === 0 && flash === null) return;
 
   let seenHtml = false;
+  const rewriter = new HTMLRewriter().on("html", {
+    element(html) {
+      // The document's own <html> is the first; nothing in a page comes before it.
+      if (seenHtml) return;
+      seenHtml = true;
+      for (const [name, value] of attributes) html.setAttribute(name, value);
+    },
+  });
+  // With no flash to show, the page streams through.
+  if (flash === null) {
+    c.res = rewriter.transform(c.res);
+    return;
+  }
+
   // SAFETY: the banner handler below sets it, which TypeScript can't see from here.
   let flashShown = false as boolean;
-  const rewritten = new HTMLRewriter()
-    .on("html", {
-      element(html) {
-        // The document's own <html> is the first; nothing in a page comes before it.
-        if (seenHtml) return;
-        seenHtml = true;
-        for (const [name, value] of attributes) html.setAttribute(name, value);
-      },
-    })
-    .on("aside.banner", {
-      element(banner) {
-        // The layout's banner comes before main, so a fragment's look-alike never wins.
-        if (flash === null || flashShown) return;
-        flashShown = true;
-        banner.after(`\n<p class="flash" role="status">${flash}</p>`, { html: true });
-      },
-    })
-    .transform(c.res);
-
+  rewriter.on("aside.banner", {
+    element(banner) {
+      // The layout's banner comes before main, so a fragment's look-alike never wins.
+      if (flashShown) return;
+      flashShown = true;
+      banner.after(`\n<p class="flash" role="status">${flash}</p>`, { html: true });
+    },
+  });
   // Read to the end, so we know whether the page had a banner to put the flash under
   // before the headers go out. A page without one leaves the flash for the next.
-  const body = await rewritten.text();
+  const body = await rewriter.transform(c.res).text();
   c.res = new Response(body, c.res);
   if (flashShown) {
     c.header("Set-Cookie", CLEAR_FLASH_COOKIE, { append: true });
