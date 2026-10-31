@@ -118,7 +118,9 @@ export default defineConfig({
       {
         // Before launch: wrangler.jsonc as it deploys, PRELAUNCH on. As in `open`, the
         // database, secrets, outbound network and email sink are the test stand-ins.
-        plugins: [worker()],
+        // The wait list's response-time floor is shortened, so each join doesn't wait out the
+        // deployed one; the floor tests set their own, and a Node test checks the deployed value.
+        plugins: [worker({ WAITLIST_FLOOR_MS: "50" })],
         test: {
           name: "prelaunch",
           include: ["test/**/*.prelaunch.test.ts"],
