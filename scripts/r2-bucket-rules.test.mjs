@@ -14,7 +14,7 @@ const stub = fileURLToPath(new URL("test/wrangler-stub.mjs", import.meta.url));
 
 // Runs the script with the stub as its wrangler. Returns the exit code, the output, and each call
 // the stub saw, in order.
-function run(args = [], { fail } = { fail: "" }) {
+function run(args = [], fail = "") {
   const dir = mkdtempSync(join(tmpdir(), "r2-bucket-rules-test-"));
   const log = join(dir, "calls.jsonl");
   writeFileSync(log, "");
@@ -33,21 +33,25 @@ function run(args = [], { fail } = { fail: "" }) {
   }
 }
 
+// The scenarios' THEN, as a rule: everything under uploads/ is deleted 604800 s (7 days) after
+// it was written.
+const expiresUploadsAfter7Days = {
+  rules: [
+    {
+      id: "expire-uploads",
+      enabled: true,
+      conditions: { prefix: "uploads/" },
+      deleteObjectsTransition: { condition: { type: "Age", maxAge: 604800 } },
+    },
+  ],
+};
+
 const fileFor = (calls, command) =>
   calls.find((call) => call.args.join(" ").startsWith(command))?.file;
 
 await test("02-upload-handshake", async (t) => {
   await t.test("Confirm is never called", () => {
-    assert.deepEqual(lifecycleRules(), {
-      rules: [
-        {
-          id: "expire-uploads",
-          enabled: true,
-          conditions: { prefix: "uploads/" },
-          deleteObjectsTransition: { condition: { type: "Age", maxAge: 604800 } },
-        },
-      ],
-    });
+    assert.deepEqual(lifecycleRules(), expiresUploadsAfter7Days);
   });
 });
 
@@ -121,7 +125,7 @@ await test("A usage error", async (t) => {
 
 await test("When wrangler fails", async (t) => {
   await t.test("Exits 2 with wrangler's error and runs nothing after it", () => {
-    const { code, stderr, calls } = run([], { fail: "r2 bucket cors set" });
+    const { code, stderr, calls } = run([], "r2 bucket cors set");
     assert.equal(code, 2);
     assert.match(stderr, /stub: r2 bucket cors set failed/);
     assert.equal(calls.length, 1);
@@ -132,15 +136,6 @@ await test("19-surge-controls-and-quotas", async (t) => {
   await t.test("Abandoned uploads expire", () => {
     const { code, calls } = run();
     assert.equal(code, 0);
-    assert.deepEqual(fileFor(calls, "r2 bucket lifecycle set rarepair"), {
-      rules: [
-        {
-          id: "expire-uploads",
-          enabled: true,
-          conditions: { prefix: "uploads/" },
-          deleteObjectsTransition: { condition: { type: "Age", maxAge: 604800 } },
-        },
-      ],
-    });
+    assert.deepEqual(fileFor(calls, "r2 bucket lifecycle set rarepair"), expiresUploadsAfter7Days);
   });
 });

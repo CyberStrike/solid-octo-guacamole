@@ -59,9 +59,19 @@ export function lifecycleRules() {
   };
 }
 
+// The wrangler apps/content declares, the workspace that binds the bucket, so the script runs the
+// pinned version whether or not npm hoists it to the root.
 const wranglerBin = () =>
   process.env.R2_BUCKET_RULES_WRANGLER ??
-  join(dirname(createRequire(import.meta.url).resolve("wrangler/package.json")), "bin/wrangler.js");
+  join(
+    dirname(
+      createRequire(new URL("../apps/content/package.json", import.meta.url)).resolve(
+        "wrangler/package.json",
+      ),
+    ),
+    "bin/wrangler.js",
+  );
+const execFileAsync = promisify(execFile);
 
 const setArgs = (kind, file) => ["r2", "bucket", kind, "set", BUCKET, "--file", file, "--force"];
 const listArgs = (kind) => ["r2", "bucket", kind, "list", BUCKET];
@@ -78,11 +88,7 @@ async function main(dryRun) {
     return 0;
   }
   const wrangler = async (args) =>
-    (
-      await promisify(execFile)(process.execPath, [wranglerBin(), ...args], {
-        encoding: "utf8",
-      })
-    ).stdout;
+    (await execFileAsync(process.execPath, [wranglerBin(), ...args], { encoding: "utf8" })).stdout;
   const dir = mkdtempSync(join(tmpdir(), "r2-bucket-rules-"));
   try {
     for (const kind of kinds) {
