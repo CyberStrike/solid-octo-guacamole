@@ -296,6 +296,29 @@ describe("13-reader-settings-and-position", () => {
     expect((await fetchW("/assets/reader-settings.00000000.js")).status).toBe(404);
   });
 
+  it("Saving with no page to return to stays on the settings page", async () => {
+    // Opened directly, with no `next`: there is nowhere to go back to, so no Back link,
+    // and saving comes back to the settings page rather than to a page that may not exist.
+    const page = await (await fetchW("/settings/reader")).text();
+    expect(settingsForm(page).fields.next).toBe("/settings/reader");
+    expect(page).not.toContain(">Back</a>");
+    for (const body of ["theme=dark", "theme=dark&next="]) {
+      const res = await fetchW("/settings/reader", {
+        method: "POST",
+        headers: FORM_HEADERS,
+        body: new URLSearchParams(body),
+      });
+      expect(res.status).toBe(303);
+      expect(res.headers.get("location")).toBe("/settings/reader");
+    }
+  });
+
+  it("Settings apply on error pages too", async () => {
+    const res = await fetchW("/no-such-page", { headers: { cookie: "__Host-reader=theme=sepia" } });
+    expect(res.status).toBe(404);
+    expect(htmlTag(await res.text())).toBe('<html lang="en" data-theme="sepia">');
+  });
+
   it("Reduced motion turns off smooth scrolling", async () => {
     // Nothing scrolls smoothly in the first place, and the reduced-motion block stays.
     // The settings script never scrolls (reader-settings.node.test.ts).

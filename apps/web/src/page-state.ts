@@ -15,19 +15,22 @@ import {
 } from "./reader-settings";
 
 /**
- * Rewrites each successful HTML page on its way out. Runs inside the CSP middleware,
+ * Rewrites each HTML page on its way out. Runs inside the CSP middleware,
  * which keys on the content type this keeps. A page with neither cookie passes
  * through untouched.
  */
 export const pageState: MiddlewareHandler = async (c, next) => {
   await next();
-  if (c.res.status !== 200) return;
   if (!c.res.headers.get("content-type")?.toLowerCase().startsWith("text/html")) return;
 
+  // The settings dress every HTML page, error pages included.
   const attributes = dataAttributes(parseSettings(getCookie(c, SETTINGS_COOKIE)));
-  // Only a GET shows the flash, since showing it uses it up. Its copy comes from our
-  // table, never from the cookie.
-  const flash = c.req.method === "GET" ? flashMessage(getCookie(c, FLASH_COOKIE)) : null;
+  // Only a successful GET shows the flash, since showing it uses it up. Its copy comes
+  // from our table, never from the cookie.
+  const flash =
+    c.req.method === "GET" && c.res.status === 200
+      ? flashMessage(getCookie(c, FLASH_COOKIE))
+      : null;
   if (attributes.length === 0 && flash === null) return;
 
   let seenHtml = false;

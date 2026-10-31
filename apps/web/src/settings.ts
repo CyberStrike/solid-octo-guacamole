@@ -101,9 +101,15 @@ ${settingsControls("settings-", settings)}
 <input type="hidden" name="next" value="${escapeHtml(next)}">
 <button type="submit">Save settings</button>
 </form>
-<p><a href="${escapeHtml(next)}">Back</a></p>`,
+${next === SETTINGS_PATH ? "" : `<p><a href="${escapeHtml(next)}">Back</a></p>`}`,
     settingsScriptTag(nonce),
   );
+
+/**
+ * Where saving goes back to: `next`, reduced to a same-site path, or this page when
+ * there is none, since the reader came here directly.
+ */
+const returnTarget = (next: string | null | undefined) => (next ? safeNext(next) : SETTINGS_PATH);
 
 /**
  * The settings script, for a page's head. It carries the page's nonce, which
@@ -129,7 +135,7 @@ export const showSettings = (c: SettingsContext) =>
   c.html(
     settingsPage(
       parseSettings(getCookie(c, SETTINGS_COOKIE)),
-      safeNext(c.req.query("next") ?? null),
+      returnTarget(c.req.query("next")),
       c.get("nonce"),
     ),
   );
@@ -156,5 +162,5 @@ export async function saveSettings(c: SettingsContext) {
   c.header("Set-Cookie", settingsCookie(settings), { append: true });
   c.header("Set-Cookie", flashCookie("settings-saved"), { append: true });
   c.header("Cache-Control", "no-store");
-  return c.redirect(safeNext(form.get("next")), 303);
+  return c.redirect(returnTarget(form.get("next")), 303);
 }
